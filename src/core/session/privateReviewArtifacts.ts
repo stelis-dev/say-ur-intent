@@ -1,0 +1,106 @@
+import type {
+  LocalTransactionMaterialDigestCommitment,
+  LocalTransactionMaterialHandle
+} from "./transactionMaterialStore.js";
+import type {
+  TransactionObjectOwnershipEvidence
+} from "../action/transactionObjectOwnershipEvidence.js";
+import type {
+  SwapQuotePolicyEvidence
+} from "../action/swapQuotePolicyEvidence.js";
+import {
+  parseHumanReadableReviewEvidence,
+  type HumanReadableReviewEvidence
+} from "../action/humanReadableReviewEvidence.js";
+import {
+  parseReviewTimeSimulationEvidence,
+  type ReviewTimeSimulationEvidence
+} from "../action/reviewTimeSimulationEvidence.js";
+
+export type PrivateReviewArtifacts = {
+  transactionMaterial?: LocalTransactionMaterialHandle;
+  transactionMaterialDigest?: LocalTransactionMaterialDigestCommitment;
+  swapQuotePolicy?: SwapQuotePolicyEvidence;
+  transactionObjectOwnership?: TransactionObjectOwnershipEvidence;
+  humanReadableReview?: HumanReadableReviewEvidence;
+  reviewTimeSimulation?: ReviewTimeSimulationEvidence;
+};
+
+export function clonePrivateReviewArtifacts(
+  artifacts: PrivateReviewArtifacts
+): PrivateReviewArtifacts {
+  return {
+    ...(artifacts.transactionMaterial
+      ? { transactionMaterial: { ...artifacts.transactionMaterial } }
+      : {}),
+    ...(artifacts.transactionMaterialDigest
+      ? { transactionMaterialDigest: { ...artifacts.transactionMaterialDigest } }
+      : {}),
+    ...(artifacts.swapQuotePolicy
+      ? {
+          swapQuotePolicy: {
+            ...artifacts.swapQuotePolicy,
+            quoteSource: { ...artifacts.swapQuotePolicy.quoteSource },
+            sourceAmount: {
+              ...artifacts.swapQuotePolicy.sourceAmount,
+              asset: { ...artifacts.swapQuotePolicy.sourceAmount.asset }
+            },
+            expectedOutput: {
+              ...artifacts.swapQuotePolicy.expectedOutput,
+              asset: { ...artifacts.swapQuotePolicy.expectedOutput.asset }
+            },
+            minimumOutput: {
+              ...artifacts.swapQuotePolicy.minimumOutput,
+              asset: { ...artifacts.swapQuotePolicy.minimumOutput.asset }
+            },
+            protocolFee: {
+              ...artifacts.swapQuotePolicy.protocolFee,
+              asset: { ...artifacts.swapQuotePolicy.protocolFee.asset }
+            }
+          }
+        }
+      : {}),
+    ...(artifacts.transactionObjectOwnership
+      ? {
+          transactionObjectOwnership: {
+            ...artifacts.transactionObjectOwnership,
+            objects: artifacts.transactionObjectOwnership.objects.map((object) => ({
+              ...object,
+              roles: [...object.roles]
+            }))
+          }
+        }
+      : {}),
+    ...(artifacts.humanReadableReview
+      ? {
+          humanReadableReview: parseHumanReadableReviewEvidence(structuredClone(artifacts.humanReadableReview))
+        }
+      : {}),
+    ...(artifacts.reviewTimeSimulation
+      ? {
+          reviewTimeSimulation: parseReviewTimeSimulationEvidence(structuredClone(artifacts.reviewTimeSimulation))
+        }
+      : {})
+  };
+}
+
+export class InMemoryPrivateReviewArtifactStore {
+  private readonly artifacts = new Map<string, PrivateReviewArtifacts>();
+
+  get(reviewSessionId: string): PrivateReviewArtifacts | undefined {
+    const artifacts = this.artifacts.get(reviewSessionId);
+    return artifacts ? clonePrivateReviewArtifacts(artifacts) : undefined;
+  }
+
+  set(reviewSessionId: string, artifacts: PrivateReviewArtifacts): void {
+    this.artifacts.set(reviewSessionId, clonePrivateReviewArtifacts(artifacts));
+  }
+
+  delete(reviewSessionId: string): void {
+    this.artifacts.delete(reviewSessionId);
+  }
+
+  clear(): void {
+    this.artifacts.clear();
+  }
+}

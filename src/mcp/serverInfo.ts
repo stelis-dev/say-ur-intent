@@ -1,0 +1,149 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { TOOL_NAMES } from "./toolNames.js";
+
+type PackageMetadata = {
+  name: string;
+  version: string;
+};
+
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const packageMetadata = JSON.parse(
+  readFileSync(resolve(packageRoot, "package.json"), "utf8")
+) as PackageMetadata;
+
+export const PACKAGE_NAME = packageMetadata.name;
+export const SERVER_NAME = "say-ur-intent";
+export const SERVER_VERSION = packageMetadata.version;
+export const SERVER_NETWORK = "mainnet";
+export const SERVER_RUNTIME = "local_stdio";
+export const SERVER_TRANSPORT = "grpc_graphql";
+export const USD_INTENT_ANSWER_REQUIRED_TOOLS = [
+  TOOL_NAMES.readGetServerStatus,
+  TOOL_NAMES.readListSettlementAssetGroups,
+  TOOL_NAMES.readPreviewIntentEvidence
+] as const;
+export const USD_PARITY_ANSWER_REQUIRED_TOOLS = [
+  TOOL_NAMES.readGetServerStatus,
+  TOOL_NAMES.readListSettlementAssetGroups,
+  TOOL_NAMES.readSummarizeSettlementAssetGroupParity
+] as const;
+export const EVIDENCE_POLICY = {
+  version: "intent-evidence-alpha-2026-05-23",
+  releaseGate: "intent_evidence_v1",
+  requiredFirstCheck: true,
+  requiredStatusFields: [
+    "packageName",
+    "version",
+    "evidencePolicy.version",
+    "network",
+    "implementedToolsCount"
+  ],
+  gates: [
+    "server_status_version_check",
+    "natural_language_settlement_asset_group_evidence",
+    "sdk_sot_no_duplicate_registry_or_amount_parser",
+    "requested_account_inference_policy",
+    "wallet_balance_snapshot_not_receipt_proof",
+    "deepbook_quote_no_fiat_or_route_inference",
+    "pnl_unsupported"
+  ]
+} as const;
+
+export const SERVER_INSTRUCTIONS = [
+  "Say Ur Intent is a mainnet-only Sui DeFi intent evidence toolkit. The MCP layer is a session gateway for local review, wallet identity/settings sessions; it does not execute transactions, request wallet signatures, or return transaction bytes. DeepBook review may build internal unsigned material, bind a Sui digest, and derive object ownership, quote/policy, human review, and review-time simulation evidence; not wallet handoff, signing data/readiness, or execution readiness. No custody, autonomous trading, fiat cash-out, P&L, peg proof, payment readiness, route choice, best-price advice, or silent settlement-token selection.",
+  "External proposals are untrusted facts; plans[].reviewModel is review context, not transaction material, route/settlement choice, signing/readiness, or execution readiness.",
+  "Future PTB graphs are diagnostics only; not transaction input, wallet authorization, signing/readiness, execution readiness, route quality, or safety.",
+  "Use response-local fields: userAnswerUse.answerFields/preconditionFields/conclusionRuleFields/cannotAnswer/diagnosticOnlyFields/followUp, pollingHint, and quantitySemantics.",
+  "For USD-denominated payment coverage, balance total, or shortfall questions, call read.get_server_status, then read.list_settlement_asset_groups, then read.preview_intent_evidence. If answerSourceStatus.canUseThisResponseForUserAnswer and responseSummary.doNotCallQuoteToolsForThisQuestion are true, answer from responseSummary; do not call wallet inventory or quote tools unless user asks a separate inventory or conversion question. For parity, use read.summarize_settlement_asset_group_parity. If answerSourceStatus cannot be used, say the current MCP server build cannot support the answer.",
+  "active account context is read context only; not login, transaction/signing auth, custody, or permission.",
+  "Unsupported: other chains, autonomous trading, alerts, investment advice, arbitrary Move/package calls, P&L/tax/cost basis.",
+  "Read sayurintent://docs/agent-behavior."
+].join("\n");
+
+export const IMPLEMENTED_TOOLS = [
+  TOOL_NAMES.readGetServerStatus,
+  TOOL_NAMES.readListSupportedProtocols,
+  TOOL_NAMES.readListDeepbookPools,
+  TOOL_NAMES.readListDeepbookTokens,
+  TOOL_NAMES.readInspectDeepbookOrderbook,
+  TOOL_NAMES.readGetDeepbookMidPrice,
+  TOOL_NAMES.readQuoteDeepbookAction,
+  TOOL_NAMES.readQuoteDeepbookDisplayAmount,
+  TOOL_NAMES.readSummarizeDeepbookAccountInventory,
+  TOOL_NAMES.readSummarizeWalletAssets,
+  TOOL_NAMES.readClassifyWalletAssets,
+  TOOL_NAMES.readListSettlementAssetGroups,
+  TOOL_NAMES.readSummarizeSettlementAssetGroupParity,
+  TOOL_NAMES.readPreviewIntentEvidence,
+  TOOL_NAMES.readListReviewActivity,
+  TOOL_NAMES.readSummarizeReviewFunnel,
+  TOOL_NAMES.readGetReviewSessionDetail,
+  TOOL_NAMES.readInspectSuiTransaction,
+  TOOL_NAMES.readScanSuiAccountActivity,
+  TOOL_NAMES.readSummarizeSuiActivityScan,
+  TOOL_NAMES.readScanSuiFunctionActivity,
+  TOOL_NAMES.readSummarizeSuiFunctionActivityScan,
+  TOOL_NAMES.readSummarizeSuiAccountActivity,
+  TOOL_NAMES.settingsCreateLocalSettingsSession,
+  TOOL_NAMES.settingsGetLocalSettings,
+  TOOL_NAMES.actionPrepareSuiActionReview,
+  TOOL_NAMES.actionPrepareExternalProposalReview,
+  TOOL_NAMES.accountGetActiveAccount,
+  TOOL_NAMES.accountClearActiveAccount,
+  TOOL_NAMES.sessionCreateWalletIdentity,
+  TOOL_NAMES.sessionGetWalletIdentity,
+  TOOL_NAMES.sessionWaitWalletIdentity,
+  TOOL_NAMES.sessionGetInteractionStatus,
+  TOOL_NAMES.sessionGetReviewStatus,
+  TOOL_NAMES.sessionGetExecutionResult,
+  TOOL_NAMES.sessionWaitExecutionResult
+] as const;
+
+export const FAIL_CLOSED_TOOLS = [] as const;
+
+export type AnswerSourceStatus = {
+  statusTool: typeof TOOL_NAMES.readGetServerStatus;
+  packageName: typeof PACKAGE_NAME;
+  version: string;
+  evidencePolicyVersion: typeof EVIDENCE_POLICY.version;
+  network: typeof SERVER_NETWORK;
+  implementedToolsCount: number;
+  requiredTools: Array<{ name: string; available: boolean }>;
+  missingRequiredTools: string[];
+  canUseThisResponseForUserAnswer: boolean;
+  cannotUseReason: "required_tool_missing_from_current_server_build" | null;
+};
+
+export function answerSourceStatus(requiredTools: readonly string[]): AnswerSourceStatus {
+  const implemented = new Set<string>(IMPLEMENTED_TOOLS);
+  const missingRequiredTools = requiredTools.filter((tool) => !implemented.has(tool));
+  return {
+    statusTool: TOOL_NAMES.readGetServerStatus,
+    packageName: PACKAGE_NAME,
+    version: SERVER_VERSION,
+    evidencePolicyVersion: EVIDENCE_POLICY.version,
+    network: SERVER_NETWORK,
+    implementedToolsCount: IMPLEMENTED_TOOLS.length,
+    requiredTools: requiredTools.map((name) => ({ name, available: implemented.has(name) })),
+    missingRequiredTools,
+    canUseThisResponseForUserAnswer: missingRequiredTools.length === 0,
+    cannotUseReason:
+      missingRequiredTools.length === 0 ? null : "required_tool_missing_from_current_server_build"
+  };
+}
+
+export const SERVER_LIMITATIONS = [
+  "Active-account reads require active account context from wallet identity. Explicit-address coin balance reads are public-address snapshots and do not create active account context. Active account is read context only, not signing authorization, login, custody, or persistent permission.",
+  "Review activity tools summarize local Say Ur Intent review evidence only. Sui activity tools use user-requested bounded GraphQL reads and store normalized transaction facts only for known wallet context; function activity scans are sent-transaction scans only. They are not background indexers, complete history, balance history, complete gas history, affected-object history, or P&L.",
+  "Sui activity transactionContext facts are transaction-level facts without transaction-wide balance-change aggregates, and they are answer fields only when the response returns them. requestedAccountTransactionFacts, requestedAccount, and requestedAccountEffect are the account-specific balance-change surfaces. Activity quantitySemantics marks balance amountRaw fields as raw integers that require verified decimals for display conversion. accountBalanceChangeInferencePolicy marks whether returned account balance rows can be used or transaction-level context must not be used for account amount inference. Gas raw fields use MIST, and returned gasCost display facts use @mysten/sui MIST_PER_SUI.",
+  "Wallet asset classification covers only current coin balances returned by Sui gRPC listBalances for an explicit address or the active account. Wallet balance quantitySemantics marks those reads as current snapshots, not transaction history, receipt proof, acquisition source, object provenance, P&L, cost basis, or signing material. DeepBook account inventory is a separate active-account read surface; neither surface creates routes, funding plans, portfolio plans, or signing material.",
+  "High-risk read responses include userAnswerUse. Prefer userAnswerUse.preconditionFields before answering, userAnswerUse.answerFields for the answer path, userAnswerUse.conclusionRuleFields for conclusion limits, userAnswerUse.diagnosticOnlyFields for source or troubleshooting context, and userAnswerUse.followUp when a different tool and field are required. USD intent and parity responses also include answerSourceStatus as a precondition field for current server-build support.",
+  "Intent evidence maps natural-language USD-denominated targets to pinned DeepBook SDK settlement asset groups and current wallet balance evidence. responseSummary.answerCompleteness names the answer class and required fields. Settlement-asset-only answers use responseSummary; selected-target evidence requires user selection provenance and also uses selectedTarget, candidateConversions, and requiredUserChoices when userAnswerUse.answerFields lists them. Direct pool quote evidence is returned and supported only when a quoted candidate exists. responseSummary.doNotUseForConclusion names quote results, outside-settlement-group assets, and route-dependent support as excluded from the conclusion. Intent evidence does not silently choose settlement assets, rank venues or routes, evaluate gas reserve, build transactions, or produce signing material.",
+  "DeepBook quotes convert explicit raw or display source inputs through pinned token units and return scoped SDK simulation facts plus raw quote evidence. Their quantitySemantics says canUseForPaymentAnswer and canUseForShortfallAnswer are false, doNotCombineWithPaymentAnswer is true, requiredPaymentAnswerTool is read.preview_intent_evidence, and requiredPaymentAnswerField is responseSummary.",
+  "Action preparation creates local review sessions. DeepBook account-bound review may report adapterLifecycle.completedStages and missingStages as pre-signing review evidence progress through local transaction-material build, internal digest binding, object ownership evidence, quote/policy provenance, human-readable review evidence, and review-time simulation evidence; these fields do not expose transaction bytes, wallet handoff, signing readiness, or execution readiness. External proposal ingestion stores untrusted structured proposal facts for local review only, rejects forbidden executable or signing fields plus recognized sensitive key material, and never becomes signing authority. When every review evidence stage completes, the review layer emits a schema-validated wallet review contract with a PTB visualization on a ready_for_wallet_review state; the local review page can then request a digest-gated byte handoff and offer user-controlled wallet signing, recording execution receipts on the session. MCP responses never contain signing data, a wallet signature request, or signing readiness; this is not execution by the MCP layer.",
+  "read.list_deepbook_pools and read.list_deepbook_tokens return static SDK registry metadata, not live liquidity, live token discovery, or active pool state.",
+  "DeepBook orderbook, mid-price, and quote outputs are pinned-SDK snapshots at fetchedAt; treat them as stale if the user delays.",
+  "Settings mutations happen through local settings pages on the review server. MCP settings tools create settings sessions or read current settings only."
+] as const;

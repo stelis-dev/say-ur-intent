@@ -1,0 +1,358 @@
+# Signable Adapter and PTB Visualization Contract
+
+This document defines the contract boundary for wallet-review adapters.
+It is a product and implementation contract, not a current feature announcement.
+
+The current release can build local unsigned transaction material for the
+account-bound DeepBook swap review stage and internally bind a Sui transaction
+digest to that stored material. The byte handoff to the same-machine browser
+is gated on recomputed-digest equality, and the review page offers
+user-controlled wallet signing with execution receipts recorded on the
+session. No MCP tool returns
+transaction bytes, signing data, signing readiness, executable transaction
+material, or payment execution readiness.
+
+The source-level schema for this contract lives in
+`src/core/action/signableAdapterContract.ts`.
+
+## Current Status
+
+The contract schema is implemented in TypeScript and Zod, and the runtime
+DeepBook account-bound swap review emits it. When the account-bound review
+completes every evidence stage (local unsigned transaction material, internal
+digest commitment, object ownership, quote/policy provenance, human-readable
+review facts, and review-time simulation), the review layer assembles those
+private artifacts into a schema-validated `WalletReviewAdapterContract` and
+records it on the public review state as `walletReviewAdapterContract` on a
+`ready_for_wallet_review` status. If any required evidence is
+missing or fails contract validation, no contract is emitted and the review
+stays blocked with `blockedReason: "wallet_review_contract_emit_missing"`.
+
+No MCP response or review UI response exposes executable transaction material.
+The emitted contract carries the Sui transaction digest as
+`transactionMaterialCommitment` (a hash only); raw transaction bytes stay
+inside the review-server session and leave it only through the digest-gated
+handoff endpoint for the same-machine browser. Wallet signature requests and
+execution are not implemented, so signing stays unavailable after the handoff
+gate.
+
+## Final Acceptance Gate
+
+This document defines a contract gate, not a current signing feature. Do not add
+new capability here ahead of a reviewed implementation.
+
+The gate binds three views of the action to one transaction commitment, so a
+user cannot sign something different from what they reviewed:
+
+- The commitment is a digest (hash) of the exact serialized transaction bytes
+  that will be signed, represented as the Sui transaction digest. The commitment
+  is a hash only; raw transaction bytes remain a prohibited output and must never
+  appear in MCP or review responses.
+- `humanReadableReview` must be derived from the transaction identified by that
+  commitment.
+- The review-time `simulation` must have been run against the transaction with
+  that same commitment.
+- Any bytes handed to the wallet must hash to that same commitment.
+
+The acceptance criterion is strict equality: review-commitment equals
+simulation-commitment equals handoff-commitment. If any is missing or differs,
+the contract is invalid and signing stays blocked.
+
+### Transaction byte lifecycle (closes the handoff loophole)
+
+The signable bytes must have exactly one origin and one handoff path, so an
+adapter cannot display a commitment while signing different bytes through a side
+channel:
+
+- Origin: the bytes are produced only inside Say Ur Intent's review layer (the
+  signable adapter), from material Say Ur Intent independently built or verified.
+  They are never accepted from an external MCP or AI-client proposal.
+- Storage: the bytes live only in the local review-server session keyed by
+  `reviewSessionId`. They never appear in an MCP tool response or in the
+  review-API JSON an AI client reads; those surfaces carry the commitment hash
+  only.
+- Handoff channel: the only path that may carry the bytes is the local
+  review-server to same-machine browser to wallet-adapter handoff for that
+  session. There is no other handoff path, and the MCP layer and AI client never
+  receive the bytes.
+- Bind at handoff: before the wallet is asked to sign, the handoff path must
+  recompute the digest of the exact bytes it is about to hand over and require it
+  to equal the commitment that `humanReadableReview` and `simulation` were bound
+  to. If they differ, or if any alternate or side handoff path is used, signing
+  is refused.
+
+Any design that exposes a commitment but routes the signed bytes through a
+different origin or channel violates this gate and is prohibited.
+
+One review session covers exactly one transaction. While a handoff is
+outstanding, the session is locked: state recomputes are refused until the
+wallet result is recorded, the user cancels the handoff, or the handed-off
+material expires (the lock then self-releases). A recorded `success` or
+`failure` execution result is final and deletes the stored material.
+
+DeepBook swap material is built with an explicit fee mode. When the account's
+DEEP balance covers the protocol fee, the swap quotes and builds in DEEP fee
+mode; otherwise it re-quotes through the protocol's input-fee dry run and
+builds with an explicit zero-DEEP coin so the taker fee is paid from the
+source coin at the protocol penalty. The selected fee mode is recorded as
+review evidence and shown as a check. Before building, the producer verifies
+the account holds the source amount plus the explicit gas budget and fails
+closed with the exact required and held amounts.
+
+This gate is enforced at the contract-schema layer. `walletReviewAdapterContractSchema`
+requires a `transactionMaterialCommitment` (the Sui transaction digest of the
+transaction that will be signed, validated with the pinned SDK source of truth
+`isValidTransactionDigest`; a digest only, never raw bytes) and binds
+`humanReadableReview.boundToCommitment` and `simulation.boundToCommitment` to it
+through a `superRefine` invariant (reusing the `requireEqual` cross-field helper)
+that rejects any contract whose three commitments are missing, malformed, or
+unequal (`src/core/action/signableAdapterContract.ts`,
+`test/signableAdapterContract.test.ts`).
+
+The runtime bind-at-handoff step is implemented at the session-store boundary:
+`prepareWalletHandoff` recomputes the digest of the exact stored bytes and
+refuses the handoff unless it equals the reviewed
+`transactionMaterialCommitment`. The handoff endpoint
+(`POST /api/review/:id/handoff`) is the only channel that carries the bytes,
+and it serves the same-machine browser only. After the gate passes, the
+review page requests the wallet signature; the signature, execution, and
+receipt stay user-controlled and never flow through the MCP layer.
+
+The current release builds local unsigned DeepBook swap transaction material
+inside account-bound review, binds a Sui transaction digest to the stored
+material, hands the digest-verified bytes to the same-machine browser, and
+lets the user sign and execute in their wallet with the receipt recorded on
+the review session. The MCP layer never requests signatures or executes.
+
+## Adapter Contract
+
+A wallet-review adapter that returns this contract must regenerate or
+independently verify action material inside Say Ur Intent before any wallet
+handoff exists. External MCP or AI-client proposals remain untrusted structured
+input and cannot become transaction-building authority.
+
+The adapter contract requires these fields:
+
+- `inputProvenance`: where the request came from, when it was captured, and why
+  it remains untrusted until the local review layer regenerates and verifies it.
+- `sourceOfTruth`: source metadata for pinned SDK registries, verified mainnet
+  onchain metadata, wallet reads, quote evidence, simulation, validated request
+  facts, or explicit user choices. A `sourceOfTruth` record is not itself a
+  value-bearing fact. It identifies where a typed evidence claim came from.
+- `evidenceClaims`: typed value-bearing claims for every safety-critical fact
+  used by the payload. Each claim has a `factKind`, a `sourceEvidenceId` pointing
+  to `sourceOfTruth[].id`, and the value fields required for that fact. The
+  schema validates the claim against the safety-critical fact matrix and then
+  validates that payload fields match their referenced claim values.
+- `rawQuantities`: raw integer strings plus normalized Sui coin type, verified
+  decimals, and unit source. `amountClaimId` must point to a
+  `raw_quantity_amount` claim whose role, raw amount, and normalized coin type
+  match the payload. Unit `unitClaimId` must point to a `unit_metadata` claim
+  whose decimals, normalized coin type, and metadata source match the payload.
+  Display amounts remain presentation-only.
+- `gas`: review-time simulation evidence for gas quantities or a concrete
+  unresolved reason. `gasBudgetRaw` and `gasUsedRaw` must point to
+  `raw_quantity_amount` claims with `gas_budget` and `gas_used` roles, the Sui
+  gas coin type, and raw MIST units. An unresolved gas status must point to a
+  `gas_unresolved_status` claim. Gas object ownership must point to
+  `object_ownership` claims whose ownership status is `owned_by_account`.
+- `expiry`: review-time expiry status. `current` and `expired` require
+  `checkedAt`, `expiresAt`, and `evidenceClaimId`; `current` requires
+  `expiresAt` after `checkedAt`, and `expired` requires `expiresAt` at or before
+  `checkedAt`. The referenced `expiry_status` claim must match the payload and
+  must reference a `sourceOfTruth` record with `checkedAt` and `expiresAt`.
+  `not_provided` and `not_applicable` must omit `expiresAt`, include
+  `evidenceClaimId` and `reason`, and reference an `expiry_status` claim backed
+  by `checkedAt` and `expiryStatus`.
+- `slippageOrMinOut`: quote-linked max slippage and minimum-output policy when
+  quote evidence is used. `quoteEvidenceClaimId` must point to a `quote_min_out`
+  claim whose `quoteEvidenceId` and `minOutRaw` match the payload.
+  `policySource: "user_explicit"` requires a separate `policyEvidenceClaimId`
+  pointing to a `slippage_policy` claim backed by `user_explicit_choice` fields
+  including `maxSlippageBps` and `userSelection`.
+  `policySource: "adapter_policy_from_quote_evidence"` requires
+  `policyEvidenceClaimId` pointing to a `slippage_policy` claim backed by quote
+  evidence fields including `maxSlippageBps` and `minOutRaw`. If `minOutRaw` or
+  `maxSlippageBps` appears in the payload, it must have the matching typed claim;
+  stale or missing status does not make an unclaimed scalar safe to use.
+  `minOutRaw` must also match a `rawQuantities[]` entry with role
+  `minimum_output` so the raw integer has normalized coin type and verified
+  decimals.
+- `objectOwnership`: account-bound object ownership or shared-object facts. Each
+  object must point to an `object_ownership` claim whose object id, owner account,
+  and ownership status match the payload.
+- `simulation`: `client.core.simulateTransaction` with validation checks enabled
+  and the required fields `effects`, `balanceChanges`, `objectTypes`, and
+  `transaction`. The simulation payload must point to a `simulation_result`
+  claim whose provider, status, required fields, missing fields, and failure
+  reason match the payload.
+- `humanReadableReview`: the fields a human must see before wallet
+  authorization, matching the review-model concepts already exposed for
+  non-signable proposal review.
+- `outputBoundary`: the MCP and review UI exposure limit. Human-readable review,
+  PTB visualization artifacts, diagnostics, and status checks are allowed.
+  The required prohibited set is executable transaction material, serialized
+  transaction material, wallet signature requests, private-key material, wallet
+  authorization, signing data, signing readiness, and payment execution
+  readiness. Each contract must include the whole prohibited set.
+
+## Safety-Critical Fact Matrix
+
+`SAFETY_CRITICAL_FACT_MATRIX` in `src/core/action/signableAdapterContract.ts`
+is the contract's validation source of truth.
+
+It defines the required source kind and source fields for these fact kinds:
+
+- `raw_quantity_amount`, keyed by role: input, expected output, minimum output,
+  gas budget, gas used, fee, and balance delta;
+- `unit_metadata`, keyed by metadata source;
+- `gas_unresolved_status`;
+- `expiry_status`, keyed by status;
+- `quote_min_out`;
+- `slippage_policy`, keyed by policy source;
+- `object_ownership`;
+- `simulation_result`.
+
+Payload fields do not cite `sourceOfTruth` records directly as proof. They cite
+typed evidence claims, and those claims cite `sourceOfTruth` records. The schema
+rejects payload values that do not match their typed claims.
+
+## Consumer Invariant Matrix
+
+`CONSUMER_INVARIANT_MATRIX` in
+`src/core/action/signableAdapterContract.ts` defines extra requirements for
+payload fields that consume typed claims. It is separate from
+`SAFETY_CRITICAL_FACT_MATRIX`.
+
+`SAFETY_CRITICAL_FACT_MATRIX` answers whether a typed claim has the required
+source kind and source fields. `CONSUMER_INVARIANT_MATRIX` answers whether that
+claim is valid for a specific payload use.
+
+Current consumer invariants are:
+
+- `gas.gasBudgetClaimId` must reference a `raw_quantity_amount` claim with role
+  `gas_budget`, matching raw amount, and Sui gas coin type. The raw unit is MIST.
+- `gas.gasUsedClaimId` must reference a `raw_quantity_amount` claim with role
+  `gas_used`, matching raw amount, and Sui gas coin type. The raw unit is MIST.
+- `gas.gasObjects[].ownershipClaimId` must reference an `object_ownership` claim
+  with matching object id, matching owner account, and
+  `ownership: "owned_by_account"`.
+
+The current contract does not prove that a gas object is a `Coin<SUI>` object
+type because the object-ownership claim does not carry object type evidence.
+An adapter must not use object ownership alone as gas coin type evidence.
+
+## PTB Visualization Artifact
+
+The PTB visualization contract is for explaining a locally generated
+transaction shape before wallet authorization. It is not wallet handoff.
+
+The artifact may contain:
+
+- `generatedAt`;
+- `source`, including adapter id, plan id when available, source kind, renderer
+  name, package name, and version;
+- Mermaid `flowchart` text;
+- diagnostics from the adapter, renderer, schema, or simulation;
+- `unsupportedUse`, including transaction-building input, wallet authorization,
+  signing data, signing readiness, payment execution readiness, and route
+  recommendation;
+- `executableMaterial.included: false`.
+
+The artifact must not contain executable transaction material. Mermaid text and
+diagnostic messages are screened for executable-material terms and long encoded
+payloads.
+
+## PTB Renderer Status
+
+The pinned renderer dependency is `@zktx.io/ptb-model@0.5.0`. The review layer
+converts the stored local transaction material into a Mermaid `flowchart`
+artifact with `rawTransactionToIR` and `transactionIRToMermaid`, only after the
+stored bytes are recomputed to match the bound transaction material commitment;
+a mismatch declines the artifact. The artifact passes
+`ptbVisualizationArtifactSchema` screening before exposure and accompanies the
+emitted wallet review contract as `reviewState.ptbVisualization`. PTB
+visualization stays visualization-only evidence: it is not a runtime
+transaction builder, not wallet handoff, and not a signing-readiness surface.
+
+## Adapter Registration And Stage Vocabulary
+
+Review adapters register through `ReviewAdapterDescriptor` entries in
+`src/adapters/reviewAdapters.ts` (`buildSupportedReviewAdapterDescriptors`).
+A descriptor supplies the adapter id, protocol, action kind, stage catalog id,
+and the evidence computer; action-plan factories live in the adapter module
+and are wired by the MCP layer. The platform keeps the
+safety gates non-delegable: the typed evidence claim matrices, the commitment
+equality gate, the adapter lifecycle validator registry
+(`src/adapters/adapterLifecycleValidators.ts`), and the digest-gated byte
+handoff all run outside adapter code. `src/core` contains no adapter imports;
+a source-policy test enforces that boundary.
+
+Stage vocabulary is a cross-adapter contract. Every stage catalog that reports
+public review evidence must use these stage ids for these concepts, because the
+core review-state schema binds public fields to them:
+
+- `transaction_material_build_or_verify`: local unsigned material exists.
+- `digest_commitment`: the Sui transaction digest is bound to the material.
+- `object_ownership`: object ownership evidence is verified.
+- `human_readable_review`: required before `reviewState.humanReadableReview`.
+- `review_time_simulation`: required before `reviewState.simulation`.
+
+Adapter acceptance gate: a new protocol enters as read-only tools or
+non-signable proposal review first. A signable adapter is accepted only when it
+produces every required evidence stage from independently built or verified
+material, passes `walletReviewAdapterContractSchema` without placeholder
+values, and fails closed when any evidence is missing. Protocol names stay out
+of public docs, runtime guidance, and MCP resources until a concrete
+implementation or support decision exists.
+
+## Verification
+
+Tests must keep this contract in place before any adapter can use it:
+
+- schema tests for required provenance, source-of-truth, raw quantity, gas,
+  expiry, slippage or minimum output, object ownership, simulation, and
+  human-readable review fields;
+- tests that reject duplicate `sourceOfTruth[].id` and `evidenceClaims[].id`
+  values;
+- tests that reject every payload claim reference that does not resolve to a
+  typed `evidenceClaims[].id`;
+- tests that reject every `evidenceClaims[].sourceEvidenceId` that does not
+  resolve to a `sourceOfTruth[].id`;
+- tests that reject safety-critical claims whose source references resolve to the
+  wrong source kind or to records missing the required fields for that claim;
+- tests that reject payload values whose raw amounts, decimals, gas quantities,
+  expiry values, minimum output, slippage policy, object ownership, or simulation
+  status do not match their typed evidence claims;
+- tests that reject metadata-only records as raw amount evidence and reject
+  user-explicit slippage policy claims without explicit user-choice evidence;
+- tests that reject raw signable quantity assets without normalized Sui coin
+  types;
+- tests that reject min-out or slippage scalar fields when they do not have typed
+  evidence claims;
+- tests that reject `minOutRaw` when it does not match a `rawQuantities[]` entry
+  with role `minimum_output`;
+- tests that require `gasBudgetRaw` and `gasUsedRaw` to use
+  `raw_quantity_amount` claims with gas roles, the Sui gas coin type, and raw
+  MIST units, or require unresolved gas status to use a `gas_unresolved_status`
+  claim;
+- tests that reject gas object references backed by object-ownership claims whose
+  ownership status is not `owned_by_account`;
+- tests that require every mandatory prohibited output boundary and every
+  mandatory PTB unsupported-use boundary;
+- tests that reject `current` or `expired` expiry status without timestamp
+  evidence, source evidence, matching source fields, and the required
+  `checkedAt`/`expiresAt` time relationship;
+- tests that reject `not_provided` or `not_applicable` expiry status when it
+  includes an `expiresAt` timestamp or omits the reason and source evidence for
+  why timestamp evidence is unavailable;
+- tests that require failed or unavailable simulation evidence to include a
+  concrete `failureReason`;
+- tests that reject display amounts, exponent notation, or floating-point values
+  as raw quantities;
+- tests that reject PTB visualization artifacts containing executable-material
+  terms or long encoded payloads;
+- MCP/review output tests using the shared forbidden-field-name policy;
+- documentation tests that keep PTB visualization described as visualization
+  only, not transaction material, signing readiness, or payment execution
+  readiness.

@@ -1,0 +1,608 @@
+import { mainnetCoins } from "@mysten/deepbook-v3";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { randomInt } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { validateSupportedAdapterLifecycle } from "../adapters/adapterLifecycleValidators.js";
+import { SqliteActivityStore } from "../core/activity/sqliteActivityStore.js";
+import { TransactionActivityService } from "../core/activity/transactionActivityService.js";
+import { createSuiReadService } from "../core/read/readService.js";
+import { InMemorySessionStore } from "../core/session/sessionStore.js";
+import { createMcpServer } from "../mcp/server.js";
+import { TOOL_NAMES } from "../mcp/toolNames.js";
+import { createReviewHttpServer } from "../review-server/server.js";
+import { InMemoryLocalTransactionMaterialStore } from "../core/session/transactionMaterialStore.js";
+import { buildSupportedReviewAdapters } from "../adapters/reviewAdapters.js";
+import {
+  createDeepbookSwapTransactionMaterialDigestProducer,
+  createDeepbookSwapTransactionMaterialProducer
+} from "../adapters/deepbook/deepbookTransactionMaterialProducer.js";
+import { createDeepbookSwapHumanReadableReviewProducer } from "../adapters/deepbook/deepbookHumanReviewProducer.js";
+import { createTransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
+import { createReviewTimeSimulationProducer } from "../core/action/reviewTimeSimulationEvidence.js";
+import { producePtbVisualizationArtifact } from "../core/action/ptbVisualizationProducer.js";
+import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL, composeRuntimeConfig, loadBootConfig } from "./config.js";
+import { RuntimeLocalSettingsService } from "./localSettingsService.js";
+import { createStderrLogger } from "./logger.js";
+import {
+  SmokeResponseShapeError,
+  type ActivitySmokeRecord,
+  assertSmokeOkStatus,
+  summarizeActivitySmokePayload
+} from "./smokeMainnetReadAssertions.js";
+import { SuiEndpointError, verifyMainnetGraphqlEndpoint, verifyMainnetGrpcEndpoint } from "./suiEndpoint.js";
+import { GraphqlSuiTransactionActivitySource } from "./suiTransactionGraphqlSource.js";
+
+const startedAt = new Date();
+const smokeFunctionTarget = process.env.SMOKE_FUNCTION_TARGET;
+const plannedTools = [
+  TOOL_NAMES.sessionCreateWalletIdentity,
+  TOOL_NAMES.readSummarizeWalletAssets,
+  TOOL_NAMES.readInspectDeepbookOrderbook,
+  TOOL_NAMES.readQuoteDeepbookAction,
+  TOOL_NAMES.readScanSuiAccountActivity,
+  TOOL_NAMES.readSummarizeSuiActivityScan,
+  ...(smokeFunctionTarget
+    ? [
+        TOOL_NAMES.readScanSuiFunctionActivity,
+        TOOL_NAMES.readSummarizeSuiFunctionActivityScan
+      ]
+    : [])
+] as const;
+const attemptedTools: string[] = [];
+const completedTools: string[] = [];
+const activitySmoke: Partial<Record<"scan" | "summary", ActivitySmokeRecord>> = {};
+const functionActivitySmoke: Partial<Record<"scan" | "summary", ActivitySmokeRecord>> & {
+  status?: "not_run";
+  tools?: string[] | undefined;
+  notRunReason?: "missing_env" | undefined;
+} = smokeFunctionTarget
+  ? {
+      tools: [
+        TOOL_NAMES.readScanSuiFunctionActivity,
+        TOOL_NAMES.readSummarizeSuiFunctionActivityScan
+      ]
+    }
+  : {
+      status: "not_run",
+      tools: [
+        TOOL_NAMES.readScanSuiFunctionActivity,
+        TOOL_NAMES.readSummarizeSuiFunctionActivityScan
+      ],
+      notRunReason: "missing_env"
+    };
+const ACTIVITY_SMOKE_LIMIT = 5;
+type SmokeErrorCategory = "missing_env" | "config_error" | "tool_failure" | "runtime_error";
+
+class SmokeMainnetError extends Error {
+  constructor(readonly category: SmokeErrorCategory, message: string) {
+    super(message);
+  }
+}
+
+async function main(): Promise<void> {
+  const logger = createStderrLogger("smoke-mainnet");
+  const bootConfig = loadSmokeBootConfig();
+  const smokeAddress = requiredEnv("SMOKE_SUI_ADDRESS");
+  const poolKey = requiredEnv("SMOKE_DEEPBOOK_POOL_KEY");
+  const quoteAmount = requiredEnv("SMOKE_QUOTE_AMOUNT");
+  const inspectDigest = process.env.SMOKE_INSPECT_DIGEST;
+  const inspectRandomLatest = truthyEnv("SMOKE_INSPECT_RANDOM_LATEST");
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "say-ur-intent-smoke", version: "0.0.0" });
+  let smokeDbDir: string | undefined;
+  let activityStore: SqliteActivityStore | undefined;
+  let server: ReturnType<typeof createMcpServer> | undefined;
+  let reviewServer: Awaited<ReturnType<ReturnType<typeof createReviewHttpServer>["start"]>> | undefined;
+
+  try {
+    smokeDbDir = mkdtempSync(join(tmpdir(), "say-ur-intent-smoke-db-"));
+    activityStore = new SqliteActivityStore({
+      databasePath: join(smokeDbDir, "say-ur-intent.sqlite"),
+      validateAdapterLifecycle: validateSupportedAdapterLifecycle
+    });
+    const preferencesRepository = activityStore.createPreferencesRepository();
+    await preferencesRepository.ensureDefaultLocalSettings({
+      suiGrpcUrl: DEFAULT_SUI_GRPC_URL,
+      suiGraphqlUrl: DEFAULT_SUI_GRAPHQL_URL
+    });
+    const storedSuiGrpcUrl = await preferencesRepository.getSuiGrpcUrl();
+    const storedSuiGraphqlUrl = await preferencesRepository.getSuiGraphqlUrl();
+    const config = composeRuntimeConfig({
+      bootConfig,
+      env: process.env,
+      storedSuiGrpcUrl: storedSuiGrpcUrl?.value,
+      storedSuiGraphqlUrl: storedSuiGraphqlUrl?.value,
+      defaultSuiGrpcUrl: DEFAULT_SUI_GRPC_URL,
+      defaultSuiGraphqlUrl: DEFAULT_SUI_GRAPHQL_URL
+    });
+    const { client: suiClient, chainIdentifier } = await verifyMainnetGrpcEndpoint({
+      url: config.grpcUrl,
+      expectedChainIdentifier: config.expectedChainIdentifier
+    });
+    const localSettings = new RuntimeLocalSettingsService({
+      preferencesRepository,
+      env: process.env,
+      defaultSuiGrpcUrl: DEFAULT_SUI_GRPC_URL,
+      defaultSuiGraphqlUrl: DEFAULT_SUI_GRAPHQL_URL,
+      bootSuiGrpcUrl: config.suiGrpcUrl,
+      bootSuiGraphqlUrl: config.suiGraphqlUrl
+    });
+    const readService = createSuiReadService({
+      client: suiClient,
+      network: config.network,
+      chainIdentifier,
+      coinMetadataCache: activityStore.createCoinMetadataCache()
+    });
+    const transactionMaterialStore = new InMemoryLocalTransactionMaterialStore();
+    const sessions = new InMemorySessionStore({
+      activityStore,
+      logger,
+      validateAdapterLifecycle: validateSupportedAdapterLifecycle
+    });
+    reviewServer = await createReviewHttpServer({
+      host: config.reviewHost,
+      store: sessions,
+      logger,
+      reviewComputationDeps: {
+        validateAdapterLifecycle: validateSupportedAdapterLifecycle,
+        adapters: buildSupportedReviewAdapters({
+          deepbookQuoteSource: readService,
+          deepbookDeepBalanceSource: async (account) => {
+            const balance = await suiClient.core.getBalance({
+              owner: account,
+              coinType: mainnetCoins.DEEP!.type
+            });
+            return balance.balance.balance.toString();
+          },
+          deepbookTransactionMaterialProducer: createDeepbookSwapTransactionMaterialProducer({
+            client: suiClient,
+            network: config.network,
+            chainIdentifier,
+            expectedChainIdentifier: config.expectedChainIdentifier,
+            materialStore: transactionMaterialStore
+          }),
+          deepbookTransactionMaterialDigestProducer: createDeepbookSwapTransactionMaterialDigestProducer({
+            materialStore: transactionMaterialStore
+          }),
+          transactionObjectOwnershipProducer: createTransactionObjectOwnershipProducer({
+            materialStore: transactionMaterialStore,
+            objectSource: suiClient,
+            network: config.network,
+            chainIdentifier,
+            expectedChainIdentifier: config.expectedChainIdentifier
+          }),
+          deepbookHumanReadableReviewProducer: createDeepbookSwapHumanReadableReviewProducer(),
+          reviewTimeSimulationProducer: createReviewTimeSimulationProducer({
+            client: suiClient,
+            materialStore: transactionMaterialStore,
+            network: config.network,
+            chainIdentifier,
+            expectedChainIdentifier: config.expectedChainIdentifier
+          }),
+          ptbVisualizationProducer: (vizInput) =>
+            producePtbVisualizationArtifact({ materialStore: transactionMaterialStore, ...vizInput })
+        })
+      }
+    }).start(0);
+    const reviewBaseUrl = `http://${reviewServer.host}:${reviewServer.port}`;
+    server = createMcpServer({
+      sessions,
+      activityStore,
+      reviewBaseUrl,
+      localSettings,
+      readService,
+      transactionActivityService: new TransactionActivityService({
+        activityStore,
+        source: new GraphqlSuiTransactionActivitySource({
+          url: config.graphqlUrl,
+          expectedChainIdentifier: config.expectedChainIdentifier
+        })
+      }),
+      logger
+    });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const walletIdentity = await callSmokeTool(client, TOOL_NAMES.sessionCreateWalletIdentity, {});
+    const walletData = walletIdentity.data as { walletSessionId?: string; walletUrl?: string } | undefined;
+    const walletSessionId = walletData?.walletSessionId ?? fail("tool_failure", "Wallet identity session id missing");
+    const walletUrl = walletData?.walletUrl ?? fail("tool_failure", "Wallet identity URL missing");
+    const walletToken = new URL(walletUrl).hash.slice(1);
+    if (!walletToken) {
+      fail("tool_failure", "Wallet identity token missing from wallet URL fragment");
+    }
+    markCompleted(TOOL_NAMES.sessionCreateWalletIdentity);
+    await postWalletLifecycle(reviewBaseUrl, walletSessionId, walletToken, "opened", {});
+    await postWalletLifecycle(reviewBaseUrl, walletSessionId, walletToken, "connecting", {});
+    await postWalletLifecycle(reviewBaseUrl, walletSessionId, walletToken, "result", {
+      status: "connected",
+      account: smokeAddress,
+      chain: "sui:mainnet",
+      walletName: "smoke"
+    });
+
+    const swapFromSymbol = process.env.SMOKE_SWAP_FROM_SYMBOL;
+    const swapToSymbol = process.env.SMOKE_SWAP_TO_SYMBOL;
+    const swapAmountDisplay = process.env.SMOKE_SWAP_AMOUNT_DISPLAY;
+    let accountBoundSwapReview: Record<string, unknown> = {
+      status: "not_run",
+      notRunReason: "missing_env",
+      requiredEnv: ["SMOKE_SWAP_FROM_SYMBOL", "SMOKE_SWAP_TO_SYMBOL", "SMOKE_SWAP_AMOUNT_DISPLAY"]
+    };
+    const swapEnvEntries: Array<[string, string | undefined]> = [
+      ["SMOKE_SWAP_FROM_SYMBOL", swapFromSymbol],
+      ["SMOKE_SWAP_TO_SYMBOL", swapToSymbol],
+      ["SMOKE_SWAP_AMOUNT_DISPLAY", swapAmountDisplay]
+    ];
+    const missingSwapEnv = swapEnvEntries.filter(([, value]) => value === undefined).map(([name]) => name);
+    if (missingSwapEnv.length > 0 && missingSwapEnv.length < swapEnvEntries.length) {
+      // A partial swap configuration is a misconfiguration, not an intentional skip.
+      fail(
+        "config_error",
+        `Partial account-bound swap smoke configuration; missing: ${missingSwapEnv.join(", ")}`
+      );
+    }
+    const rawSlippageEnv = process.env.SMOKE_SWAP_MAX_SLIPPAGE_BPS;
+    const maxSlippageBps = Number(rawSlippageEnv ?? "50");
+    if (rawSlippageEnv !== undefined && (!Number.isInteger(maxSlippageBps) || maxSlippageBps < 1)) {
+      fail("config_error", `SMOKE_SWAP_MAX_SLIPPAGE_BPS must be a positive integer, got: ${rawSlippageEnv}`);
+    }
+    if (swapFromSymbol !== undefined && swapToSymbol !== undefined && swapAmountDisplay !== undefined) {
+      const prepared = await callSmokeTool(client, TOOL_NAMES.actionPrepareSuiActionReview, {
+        intent: {
+          type: "swap",
+          from: { symbol: swapFromSymbol, amount: swapAmountDisplay },
+          to: { symbol: swapToSymbol },
+          maxSlippageBps
+        }
+      });
+      const preparedData = prepared.data as
+        | { reviewSessionId?: string; reviewUrl?: string; plans?: Array<{ id?: string }> }
+        | undefined;
+      const reviewSessionId = preparedData?.reviewSessionId ?? fail("tool_failure", "Swap review session id missing");
+      const reviewUrl = preparedData?.reviewUrl ?? fail("tool_failure", "Swap review URL missing");
+      const reviewToken = new URL(reviewUrl).hash.slice(1);
+      const planId = preparedData?.plans?.[0]?.id ?? fail("tool_failure", "Swap review plan id missing");
+      const stateResponse = await fetch(`${reviewBaseUrl}/api/review/${reviewSessionId}/state`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-say-ur-intent-token": reviewToken,
+          origin: reviewBaseUrl
+        },
+        body: JSON.stringify({ planId, account: smokeAddress })
+      });
+      if (!stateResponse.ok) {
+        fail("tool_failure", `Account-bound swap review state failed: ${stateResponse.status} ${await stateResponse.text()}`);
+      }
+      const stateEnvelope = (await stateResponse.json()) as Record<string, unknown>;
+      const state = (stateEnvelope.state ?? stateEnvelope) as {
+        status?: string;
+        blockedReason?: string;
+        adapterLifecycle?: { completedStages?: string[]; missingStages?: string[] };
+        walletReviewAdapterContract?: unknown;
+        checks?: Array<{ id?: string; status?: string }>;
+      };
+      if (state.status === undefined) {
+        fail("tool_failure", "Account-bound swap review state shape missing status");
+      }
+      accountBoundSwapReview = {
+        status: "ok",
+        reviewStatus: state.status,
+        blockedReason: state.blockedReason,
+        completedStageCount: state.adapterLifecycle?.completedStages?.length ?? 0,
+        missingStages: state.adapterLifecycle?.missingStages ?? [],
+        contractEmitted: state.walletReviewAdapterContract !== undefined,
+        failedCheckIds: (state.checks ?? []).filter((check) => check.status === "fail").map((check) => check.id)
+      };
+      markCompleted("account_bound_swap_review");
+    }
+
+    const wallet = await callSmokeTool(client, TOOL_NAMES.readSummarizeWalletAssets, {});
+    const orderbook = await callSmokeTool(client, TOOL_NAMES.readInspectDeepbookOrderbook, {
+      poolKey,
+      ticks: 5
+    });
+    const quote = await callSmokeTool(client, TOOL_NAMES.readQuoteDeepbookAction, {
+      poolKey,
+      direction: "base_to_quote",
+      amountRaw: quoteAmount
+    });
+    const activityScan = await callSmokeTool(client, TOOL_NAMES.readScanSuiAccountActivity, {
+      account: smokeAddress,
+      limit: ACTIVITY_SMOKE_LIMIT
+    });
+    const activitySummary = await callSmokeTool(client, TOOL_NAMES.readSummarizeSuiActivityScan, {
+      limit: ACTIVITY_SMOKE_LIMIT
+    });
+
+    assertSmokeOkStatus(wallet, TOOL_NAMES.readSummarizeWalletAssets);
+    markCompleted(TOOL_NAMES.readSummarizeWalletAssets);
+    assertSmokeOkStatus(orderbook, TOOL_NAMES.readInspectDeepbookOrderbook);
+    markCompleted(TOOL_NAMES.readInspectDeepbookOrderbook);
+    assertSmokeOkStatus(quote, TOOL_NAMES.readQuoteDeepbookAction);
+    markCompleted(TOOL_NAMES.readQuoteDeepbookAction);
+    activitySmoke.scan = summarizeActivitySmokePayload(activityScan, TOOL_NAMES.readScanSuiAccountActivity, {
+      expectedAccountSource: "explicit_filter",
+      requireAnalysis: false,
+      expectNoDetails: true
+    });
+    markCompleted(TOOL_NAMES.readScanSuiAccountActivity);
+    activitySmoke.summary = summarizeActivitySmokePayload(activitySummary, TOOL_NAMES.readSummarizeSuiActivityScan, {
+      expectedAccountSource: "active_account_context",
+      requireAnalysis: true,
+      expectNoDetails: true
+    });
+    markCompleted(TOOL_NAMES.readSummarizeSuiActivityScan);
+
+    if (smokeFunctionTarget) {
+      const functionActivityScan = await callSmokeTool(client, TOOL_NAMES.readScanSuiFunctionActivity, {
+        function: smokeFunctionTarget,
+        account: smokeAddress,
+        limit: ACTIVITY_SMOKE_LIMIT
+      });
+      const functionActivitySummary = await callSmokeTool(client, TOOL_NAMES.readSummarizeSuiFunctionActivityScan, {
+        function: smokeFunctionTarget,
+        limit: ACTIVITY_SMOKE_LIMIT
+      });
+      functionActivitySmoke.scan = summarizeActivitySmokePayload(
+        functionActivityScan,
+        TOOL_NAMES.readScanSuiFunctionActivity,
+        {
+          expectedAccountSource: "explicit_filter",
+          expectedRelationship: "sent",
+          requireFunction: true,
+          requireAnalysis: false,
+          expectNoDetails: true
+        }
+      );
+      markCompleted(TOOL_NAMES.readScanSuiFunctionActivity);
+      functionActivitySmoke.summary = summarizeActivitySmokePayload(
+        functionActivitySummary,
+        TOOL_NAMES.readSummarizeSuiFunctionActivityScan,
+        {
+          expectedAccountSource: "active_account_context",
+          expectedRelationship: "sent",
+          requireFunction: true,
+          requireAnalysis: true,
+          expectNoDetails: true
+        }
+      );
+      markCompleted(TOOL_NAMES.readSummarizeSuiFunctionActivityScan);
+    }
+
+    if (inspectDigest) {
+      const inspected = await callSmokeTool(client, TOOL_NAMES.readInspectSuiTransaction, {
+        digest: inspectDigest,
+        account: smokeAddress
+      });
+      assertSmokeOkStatus(inspected, TOOL_NAMES.readInspectSuiTransaction);
+      markCompleted(TOOL_NAMES.readInspectSuiTransaction);
+    } else if (inspectRandomLatest) {
+      const randomLatestDigest = await pickRandomLatestTransactionDigest({
+        url: config.graphqlUrl,
+        expectedChainIdentifier: config.expectedChainIdentifier
+      });
+      const inspected = await callSmokeTool(client, TOOL_NAMES.readInspectSuiTransaction, {
+        digest: randomLatestDigest
+      });
+      assertSmokeOkStatus(inspected, TOOL_NAMES.readInspectSuiTransaction);
+      markCompleted(TOOL_NAMES.readInspectSuiTransaction);
+    }
+
+    tryWriteSmokeResult({
+      accountBoundSwapReview,
+      ok: true,
+      startedAt: startedAt.toISOString(),
+      completedAt: new Date().toISOString(),
+      chainIdentifier,
+      env: smokeEnvPresence(),
+      plannedTools: [...plannedTools],
+      attemptedTools,
+      tools: completedTools,
+      activitySmoke,
+      functionActivitySmoke
+    });
+
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          ok: true,
+          plannedTools: [...plannedTools],
+          attemptedTools,
+          tools: completedTools,
+          activitySmoke,
+          functionActivitySmoke
+        },
+        null,
+        2
+      )}\n`
+    );
+  } finally {
+    activityStore?.close();
+    if (smokeDbDir) {
+      rmSync(smokeDbDir, { recursive: true, force: true });
+    }
+    await Promise.allSettled([
+      ...(server ? [server.close()] : []),
+      client.close(),
+      ...(reviewServer ? [reviewServer.close()] : [])
+    ]);
+  }
+}
+
+async function callSmokeTool(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  attemptedTools.push(name);
+  return callTool(client, name, args);
+}
+
+async function callTool(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const result = await client.callTool({ name, arguments: args });
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const text = content[0]?.type === "text" ? content[0].text : undefined;
+  if (!text) {
+    fail("tool_failure", `Tool ${name} did not return text JSON content`);
+  }
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch (error) {
+    throw new SmokeResponseShapeError(
+      `Tool ${name} did not return valid text JSON content: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+function markCompleted(name: string): void {
+  if (!completedTools.includes(name)) {
+    completedTools.push(name);
+  }
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    fail("missing_env", `${name} is required for npm run smoke:mainnet`);
+  }
+  return value;
+}
+
+function truthyEnv(name: string): boolean {
+  const value = process.env[name];
+  return value === "1" || value === "true" || value === "TRUE" || value === "yes" || value === "YES";
+}
+
+async function pickRandomLatestTransactionDigest(input: {
+  url: string;
+  expectedChainIdentifier: string;
+}): Promise<string> {
+  const { client } = await verifyMainnetGraphqlEndpoint({
+    url: input.url,
+    expectedChainIdentifier: input.expectedChainIdentifier
+  });
+  const result = await client.query<{
+    transactions?: {
+      nodes?: Array<{ digest?: unknown }> | null;
+    } | null;
+  }>({
+    query: `
+      query SayUrIntentSmokeLatestTransactionSample($last: Int!) {
+        transactions(last: $last) {
+          nodes { digest }
+        }
+      }
+    `,
+    variables: { last: 20 }
+  });
+  if (result.errors && result.errors.length > 0) {
+    fail("tool_failure", `Latest transaction sample query failed: ${result.errors.map((error) => error.message).join("; ")}`);
+  }
+  const digests = result.data?.transactions?.nodes
+    ?.flatMap((node) => typeof node.digest === "string" && node.digest.length > 0 ? [node.digest] : []) ?? [];
+  if (digests.length === 0) {
+    fail("tool_failure", "Latest transaction sample query returned no transaction digests");
+  }
+  return digests[randomInt(digests.length)] ?? fail("tool_failure", "Latest transaction sample selection failed");
+}
+
+function loadSmokeBootConfig(): ReturnType<typeof loadBootConfig> {
+  try {
+    return loadBootConfig();
+  } catch (error) {
+    throw new SmokeMainnetError("config_error", error instanceof Error ? error.message : String(error));
+  }
+}
+
+function fail(category: SmokeErrorCategory, message: string): never {
+  throw new SmokeMainnetError(category, message);
+}
+
+function smokeEnvPresence(): Record<string, boolean> {
+  return {
+    SUI_GRPC_URL: process.env.SUI_GRPC_URL !== undefined,
+    SUI_GRAPHQL_URL: process.env.SUI_GRAPHQL_URL !== undefined,
+    SMOKE_SUI_ADDRESS: process.env.SMOKE_SUI_ADDRESS !== undefined,
+    SMOKE_DEEPBOOK_POOL_KEY: process.env.SMOKE_DEEPBOOK_POOL_KEY !== undefined,
+    SMOKE_QUOTE_AMOUNT: process.env.SMOKE_QUOTE_AMOUNT !== undefined,
+    SMOKE_INSPECT_DIGEST: process.env.SMOKE_INSPECT_DIGEST !== undefined,
+    SMOKE_INSPECT_RANDOM_LATEST: process.env.SMOKE_INSPECT_RANDOM_LATEST !== undefined,
+    SMOKE_FUNCTION_TARGET: process.env.SMOKE_FUNCTION_TARGET !== undefined,
+    SMOKE_SWAP_FROM_SYMBOL: process.env.SMOKE_SWAP_FROM_SYMBOL !== undefined,
+    SMOKE_SWAP_TO_SYMBOL: process.env.SMOKE_SWAP_TO_SYMBOL !== undefined,
+    SMOKE_SWAP_AMOUNT_DISPLAY: process.env.SMOKE_SWAP_AMOUNT_DISPLAY !== undefined
+  };
+}
+
+async function postWalletLifecycle(
+  baseUrl: string,
+  walletSessionId: string,
+  token: string,
+  event: "opened" | "connecting" | "result",
+  body: Record<string, unknown>
+): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/wallet/${walletSessionId}/${event}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-say-ur-intent-token": token,
+      origin: baseUrl
+    },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    fail("tool_failure", `Wallet identity smoke ${event} failed: ${response.status}`);
+  }
+}
+
+function tryWriteSmokeResult(record: Record<string, unknown>): void {
+  try {
+    writeSmokeResult(record);
+  } catch (error) {
+    process.stderr.write(
+      `smoke:mainnet result recording failed: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+  }
+}
+
+function writeSmokeResult(record: Record<string, unknown>): void {
+  const directory = join(process.cwd(), ".WORK", "smoke-results");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, `${record.completedAt ?? new Date().toISOString()}.json`.replace(/:/g, "-")),
+    `${JSON.stringify(record, null, 2)}\n`
+  );
+}
+
+function smokeErrorCategory(error: unknown): string {
+  if (error instanceof SuiEndpointError) {
+    return error.kind;
+  }
+  if (error instanceof SmokeResponseShapeError) {
+    return "tool_failure";
+  }
+  if (error instanceof SmokeMainnetError) {
+    return error.category;
+  }
+  return "runtime_error";
+}
+
+main().catch((error: unknown) => {
+  tryWriteSmokeResult({
+    ok: false,
+    startedAt: startedAt.toISOString(),
+    completedAt: new Date().toISOString(),
+    env: smokeEnvPresence(),
+    attemptedTools,
+    tools: completedTools,
+    plannedTools: [...plannedTools],
+    activitySmoke,
+    functionActivitySmoke,
+    errorCategory: smokeErrorCategory(error)
+  });
+  process.stderr.write(
+    `smoke:mainnet failed: ${error instanceof Error ? error.message : String(error)}\n`
+  );
+  process.exit(1);
+});

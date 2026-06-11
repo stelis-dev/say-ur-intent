@@ -1,0 +1,415 @@
+body {
+  margin: 0;
+  color: #15201b;
+  background: #f7f8f6;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.review-shell {
+  max-width: 920px;
+  margin: 40px auto;
+  padding: 0 20px 48px;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+
+h2 {
+  font-size: 18px;
+  line-height: 1.3;
+  margin-bottom: 14px;
+}
+
+h3,
+h4 {
+  font-size: 15px;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+p,
+li,
+.row {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+button {
+  min-height: 40px;
+  border: 1px solid #c9d3cc;
+  border-radius: 8px;
+  background: #fff;
+  color: #15201b;
+  font: inherit;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: #42765b;
+  background: #244f3a;
+  color: #fff;
+}
+
+button:hover:not(:disabled) {
+  border-color: #6f8f7d;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  color: #7b857f;
+  background: #edf0ec;
+}
+
+.review-copy,
+.status,
+.boundary-note {
+  color: #47524c;
+}
+
+.error {
+  color: #8a2f1f;
+}
+
+.card {
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+  margin-top: 16px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.34fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid #edf0ec;
+}
+
+.row:first-of-type {
+  border-top: 0;
+}
+
+.row-label {
+  color: #58625c;
+}
+
+.row-value {
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.amount-list,
+.checks,
+.proposal-review,
+.fact-list,
+.simulation-summary {
+  margin-top: 16px;
+}
+
+ul {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.check {
+  margin-bottom: 12px;
+}
+
+.check small {
+  display: block;
+  color: #66716b;
+  overflow-wrap: anywhere;
+}
+
+.check.pass strong {
+  color: #11673e;
+}
+
+.check.warning strong {
+  color: #7b5800;
+}
+
+.check.fail strong {
+  color: #8a2f1f;
+}
+
+@media (max-width: 640px) {
+  .review-shell {
+    margin-top: 24px;
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+}
+
+.ptb-visualization-graph svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.ptb-visualization-graph.error {
+  color: #b00020;
+}
+
+.ptb-visualization-source {
+  margin-top: 0.5rem;
+}
+
+.review-app .row span,
+.review-app li,
+.review-app p {
+  overflow-wrap: anywhere;
+}
+
+.ptb-visualization-graph {
+  overflow-x: auto;
+}
+
+.collapsible-records {
+  margin: 0.4rem 0;
+}
+
+.collapsible-records summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.collapsible-records ul {
+  margin: 0.3rem 0 0.3rem 1rem;
+}
+
+.collapsible-records-raw {
+  max-height: 16rem;
+  overflow: auto;
+  font-size: 0.75rem;
+}
+
+.collapsible-records ul {
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 0.5rem 0.5rem 0.5rem 1.5rem;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.ptb-visualization-text {
+  max-height: 16rem;
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.02);
+  font-size: 0.75rem;
+}
+
+/* Mermaid's injected <style> does not apply in this page context, leaving SVG
+   defaults (black fills). Paint the PTB flowchart from this always-applied
+   external stylesheet instead. */
+.ptb-visualization-graph svg .node rect,
+.ptb-visualization-graph svg .node polygon,
+.ptb-visualization-graph svg .node circle {
+  fill: #eef2ff;
+  stroke: #475569;
+  stroke-width: 1px;
+}
+
+.ptb-visualization-graph svg .edgePaths path,
+.ptb-visualization-graph svg path.flowchart-link {
+  fill: none !important;
+  stroke: #475569;
+  stroke-width: 1.5px;
+}
+
+.ptb-visualization-graph svg marker path {
+  fill: #475569 !important;
+  stroke: none;
+}
+
+.ptb-visualization-graph svg .nodeLabel,
+.ptb-visualization-graph svg .edgeLabel,
+.ptb-visualization-graph svg text {
+  color: #111827;
+  fill: #111827;
+  font-size: 12px;
+}
+
+.ptb-visualization-graph svg .edgeLabel rect {
+  fill: #ffffff;
+}
+
+/* Consistent typography inside every collapsible/boxed evidence view. */
+.collapsible-records ul,
+.collapsible-records-raw,
+.ptb-visualization-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: #1f2937;
+}
+
+.collapsible-records summary,
+.ptb-visualization-source summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.collapsible-records details summary {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.sign-banner {
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+  font-weight: 600;
+}
+
+.sign-banner.error {
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.execution-success {
+  border-left: 4px solid #059669;
+}
+
+.execution-failure {
+  border-left: 4px solid #dc2626;
+}
+
+.execution-pending {
+  border-left: 4px solid #d97706;
+}
+
+.execution-headline {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+  font-weight: 600;
+}
+
+.wizard-step {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  color: #6b7280;
+  background: #f9fafb;
+}
+
+.wizard-step.current {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.wizard-step.done {
+  border-color: #059669;
+  color: #047857;
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.wizard-sep {
+  color: #9ca3af;
+}
+
+.final-evidence > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin: 0.5rem 0;
+}
+
+.stage-headline {
+  margin: 0.2rem 0 0.8rem;
+  font-size: 1.15rem;
+}
+
+.quote-countdown {
+  font-weight: 600;
+  color: #b45309;
+}
+
+
+.key-findings-line {
+  font-weight: 600;
+  color: #065f46;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  margin-bottom: 0.4rem;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+.page-subtitle {
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+.raw-evidence-body {
+  max-height: 26rem;
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 0.6rem;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.card-header h2 {
+  margin: 0;
+}
+
+.copy-audit {
+  white-space: nowrap;
+}
+
+.raw-evidence-card > details > summary {
+  color: #4b5563;
+  font-size: 0.9rem;
+}

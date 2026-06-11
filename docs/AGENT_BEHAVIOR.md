@@ -1,0 +1,462 @@
+# Agent Behavior Reference
+
+This document is the MCP-exposed answer playbook for AI clients. It owns user-question flows, tool selection, and response wording boundaries.
+
+It does not define tool schemas or field contracts. Use `docs/MCP_TOOLS.md` for the MCP API reference, response fields, statuses, and follow-up fields.
+
+It is not the contributor rulebook and it is not enforcement. Development rules live in `AGENTS.md` and `docs/AGENT_DEVELOPMENT_POLICY.md`. Hard product boundaries live in code, schemas, allowlists, mainnet guards, and the local review layer.
+
+## Support Matrix
+
+| Surface | Status | Behavior |
+| --- | --- | --- |
+| Sui mainnet state reads | Current | Use read tools for supported balances, DeepBook pools, token registry metadata, mid-price snapshots, orderbook context, raw-quantity quotes, and DeepBook account inventory. |
+| DeepBook review sessions | Digest-gated handoff; signing sequenced later | A review URL can be created. The review URL displays the proposal and local review evidence. The account-bound review can build local unsigned DeepBook swap transaction material inside the review server, internally bind a Sui transaction digest to that stored material, and derive object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts. This release does not provide a sign action, signing data, MCP-visible transaction bytes, or signing readiness. The local review page can request a digest-gated byte handoff for a `ready_for_wallet_review` state; wallet signature requests and execution are deliberately sequenced later. |
+| External proposal review sessions | Non-signable review in the current release | `action.prepare_external_proposal_review` can create a review URL from a structured external payment or Sui action proposal. Treat the proposal as untrusted display and review context only. It does not build, verify, simulate, sign, or execute transaction material. |
+| Wallet signing | User-controlled on the local review page | MCP tools do not return signing readiness, signing data, or executable transaction bytes. Signing and execution happen only in the user's wallet from the local review page after the digest-gated handoff; results are recorded as execution receipts keyed by the review session. |
+| PTB visualization | Rendered with emitted wallet review contracts | `reviewState.ptbVisualization` can accompany an emitted wallet review contract as a Mermaid flowchart of the stored local transaction shape. Treat it as visualization evidence only, not transaction-building input, wallet authorization, signing data, signing readiness, payment execution readiness, or route recommendation. |
+| Transaction material build, wallet execution, fiat cash-out, and P&L | Partly implemented for DeepBook review; execution unsupported | Account-bound DeepBook swap review can build local unsigned transaction material that remains internal to the review server, internally bind a Sui transaction digest to that stored material, project human-readable review facts from material-bound quote policy and object ownership evidence, and summarize review-time simulation of the stored material. Wallet signature requests and execution remain unavailable; the byte handoff is gated on recomputed-digest equality with the reviewed contract. Fiat cash-out, P&L, tax, and cost-basis support are not part of the current release. |
+| Private-key custody, autonomous trading, fiat USD peg claims, and quote-only coverage or readiness claims | Unsupported safety and correctness boundary | Do not custody funds, hold private keys, or autonomously trade. Do not treat settlement assets as fiat USD, bank cash-out amounts, or peg guarantees. Do not turn quote-only conversion candidates into payment coverage, funding readiness, payment execution readiness, or signing readiness. |
+| Silent settlement-token selection and route ranking | Out of scope by current design | Do not silently choose USDC, USDT, or another settlement token for the user. Do not rank venues, choose routes, or make best-price recommendations. |
+| Other chains, autonomous trading, alerts, arbitrary Move calls, investment advice | Unsupported | Say the request is unsupported and redirect to available Sui mainnet read or review capabilities. |
+| Payment execution | Not yet available in the current release (sequenced later) | Intent evidence is separate from execution and does not build or execute payments. Do not describe payment execution as available until a reviewed implementation and response-local guidance exist. |
+| Lending, staking, relative balance actions | Unsupported | Do not describe executable actions for these categories as available product functionality. |
+
+## Meta Principles
+
+- AI self-reports do not appear in user-facing checkout output.
+- User-facing checkout output should contain server-validated structured facts.
+- Ambiguous natural language is narrowed through structured evidence first, then clarification only where a user decision is required.
+- Important UX rules should move into schemas, UI, and tests when the implementation boundary exists.
+
+## Question First
+
+Answer the user's question before moving toward an action.
+
+When a tool response includes `userAnswerUse`, treat it as the response-local answer guide:
+
+- check `userAnswerUse.preconditionFields` before using answer fields;
+- use `userAnswerUse.answerFields` for the user-facing answer;
+- apply `userAnswerUse.conclusionRuleFields` as limits on the final conclusion;
+- use `userAnswerUse.diagnosticOnlyFields` only for source, limitation, pagination, or troubleshooting context;
+- do not answer claims listed in `userAnswerUse.cannotAnswer`;
+- when present, use `userAnswerUse.followUp.inputFields` as the fields to pass into `userAnswerUse.followUp.tool`, then use `userAnswerUse.followUp.answerFields` in that follow-up response.
+
+When a USD-denominated settlement-asset response includes `answerSourceStatus`, check `answerSourceStatus.canUseThisResponseForUserAnswer`.
+If it is `false`, say the current MCP server build cannot support the answer and do not use amount fields for the user-facing answer.
+
+If the user asks "What is 1 SUI worth?", answer with the current read context available to the tools. Do not ask for a wallet or create a checkout unless the user asks to prepare an action.
+
+For SUI price questions:
+
+- Call `read.get_deepbook_mid_price` with `poolKey: "SUI_USDC"` as the Say Ur Intent product source for supported SUI/DeepBook price context.
+- Present the result as "DeepBook SUI/USDC mid price at `fetchedAt`" and do not call it the global market price.
+- If the user asks for another stable pair or another token, use `read.list_deepbook_tokens` and `read.list_deepbook_pools` to find the registered pool, then call `read.get_deepbook_mid_price` for that pool.
+- When multiple pools match and the user did not name the quote token, use this split:
+  - For explicit pool-price questions, prefer a USDC-quoted pool, then USDT.
+  - For USD-denominated payment, balance, shortfall, coverage, settlement, or cash-out wording, use the intent-evidence flow instead.
+  - Name the pool checked and state that this is pool quote-token context, not settlement-token selection.
+- If the token or pool is not in the pinned DeepBook registry, or the tool returns `quote_unavailable` or `registry_miss`, say DeepBook cannot provide that price from the current registry.
+- Use external web data only if the user explicitly asks for non-product market context. Label it as outside Say Ur Intent verified state.
+- If the tool returns `internal_error`, retry the same DeepBook price tool once. Do not retry more than once; if it still fails, say DeepBook read failed and do not present a price as Say Ur Intent verified state.
+
+For indicative quote questions such as "If I sell 10 SUI, how much dollar value do I get?":
+
+- Use `read.quote_deepbook_display_amount` only after the source asset, source input amount, pool or quote asset, and direction are known.
+- A user saying "dollars" does not by itself select USDC, USDT, or another quote token.
+- If the user names a source asset and says dollars without naming a quote token, first distinguish the intent:
+  - For USD-denominated payment coverage, balance total, shortfall, settlement, or cash-out wording, use settlement-asset-group intent evidence when account context is available.
+  - If account or target evidence is missing, ask only for that missing evidence.
+  - For a wallet-free market quote, ask which registered DeepBook quote asset or pool they want, such as SUI/USDC or SUI/USDT.
+  - Disclose the exact pool and `fetchedAt` after the user selects it.
+- Do not silently choose a quote token.
+- Do not web-search or finance-query a USDC/USD conversion unless the user explicitly asks for outside Say Ur Intent market context.
+- Treat `amountDisplay` as the source input amount for the chosen direction. Do not use it as an output target amount.
+- If the user asks how much source asset is needed to make a target output amount, say inverse quotes are unsupported in this release and ask for a source input amount instead.
+- Treat `quantitySemantics.kind: "deepbook_quote_display_amount"` as exact decimal display quote strings only.
+- Treat `rawQuote.kind: "deepbook_quote_raw_u64"` as raw quote evidence before slippage policy.
+- Do not turn a quote into final min-out, effective price, price impact, route recommendation, funding source, fiat cash-out, P&L, cost basis, transaction-building input, signing data, or signing readiness.
+- Do not compare a DeepBook quote to `read.get_deepbook_mid_price` as user-facing slippage or price impact. Mid price is a pool snapshot, and current quote tools do not return price-impact evidence.
+- Do not use quote proceeds as profit, P&L, tax, performance, or cost basis.
+- If the user asks for profit after a quote, say Say Ur Intent can report quote proceeds and raw activity evidence, but it does not compute P&L.
+- Do not provide profit formulas or hypothetical profit examples, even when the user supplies an assumed acquisition price.
+
+## Current Release Evidence
+
+Answer only from current tool evidence. For natural-language dollar, USD-like, stablecoin, or Korean dollar-word requests, use this flow:
+
+1. Call `read.get_server_status`; require the current evidence policy plus `read.list_settlement_asset_groups` and `read.preview_intent_evidence`.
+2. Call `read.list_settlement_asset_groups`.
+3. Call `read.preview_intent_evidence` for settlement-asset coverage, balance-total, or shortfall questions.
+4. Confirm `answerSourceStatus.canUseThisResponseForUserAnswer` is `true`.
+5. Use `userAnswerUse.answerFields` for the answer. Settlement-asset-only responses use `responseSummary`; selected-target responses also use `selectedTarget`, `candidateConversions`, and `requiredUserChoices` when those fields are listed.
+
+`responseSummary.answerCompleteness.answerCompleteFor` names the answer class. Use only the fields in `responseSummary.answerCompleteness.requiredAnswerFields` and `userAnswerUse.answerFields` for that class.
+
+For selected-target direct quote evidence, require both `responseEvidence.supportedResponseClaims: "direct_pool_quote_evidence"` and `userAnswerUse.canAnswer: "direct_pool_quote_evidence_for_user_selected_target"` in the same `read.preview_intent_evidence` response. If either entry is absent, do not say that direct pool quote evidence is available from that intent-evidence response.
+
+Do not call quote tools for the same payment coverage, balance-total, or shortfall question when `responseSummary.doNotCallQuoteToolsForThisQuestion` is `true`.
+
+When `answerSourceStatus.canUseThisResponseForUserAnswer` is `true` and `responseSummary.doNotCallQuoteToolsForThisQuestion` is `true`, answer from `responseSummary` and stop the same question flow. Do not call `read.classify_wallet_assets`, `read.summarize_wallet_assets`, or quote tools to look for other source tokens for that same coverage, balance-total, or shortfall question. Use those tools only when the user asks a separate inventory or conversion question.
+
+If quote tools were already called, do not use those quote numbers for the payment amount, coverage status, or shortfall. Use only the fields named by `responseSummary.amountsUsedForAnswer`.
+
+If `read.preview_intent_evidence.userAnswerUse` is present, its `answerFields` names the exact response fields to use for the answer.
+
+Use `read.summarize_settlement_asset_group_parity` and its `responseSummary` for stablecoin-like max, min, mean, median, or internal parity questions. A parity reference asset is a measurement basis, not a settlement choice.
+
+Selected-target evidence is allowed only when the user selected the target settlement asset in the current request or prior user context.
+
+When that is true, use `targetAssetSelectionSource: "user_explicit"` or `"prior_user_explicit_context"` and answer from the returned selected-target fields. Do not set a target source for an AI-inferred target.
+
+For shortfall questions without an established target amount, ask for the missing display target amount. Do not narrow the question to USDC/USDT, choose source assets, or merge non-group quote outputs into payment coverage.
+
+Partial wallet context is allowed only when an active account is already set or the user gives an explicit Sui address.
+
+Use supported reads to expose only returned facts:
+
+- current coin-balance classes;
+- supported settlement-asset-group balances;
+- required user choices;
+- uninspected inventory blockers.
+
+Do not turn partial context into route recommendation, payment support, portfolio planning, P&L, transaction-building input, signing data, or signing readiness.
+
+## Read Vs Action
+
+Read-only requests split into address-free reads and address-scoped reads.
+
+- Address-free reads include pool lists, orderbook context, mid prices, and quote facts.
+- Address-scoped reads include explicit public-address snapshots and active-account reads.
+- Use the explicit address when the user asks about a specific Sui address.
+- Use wallet identity only when the request needs active account context.
+- Action-preparation requests use words such as prepare, review, swap, buy, sell, or sign.
+
+When an action is unsupported or blocked, say so plainly and offer the closest read-only information.
+
+For token balances and quantities:
+
+- Do not infer decimals from token symbols or common defaults.
+- Use a returned `display` amount only when the tool provides it.
+- If a result exposes only a raw amount or reports `unit.status: "unavailable"`, say display conversion is unavailable.
+- Wallet balance reads are current coin-balance snapshots only.
+- Transaction activity fields named `amountRaw`, `increaseRaw`, `decreaseRaw`, or `netRaw` are raw integer facts.
+- Do not divide raw amounts into display units unless the same response provides verified decimals or a display amount for that asset.
+
+If an action plan exposes `assetFlowPreview.amountKind: "display_intent"`, treat the amount as proposal/display context only. Do not convert it into a raw amount, minimum output, simulation fact, or signing input.
+
+For `action.prepare_external_proposal_review`, answer from
+`plans[].reviewModel` when the response `userAnswerUse.answerFields` lists that
+path. Use `proposedAction`, `assetFlow`, `recipients`, `targets`,
+`missingEvidence`, `requiredUserChoices`, `unsupportedClaims`, `freshness`,
+`blockingChecks`, and `nonSignableReason`. Do not treat the proposal as trusted
+transaction material. Do not treat it as route selection. Do not treat it as
+settlement-token selection. Do not treat it as payment execution readiness. Do
+not treat it as signing data or signing readiness.
+
+After a DeepBook review session is wallet-account bound, `session.get_review_status` can include review-state checks, `reviewState.adapterLifecycle`, `reviewState.humanReadableReview`, and `reviewState.simulation`. The review page renders those fields as local review evidence.
+
+Use `reviewState.adapterLifecycle.stageCatalogId`, `completedStages`, and `missingStages` only to explain which account-bound DeepBook review evidence stage catalog is being used, which stages have run, and which required review evidence stages are still missing. If `transaction_material_build_or_verify` is completed, say only that the review server built local unsigned transaction material and kept bytes internal. If `digest_commitment` is completed, say only that the review server internally bound a Sui transaction digest to that stored local material. If `object_ownership` is completed, say only that the review server derived object ownership evidence from the stored local material and Sui owner/type reads. If `review_time_simulation` is completed, say only that the review server simulated the stored local unsigned material with checks enabled and exposed a redacted simulation summary. `reviewState.humanReadableReview` is valid only after `human_readable_review` is completed and not missing; `reviewState.simulation` is valid only after `review_time_simulation` is completed and not missing. Do not provide or infer transaction bytes, signing data, signing readiness, or execution readiness from those stages. This lifecycle stops at review-time simulation; the digest-gated byte handoff follows an emitted contract, while wallet signing and execution receipt are deliberately sequenced later on the roadmap and not implemented in the current release. Use those checks to explain what the local review layer verified before signing. Do not describe them as wallet readiness, signing readiness, route quality, execution safety, or public transaction bytes. The current release still blocks wallet signing.
+
+Use `reviewState.humanReadableReview` only as displayable review facts projected
+from verified local review evidence. Its `kind` currently identifies the first
+swap review projection. Its `assetFlow` raw amounts, coin types, decimals,
+minimum output, fee facts, target pool, and direction are derived from the
+material-bound quote policy evidence, while object ownership is cited only as
+review evidence from stored transaction material and Sui owner/type reads.
+Do not use `reviewState.humanReadableReview` as transaction bytes, a public transaction digest, signing data, signing readiness, route quality, wallet handoff, or execution readiness.
+Treat any display amount in this field as presentation context only, not as a
+signing or review-time simulation input.
+
+Use `reviewState.simulation` only as a public summary of server-side
+review-time simulation evidence for the stored local material. It can explain
+provider, enabled checks, success, raw Sui gas cost summary components, balance
+changes, and object changes when those fields are returned. It is not
+transaction bytes, not a public transaction digest, not signing data, not
+signing readiness, not wallet handoff, not execution readiness, not execution
+receipt evidence, and not proof that a wallet signed or submitted a transaction.
+
+`reviewState.walletReviewAdapterContract` is present only on a
+`ready_for_wallet_review` state (or a stored legacy
+`wallet_handoff_not_implemented` record), after every review evidence stage
+completed and contract assembly passed schema validation. Use it only as
+pre-signing review evidence that binds the human-readable review and the
+review-time simulation to one transaction commitment hash. It is not
+transaction bytes, not signing data, not signing readiness, not wallet
+handoff, not execution readiness, and not a route recommendation. If the
+review is blocked on `wallet_review_contract_emit_missing`, say that contract
+assembly declined and use the failed
+`deepbook_wallet_review_contract_emit_missing` check message for the concrete
+reason.
+
+If a response includes a `PtbVisualizationArtifact`, answer from its Mermaid
+text, diagnostics, `generatedAt`, `source`, and `unsupportedUse` fields only
+when the response-local guide lists them as answer fields. Do not treat a PTB
+graph as transaction material, raw transaction bytes, or wallet authorization.
+A PTB graph is not signing data, not signing readiness, not payment execution
+readiness, not route quality, and not execution safety.
+
+Use these response fields:
+
+- wallet balance amounts: `read.summarize_wallet_assets`;
+- coin-balance classes: `read.classify_wallet_assets`;
+- USD-denominated coverage, total, or shortfall: fields listed by `read.preview_intent_evidence.userAnswerUse.answerFields`;
+- stablecoin-like parity: `read.summarize_settlement_asset_group_parity.responseSummary`;
+- DeepBook BalanceManager inventory: `read.summarize_deepbook_account_inventory`.
+
+For USD-denominated coverage and shortfall, answer from `responseSummary.currentDisplayAmount`, `responseSummary.requiredDisplayAmount`, and `responseSummary.shortfallDisplayAmount` according to `responseSummary.amountsUsedForAnswer`.
+
+Use `responseSummary.separateQuoteOutputs` to explain separate quote calls. When it returns `usedForPaymentAnswer: false` or `usedForShortfallAnswer: false`, do not add those quote outputs to the payment amount or shortfall amount.
+
+Use `responseSummary.doNotUseForConclusion` and `responseSummary.excludedFromConclusion` as exclusion rules for the final conclusion. If those fields name separate quote results, outside-settlement-group assets, or route-dependent payment support, do not write a conclusion such as "including other assets", "if everything is converted", "combined", or "still short" from quote outputs.
+
+Interpret common `quantitySemantics.kind` values this way:
+
+- `sui_wallet_balance_snapshot`: current coin-balance snapshot only.
+- `sui_intent_evidence_report`: pre-transaction evidence summary only.
+- `deepbook_display_number`: display-like account inventory only.
+
+Use quote tools only for explicit source inputs:
+
+- Use `read.quote_deepbook_action` only when a raw integer amount is explicit.
+- Use `read.quote_deepbook_display_amount` when the user provides a decimal source input amount.
+
+Do not use quote tools as a follow-up to a payment coverage, balance-total, or shortfall answer when `read.preview_intent_evidence.responseSummary.doNotCallQuoteToolsForThisQuestion` is `true`.
+
+Treat DeepBook `rawQuote` fields as exact quote evidence from simulated `u64` return values.
+
+Do not turn quote evidence into:
+
+- final min-out;
+- effective price;
+- price impact;
+- venue comparison;
+- best route;
+- fiat cash-out;
+- unsupported P&L or cost basis;
+- signing input.
+
+Treat `uninspectedAssetClasses` as explicit classifier-uninspected boundaries, not as zero balances.
+
+Inventory facts do not imply:
+
+- spendability;
+- funding availability;
+- route liquidity;
+- payment readiness;
+- portfolio completeness;
+- transaction-building inputs;
+- signing data;
+- not signing readiness.
+
+Treat `quantitySemantics.kind: "settlement_asset_group_parity_snapshot"` as internal settlement-asset-group parity evidence only.
+
+The returned `responseSummary.referenceAssetRole: "measurement_reference_not_settlement_choice"` means the reference is a measurement basis, not the user's settlement token.
+
+The summary exposes min, max, mean, and median parity from available direct DeepBook mid-price snapshots.
+
+Do not treat parity output as fiat USD value, USDC/USD peg assumption, payment readiness, route recommendation, transaction building, signing readiness, P&L, or cost basis.
+
+If a wallet read returns `metadata_cache_unavailable`, retry the same wallet read once.
+
+If it repeats, say the local coin metadata cache is unavailable and the wallet display-unit read cannot be completed right now.
+
+Treat `details.operation` as diagnostic context, not as a user action field.
+
+When the user says only `$1000`, "1000 dollars", "stablecoins", or Korean dollar-word wording, do not choose USDC, USDT, source assets, or routes. Use the intent-evidence flow and ask only for `responseSummary.requiredUserChoices`.
+
+For common USD-denominated evidence questions:
+
+| User asks | Tool input | User response field |
+| --- | --- | --- |
+| "Can I cover a 1000 dollar payment?" | `read.preview_intent_evidence` with `intentKind: "cover_payment_like_amount"`, `denomination: "dollar"`, `requiredDisplayAmount: "1000"` | `responseSummary` |
+| "How much are my USD-denominated assets together?" | `read.preview_intent_evidence` with `intentKind: "summarize_settlement_asset_group_balance"`, `denomination: "dollar"` | `responseSummary` |
+| "What is the shortfall?" | Reuse the established target amount, or ask for the missing display target amount | `responseSummary` |
+
+Describe a connected wallet identity as active account context for local reads.
+
+Do not call the user logged in, authenticated for transactions, signed in, connected for signing, or permanently authorized. The active account context can be cleared at any time and disappears if the local MCP server is reinstalled.
+
+For wallet identity:
+
+- First call `account.get_active_account` when a wallet-account read can use existing context.
+- If it is `set`, use that account.
+- Mention `source` and `setAt` when the account may have been set by an earlier session or another MCP client.
+- Ask for confirmation when the user wants a different address.
+- If the user explicitly asks to connect, reconnect, or replace wallet context, create a new wallet identity session even when an active account is already set.
+
+When a new wallet identity session is needed:
+
+1. Call `session.create_wallet_identity`.
+2. Tell the user to open `walletUrl` in the same machine's system browser.
+3. Immediately call `session.wait_wallet_identity` in the same turn after giving the URL; do not stop and wait for the user to say they connected. If the wait tool is unavailable, poll `session.get_wallet_identity` about every 5 seconds.
+4. When the wallet status is `connected`, call `account.get_active_account` again before telling the user which account is currently active.
+5. If `session.wait_wallet_identity` returns `timed_out`, say the wallet connection is still pending; do not treat it as failure.
+6. If the wallet status is `rejected`, `failed`, or `expired`, tell the user that concrete outcome and do not claim an active account was set.
+
+The URL contains a short-lived fragment token. Do not tell the user to copy it to another device, share it, or open it in a client webview.
+
+Display addresses in shortened lowercase form by default: `0x` plus the first 4 hex characters, `...`, and the last 4 hex characters, such as `0xabcd...1234`. Show the full address only when the user asks or when exact verification is needed.
+
+Pending wallet identity and review waits are local process memory only.
+
+- If the local MCP server restarts, call `account.get_active_account` before creating a new wallet identity session.
+- Use `session.get_interaction_status` to inspect active account context and pending in-memory interactions.
+- In `session.get_interaction_status`, `pendingReviewSessions` includes non-final review sessions whose `statusCategory` is `non_terminal`, `awaiting_chain_result`, or `user_action_required`.
+- `session.get_review_status` returns `pollingStatus` and `statusCategory`; use both fields when explaining whether a review is final, still pending, waiting for a chain result, or waiting for user or review-flow action.
+- `session.wait_execution_result` observes review-server/browser transitions only.
+- `timed_out` means the step is still pending.
+- `signed_pending_result` means signing already happened and the tool is waiting for the chain result; do not ask the user to sign again.
+- `blocked` means user action or refresh is required, not final success or failure.
+- execution waits stop at `blocked` only while required review evidence is missing; after user signing on the local review page they progress through `signed_pending_result` to `success` or `failure`.
+
+Local review activity tools summarize Say Ur Intent review-session records only. They are separate from user-requested Sui activity scans.
+
+If the user asks about Say Ur Intent reviews, use one of these tools:
+
+- `read.list_review_activity`;
+- `read.summarize_review_funnel`;
+- `read.get_review_session_detail`.
+
+The optional `account` input is a read filter. It does not change active account context.
+
+`accountSource` reports how the read scope was selected, not proof of wallet ownership.
+
+Sui activity tools answer user-requested transaction questions from GraphQL read results and stored normalized facts.
+
+Use the summary path first:
+
+- `read.summarize_sui_activity_scan` for recent activity, latest activity, asset-flow summary, protocol summary, gas summary, or failure summary.
+- `read.scan_sui_account_activity` when the user asks for bounded transaction rows.
+- `read.inspect_sui_transaction` when the user provides one digest or asks for digest-level detail.
+- `read.summarize_sui_account_activity` only for stored local activity facts.
+
+Important scan boundaries:
+
+- Scans are bounded to at most 100 results per call and are not background indexing.
+- `orderingVerified: false` means provider ordering was not proven.
+- `continuationCursor` is best-effort provider pagination, not a durable index cursor.
+- Use live scan evidence for "latest N" unless the user asks for stored facts.
+
+Wallet-specific balance evidence must come from requested-account fields:
+
+- `requestedAccountTransactionFacts`;
+- `requestedAccount.coinFlows`;
+- `transactions[].requestedAccountEffect`.
+
+Do not use transaction-level context as wallet-specific balance evidence. `transactionContext` intentionally has no transaction-wide balance-change aggregate in live scan rows. Use `transactionContext`, `compact`, `details`, `execution`, or `requestedAccountEffect` in an answer only when the same response returns that field and lists it in `userAnswerUse.answerFields`.
+
+For Sui activity array paths, `userAnswerUse.answerFields` lists `transactions[].transactionContext`, `transactions[].compact`, or `transactions[].details` only when every returned `transactions` row has that field. When `transactionDetailAvailability.detailAvailability: "some"`, some rows have details and some do not; use `transactionDetailAvailability` in the answer and inspect the specific row or follow-up digest lookup before using row details.
+
+Incomplete balance evidence means unknown, not zero:
+
+- `accountBalanceChangeEvidence: "incomplete_account_balance_changes"` is not zero-balance evidence.
+- `account_balance_changes_unavailable` is not zero-balance evidence.
+- `accountBalanceChangeInferencePolicy: "do_not_infer_from_transaction_context"` means do not infer the requested account amount from transaction context, visible recipient patterns, current wallet balances, compact counts, or aggregate analysis.
+- Only `accountBalanceChangeAbsenceProven: true` supports saying no requested-account balance change was returned.
+
+Compact and analysis fields are transaction or page facts:
+
+- `compact.factScope: "transaction"` means compact fields summarize the transaction, not the requested wallet.
+- `analysis.coinFlows` is a transaction/page aggregate, not wallet-specific evidence.
+- `protocolMatches` are conservative activity labels derived from normalized facts.
+- `mvrName` is package-resolution evidence, not protocol support, P&L, route quality, transaction-building input, signing data, or signing readiness.
+
+Raw amount handling:
+
+- Balance-change quantities are raw integer strings.
+- There is no `details.balanceChanges[].amount` field.
+- Do not coerce missing fields to `number`.
+- Gas raw quantities use MIST.
+- Prefer returned `gasCost.display` or `analysis.gas.netGasCost.display` over manual gas conversion.
+
+If returned evidence is incomplete or unverified, say so before using it. If a transaction or explicit address scan is unrelated to a known local wallet, say it was not saved locally and use the ephemeral result only for the current answer.
+
+### Function Activity Diagnostics
+
+Use `read.scan_sui_function_activity` for transactions the selected account sent that called one exact Sui Move function. Use `read.summarize_sui_function_activity_scan` for the same sent-function scope when the user wants a summary.
+
+Rules:
+
+- The `function` input must be a full `package::module::function` string.
+- Do not pass package-only, package-and-module-only, generic/type-argument forms, or a bare function name.
+- Describe the result as "transactions this account sent that called this function."
+- Do not describe it as every affected transaction, every touched object, or complete dApp history.
+- Empty results mean the bounded page returned no matching sent rows; they do not prove no matching activity exists.
+
+Function activity facts are not route quality, P&L, wallet position inventory, transaction-building input, signing data, signing readiness, protocol support, or complete history.
+
+When the user asks for balances for a specific Sui address, call `read.summarize_wallet_assets` or `read.classify_wallet_assets` with `account`. Do not start wallet identity for that public-address read.
+
+If the user asks for the active wallet's balances without giving an address, use active account context. Create a wallet identity session only when no active account is set.
+
+Explicit-address wallet asset reads are live read snapshots only. They do not prove ownership, create active account context, store the address as a known wallet, or enable signing.
+
+Do not call stored Sui activity complete wallet history, P&L, balance history, complete gas history, portfolio analysis, tax data, or proof of ownership.
+
+If the user wants a time range, explain that the tool requests bounded recent-to-older pages and can continue page by page.
+
+Do not claim a time window is complete unless `windowComplete: true`.
+
+Do not call the page provider-verified coverage when `orderingVerified: false`.
+
+When a review activity response has `lowSampleWarning: true`, do not infer a behavior pattern. Prefer wording like: "There are only N local review records in this scope, so this is not enough to infer a pattern. Here are the raw counts."
+
+For `read.list_review_activity`, `dataScope.recordCount` is the full matching local review count. The returned `activities` array can be shorter when `truncated.activities: true`.
+
+For `read.get_review_session_detail`, transition rows with `isNoOp: true` are repeated lifecycle observations where the stored status did not change. Mention them only as audit details; do not count them as extra funnel progress.
+
+For local settings or local data management, call `settings.create_local_settings_session` and tell the user to open the returned settings URL in the same machine's system browser.
+
+Do not call MCP tools to mutate settings directly; direct settings mutator tools are not exposed. Do not call clearing active account a wallet disconnect. Endpoint changes apply after MCP server restart.
+
+## User Vocabulary
+
+Do not silently turn vague words into amounts.
+
+| User phrase | Response |
+| --- | --- |
+| `a little`, `some`, `roughly` | Ask for an amount and offer examples such as `1 SUI`, `10%`, or `25%`. |
+| `half` | Explain that active account context is needed to calculate spendable balance. If none is set, ask for wallet identity connection. Do not ask for manual address entry. |
+| `all`, `everything` | Explain that gas reserve and spendable balance must be calculated before an action can be prepared. |
+| Number only, such as `5` | Ask which unit the user means: SUI, another asset, or a USD-denominated amount. If they mean dollars or stablecoins, use settlement-asset-group evidence before asking for a specific token. |
+
+## Clarification Templates
+
+- Amount: "What amount do you want to use? Examples: `1 SUI`, `10 SUI`, or `$10 worth`."
+- Unit: "When you say `5`, do you mean 5 SUI, another asset amount, or $5 through the supported USD-denominated settlement asset group?"
+- Balance-dependent amount: "Half or all depends on your spendable balance. I need active account context before I calculate wallet-account amounts."
+- Unsupported action: "That action is not currently supported. I can help with supported Sui mainnet reads or DeepBook quotes instead."
+
+## Unsupported Redirects
+
+| Request | Response pattern |
+| --- | --- |
+| "Is this transaction safe?" | Do not guarantee safety. Summarize concrete facts: assets, amount, venue, freshness, and current blocked/readiness status. |
+| "Do you think I should buy this?" | Do not give investment advice. Offer price, liquidity, quote, and risk-input facts when supported. |
+| "Tell me when the price drops." | Say alerts are unsupported. Offer a one-time price or quote check. |
+| "Let's buy Bitcoin too." | Say this toolkit only exposes Sui mainnet surfaces. |
+| "Am I connected? / Am I logged in?" | Say the toolkit has active wallet-account read context for the address, not a login. Use `account.get_active_account` to confirm the address. Do not say the user is connected to DeepBook or signed in. |
+| "Show my balances over time." | Balance history and P&L are not tool surfaces. `read.summarize_wallet_assets` returns a snapshot at `fetchedAt`. Each call is independent. |
+| "How much profit did I make?" | Profit, tax, performance, and cost-basis calculations are not Say Ur Intent surfaces. Offer raw activity, balance snapshots, or quote evidence instead; do not provide a profit formula or hypothetical profit example. |
+| "Can you calculate my profit if I bought 10 SUI for 10 USDC?" | An assumed acquisition price does not change the boundary. P&L and accounting calculations are unsupported; do not provide a formula, worked example, tax treatment, or performance result. |
+| "Did my swap go through?" | If the swap was signed through a Say Ur Intent review session, use `session.get_review_status` or `session.wait_execution_result`: `success` with `txDigest` is the recorded receipt evidence, and `failure` carries the failure reason. Offer Sui Explorer for the digest. For transactions signed outside a review session, use `read.inspect_sui_transaction` with the user-provided digest instead; do not claim receipt evidence the session does not hold. |
+| "Show my transaction history." | Use `read.scan_sui_account_activity` only as a user-requested bounded scan. Explain the limit, continuation cursor, and `windowComplete` result. Do not call it complete wallet history. |
+| "Cancel the transaction I just sent." | Say already-submitted onchain transactions cannot be canceled by this toolkit. |
+| "Can I trust this address?" | Say address reputation lookup is unsupported. Use only verified mainnet protocol surfaces when preparing reviews. |
+
+## Comparisons
+
+Only compare options when the user asks for a criterion such as cheaper, lower slippage, or less SUI spent.
+
+State the checked scope and timestamp.
+
+Avoid unqualified words such as best, recommended, guaranteed, or safe. Prefer: "Among checked options, at this quote time..."
+
+## Language
+
+This reference document stays in English. Reply in the user's language. Translate response patterns as needed, but keep SDK names, tool names, object IDs, package IDs, and token symbols in their original form.
+
+## Golden Scenarios
+
+Detailed expected response classes live in `docs/golden-scenarios/BEHAVIOR_MATRIX.md`. They are documentation for release review, not automated cross-client results.

@@ -1,0 +1,182 @@
+# Transaction Activity Log
+
+This document owns local transaction activity storage boundaries: what is stored, what is not stored, and which MCP tools can return live or stored activity facts.
+
+It does not define setup steps, tool schemas, complete-history support, P&L, route recommendations, transaction-building input, signing data, or signing readiness.
+
+Say Ur Intent stores two kinds of local activity evidence:
+
+- Say Ur Intent review evidence from local review sessions.
+- User-requested bounded Sui activity facts that were looked up through GraphQL and matched a known local wallet.
+
+It does not run a background indexer and does not claim complete wallet history.
+
+## Stored By Default
+
+When Say Ur Intent records an execution result for an account-bound review, the runtime stores a `review_executions` row. That row can include:
+
+- review session id
+- plan id
+- normalized account
+- execution status
+- transaction digest when available
+- explorer URL when available
+- failure reason when the result failed
+- full execution result JSON after forbidden-field validation
+- recorded and updated timestamps
+
+This is review evidence for a Say Ur Intent flow. It is not a complete wallet transaction history.
+
+The runtime also stores local review evidence that cannot be reconstructed from chain data:
+
+- review session header and full action plan JSON
+- materialized requested intent JSON when the adapter provides `ActionPlan.adapterData.requestedIntent`
+- append-only review state snapshots
+- append-only review lifecycle transitions
+
+Lifecycle transition reads mark repeated observations with no stored status change as `isNoOp`. These rows preserve audit detail without changing funnel progress counts.
+
+## Stored When Requested
+
+When the user requests a Sui transaction digest lookup or account activity scan, the runtime can store normalized external activity facts only if the transaction is tied to an address already present in the local `accounts` table.
+
+A returned scan row is tied to a known local account only when the sender or a returned balance-change owner matches that account.
+
+Other provider-returned rows can be used for the current response but are counted as skipped for storage.
+
+Stored scan rows include:
+
+- scan id
+- scan kind: `digest_lookup`, `account_scan`, or `function_scan`
+- known local account
+- relationship: `affected` or `sent`
+- input digest or bounded scan window
+- request and response cursor metadata
+- endpoint host and verified chain identifier
+- fetched timestamp
+- stored/skipped counts
+- `hasMore`, `windowComplete`, and incomplete reason such as `ordering_unverified`
+
+Stored transaction rows include:
+
+- known local account
+- digest
+- relationship
+- checkpoint when returned by the provider
+- timestamp when returned by the provider
+- status: `success`, `failure`, or `unknown`
+- known sender account id only when the sender is also a known local account
+- first and last scan ids
+- first and last fetched timestamps
+- normalized detail facts when returned by GraphQL:
+  - transaction kind
+  - capped Move call targets with package, module, and function
+  - raw coin balance changes in `amountRaw` signed integer strings, with the balance owner stored only when it is the known local account
+  - object changes with object id, change kind, and before/after object type when available
+  - event sequence, package, module, and event type, with the event sender stored only when it is the known local account
+  - gas cost summary raw integer string fields, including derived `netGasCostRaw`
+  - execution error message and structured abort location when available
+  - truncation flags for capped detail lists
+
+`function_scan` is internal provenance for sent-function scans.
+
+It is not a stored function-history query, a function index, or authority to filter stored summaries by function.
+
+Legacy rows stored before this provenance existed can remain `account_scan`. Say Ur Intent does not backfill them because the stored scan row does not contain the function target needed to identify them safely.
+
+Live scan and live-summary rows expose these fields for requested-account raw balance-change facts:
+
+- `requestedAccountTransactionFacts`;
+- `requestedAccount.coinFlows`;
+- `transactions[].requestedAccountEffect`.
+
+Use those fields for wallet-specific asset-flow answers.
+
+`requestedAccountTransactionFacts[]` is a flattened account-scoped row surface for AI client summaries.
+
+It repeats the row digest, status, and sender metadata.
+
+It carries account-scoped fields such as:
+
+- `accountBalanceChangeEvidence`;
+- `accountBalanceChangeAbsenceProven`;
+- `accountBalanceChangeInferencePolicy`;
+- `accountBalanceChanges`;
+- `accountCoinFlows`;
+- `accountEffectLimitations`.
+
+It also includes transaction-level `transactionContext` for calls, events, objects, gas, truncation, and protocol labels.
+
+Live scan and live-summary `transactionContext` intentionally omits transaction-wide balance-change aggregates. This prevents repeated ownerless raw balance-change facts from being mistaken for a requested wallet's balance movement.
+
+A row-level `requestedAccountEffect` has `scope: "requested_account"` plus `role`, `balanceChangeEvidence`, `accountBalanceChangeAbsenceProven`, `accountBalanceChangeInferencePolicy`, `coinFlows`, and `limitations` fields for that transaction.
+
+`incomplete_account_balance_changes` and `account_balance_changes_unavailable` are not zero-balance evidence.
+
+Only `accountBalanceChangeAbsenceProven: true` or `no_account_balance_changes_returned` with complete evidence means the returned details prove no requested-account balance changes in that row.
+
+`accountBalanceChangeInferencePolicy: "do_not_infer_from_transaction_context"` means transaction-level context, visible recipient patterns, current wallet balances, compact counts, or aggregate analysis must not be used to infer the requested account's amount.
+
+Activity `quantitySemantics` marks `amountRaw`, `increaseRaw`, `decreaseRaw`, and `netRaw` fields as raw integer facts that require verified decimals or a returned display amount before display conversion.
+
+If `requestedAccount.balanceChangeCompleteness` or a row-level `requestedAccountEffect.balanceChangeCompleteness` is `truncated` or `unavailable`, say the account-specific balance-change evidence is incomplete instead of presenting the returned rows as complete.
+
+Inspect responses and stored-summary rows can expose a derived `compact` view when full or stored details are available.
+
+Activity summary responses expose `transactionDetailAvailability` for the returned `transactions` rows. `transactions[].transactionContext`, `transactions[].compact`, and `transactions[].details` are listed in `userAnswerUse.answerFields` only when every returned transaction row has details. Mixed rows must be described from `transactionDetailAvailability` and row-specific fields, not as an all-row detail guarantee.
+
+`compact.factScope: "transaction"` and `compact.requestedAccountScoped: false` mean compact balance, object, event, and gas fields summarize the transaction, not the requested wallet.
+
+Repeated identical compact balance-change facts can be aggregated with `count`.
+
+`analysis.coinFlows` is a transaction/page aggregate over returned normalized facts, not wallet-specific evidence.
+
+Gas raw values are MIST.
+
+`compact.gasCost.display` and `analysis.gas.netGasCost.display`, when present, are SUI display facts derived with `@mysten/sui MIST_PER_SUI`.
+
+Protocol matches are computed from normalized detail facts at response time and can include `mvrName`/`packageSource` for package-derived evidence.
+
+They are transaction activity labels only, not stored protocol decoder output, wallet position inventory, P&L, route recommendation, transaction-building input, signing data, or signing readiness.
+
+Live and stored summary tools can also expose deterministic `analysis` over returned normalized facts.
+
+That analysis aggregates raw integer coin flows, gas totals, Move call targets, object/event counts, failure details, and protocol counts keyed by `protocolMatches[].protocolId`.
+
+It is not display conversion, P&L, position inventory, route quality, protocol support, transaction-building input, signing data, or signing readiness.
+
+Use `read.inspect_sui_transaction` when a user needs the full normalized facts for a digest.
+
+The runtime does not store non-known party account addresses inside persisted transaction rows or normalized detail facts. If a digest lookup or explicit-account scan is not related to a known local wallet, the result can be returned for the current request but is not persisted.
+
+## Not Stored
+
+This toolkit does not run automatic scans for any account.
+
+It does not store raw GraphQL payloads, transaction bytes, signatures, BCS payloads, private or session material, balance snapshots, price observations, complete gas history, abandoned-reason logs, quote logs, or protocol decoder outputs.
+
+Complete account transaction history is not a product surface of this data.
+
+AI clients may answer questions only from data the listed read tools return.
+
+`read.summarize_sui_activity_scan` summarizes a live bounded scan without full details or transaction-wide balance-change aggregates in row context.
+
+`read.scan_sui_function_activity` and `read.summarize_sui_function_activity_scan` reuse the same requested-account fact, transaction-context, analysis, and protocol label pipeline for transactions the selected account sent that called one full `package::module::function`.
+
+They do not create a function-specific stored history, global function index, affected-object history, or complete dApp history.
+
+`read.summarize_sui_account_activity` summarizes account-level stored normalized facts only.
+
+It can include rows originally observed by account scans, digest lookups, or sent-function scans, and the scan kind remains provenance rather than a user query filter.
+
+Provider retention and rate-limit behavior are endpoint/operator properties, not guarantees made by Say Ur Intent.
+
+Empty pages, bounded pages, and stored local summaries must not be treated as complete history.
+
+When normalized details are missing or capped, use `transactionDetailAvailability` and the returned digest metadata with `read.inspect_sui_transaction` instead of inventing missing fields.
+
+Inspect responses can include live GraphQL detail fields for the current response.
+
+Live scan and live-summary rows point to that digest path through `detailLookup` instead of returning full `details`.
+
+Stored summaries return sanitized normalized details only, omit non-known party account addresses, and may include `lastScanIncompleteReason` when the last scan that touched a row had incomplete or unverified coverage.

@@ -1,0 +1,523 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { mainnetPools } from "@mysten/deepbook-v3";
+import { z } from "zod";
+import { unknownRecordSchema } from "../../../core/action/schemas.js";
+import {
+  DEEPBOOK_SCALAR_UNIT_SOURCE
+} from "../../../core/read/coinMetadata.js";
+import {
+  DEEPBOOK_MID_PRICE_DIRECTION,
+  DEEPBOOK_MID_PRICE_PRECISION,
+  DEEPBOOK_MID_PRICE_SEMANTICS_KIND,
+  DEEPBOOK_MID_PRICE_TYPE,
+  DEEPBOOK_ACCOUNT_QUANTITY_KIND,
+  DEEPBOOK_QUOTE_QUANTITY_KIND,
+  DEFAULT_DEEPBOOK_SIMULATION_SENDER,
+  MAX_DEEPBOOK_ACCOUNT_OPEN_ORDER_IDS,
+  MAX_DEEPBOOK_ORDERBOOK_TICKS
+} from "../../../core/read/readService.js";
+import { noParamsInputSchema, successOutputSchema } from "../../schemas.js";
+import { errorToolResult, okToolResult } from "../../result.js";
+import { activityStoreToolError } from "../../toolErrors.js";
+import type { McpServerDeps } from "../../server.js";
+import { TOOL_NAMES } from "../../toolNames.js";
+import { fetchedAtSchema, readSourceSchema, userAnswerUseSchema } from "./commonSchemas.js";
+import { readServiceError } from "./readToolHelpers.js";
+
+const deepbookMidPriceSourceSchema = z.object({
+  sdk: z.string(),
+  transport: z.literal("grpc"),
+  simulation: z.literal("client.core.simulateTransaction"),
+  method: z.literal("midPrice"),
+  precision: z.literal(DEEPBOOK_MID_PRICE_PRECISION)
+});
+
+const deepbookDisplayQuoteSourceSchema = z.object({
+  sdk: z.literal("@mysten/deepbook-v3"),
+  transport: z.literal("grpc"),
+  simulation: z.literal("client.core.simulateTransaction"),
+  method: z.enum(["getQuoteQuantityOut", "getBaseQuantityOut"]),
+  returnValueEncoding: z.literal("bcs.u64")
+});
+
+const deepbookAccountInventorySourceSchema = z.object({
+  sdk: z.literal("@mysten/deepbook-v3"),
+  transport: z.literal("grpc"),
+  simulation: z.literal("client.core.simulateTransaction"),
+  methods: z.array(
+    z.enum(["getBalanceManagerIds", "accountExists", "account", "lockedBalance", "accountOpenOrders"])
+  )
+});
+
+const deepbookDisplayAccountBalancesSchema = z.object({
+  base: z.number().refine(Number.isFinite),
+  quote: z.number().refine(Number.isFinite),
+  deep: z.number().refine(Number.isFinite)
+});
+
+const deepbookAccountQuantitySemanticsSchema = z.object({
+  kind: z.literal(DEEPBOOK_ACCOUNT_QUANTITY_KIND),
+  rawAmountAvailable: z.literal(false),
+  notFor: z.tuple([
+    z.literal("signing"),
+    z.literal("funding"),
+    z.literal("route_liquidity"),
+    z.literal("withdrawal_readiness"),
+    z.literal("transaction_building")
+  ])
+});
+
+const deepbookMidPriceSemanticsSchema = z.object({
+  kind: z.literal(DEEPBOOK_MID_PRICE_SEMANTICS_KIND),
+  allowedUse: z.literal("deepbook_pool_mid_price_snapshot"),
+  globalMarketPriceAvailable: z.literal(false),
+  fiatUsdCashOutAvailable: z.literal(false),
+  externalMarketPriceConversionAvailable: z.literal(false),
+  externalMarketLookupAvailable: z.literal(false),
+  usdPegAssumptionAvailable: z.literal(false),
+  bankCashOutEstimateAvailable: z.literal(false),
+  quoteComparisonAvailable: z.literal(false),
+  priceImpactAvailable: z.literal(false),
+  venueComparisonAvailable: z.literal(false),
+  routeRecommendationAvailable: z.literal(false),
+  profitAndLossAvailable: z.literal(false),
+  costBasisAvailable: z.literal(false),
+  notFor: z.tuple([
+    z.literal("global_market_price"),
+    z.literal("fiat_usd_cash_out"),
+    z.literal("external_market_price_conversion"),
+    z.literal("external_market_lookup"),
+    z.literal("usd_peg_assumption"),
+    z.literal("bank_cash_out_estimate"),
+    z.literal("price_impact"),
+    z.literal("mid_price_slippage"),
+    z.literal("quote_vs_mid_slippage"),
+    z.literal("effective_quote_price"),
+    z.literal("venue_comparison"),
+    z.literal("best_route"),
+    z.literal("route_recommendation"),
+    z.literal("transaction_building"),
+    z.literal("signing_data"),
+    z.literal("signing_readiness"),
+    z.literal("profit_or_pnl"),
+    z.literal("cost_basis")
+  ])
+});
+
+const deepbookQuoteQuantitySemanticsSchema = z.object({
+  kind: z.literal(DEEPBOOK_QUOTE_QUANTITY_KIND),
+  inputAmountKind: z.enum(["raw_u64", "display_source_amount_converted_to_raw_u64"]),
+  allowedUse: z.literal("indicative_deepbook_pool_quote"),
+  rawAmountAvailable: z.literal(true),
+  rawEvidenceField: z.literal("rawQuote"),
+  paymentCoverageAvailable: z.literal(false),
+  shortfallContributionAvailable: z.literal(false),
+  routeDependentPaymentSupportAvailable: z.literal(false),
+  requiresIntentEvidenceForCoverage: z.literal(true),
+  canUseForPaymentAnswer: z.literal(false),
+  canUseForShortfallAnswer: z.literal(false),
+  doNotCombineWithPaymentAnswer: z.literal(true),
+  requiredPaymentAnswerTool: z.literal("read.preview_intent_evidence"),
+  paymentAnswerUseBlockedReason: z.literal("quote_output_is_price_reference_not_payment_answer"),
+  requiredPaymentAnswerField: z.literal("responseSummary"),
+  fiatUsdCashOutAvailable: z.literal(false),
+  externalMarketPriceConversionAvailable: z.literal(false),
+  externalMarketLookupAvailable: z.literal(false),
+  usdPegAssumptionAvailable: z.literal(false),
+  bankCashOutEstimateAvailable: z.literal(false),
+  profitAndLossAvailable: z.literal(false),
+  costBasisAvailable: z.literal(false),
+  priceImpactAvailable: z.literal(false),
+  midPriceSlippageAvailable: z.literal(false),
+  venueComparisonAvailable: z.literal(false),
+  routeRecommendationAvailable: z.literal(false),
+  notFor: z.tuple([
+    z.literal("signing"),
+    z.literal("funding"),
+    z.literal("payment_coverage"),
+    z.literal("shortfall_contribution"),
+    z.literal("route_dependent_payment_support"),
+    z.literal("route_liquidity"),
+    z.literal("min_out"),
+    z.literal("liquidity_verdict"),
+    z.literal("price_impact"),
+    z.literal("mid_price_slippage"),
+    z.literal("quote_vs_mid_slippage"),
+    z.literal("effective_price"),
+    z.literal("venue_comparison"),
+    z.literal("best_route"),
+    z.literal("route_recommendation"),
+    z.literal("transaction_building"),
+    z.literal("fiat_usd_cash_out"),
+    z.literal("external_market_price_conversion"),
+    z.literal("external_market_lookup"),
+    z.literal("usd_peg_assumption"),
+    z.literal("bank_cash_out_estimate"),
+    z.literal("profit_or_pnl"),
+    z.literal("cost_basis")
+  ])
+});
+
+const deepbookDisplayQuoteInputAmountSchema = z.object({
+  display: z.string(),
+  raw: z.string().regex(/^[1-9]\d*$/),
+  asset: z.object({
+    symbol: z.string(),
+    coinType: z.string(),
+    decimals: z.number().int().nonnegative(),
+    unitSource: z.literal(DEEPBOOK_SCALAR_UNIT_SOURCE)
+  })
+});
+
+const deepbookDisplayQuoteSchema = z.object({
+  baseOut: z.string().regex(/^\d+(?:\.\d+)?$/),
+  quoteOut: z.string().regex(/^\d+(?:\.\d+)?$/),
+  deepRequired: z.string().regex(/^\d+(?:\.\d+)?$/)
+});
+
+const deepbookRawQuoteAmountSchema = z.object({
+  raw: z.string().regex(/^\d+$/),
+  symbol: z.string(),
+  coinType: z.string(),
+  decimals: z.number().int().nonnegative(),
+  unitSource: z.literal(DEEPBOOK_SCALAR_UNIT_SOURCE)
+});
+
+const deepbookRawQuoteSchema = z.object({
+  kind: z.literal("deepbook_quote_raw_u64"),
+  sourceMoveFunction: z.enum(["pool::get_quote_quantity_out", "pool::get_base_quantity_out"]),
+  returnValueSourceMoveFunction: z.literal("pool::get_quantity_out"),
+  returnValueOrder: z.tuple([
+    z.literal("base_quantity_out"),
+    z.literal("quote_quantity_out"),
+    z.literal("deep_quantity_required")
+  ]),
+  inputAmount: deepbookRawQuoteAmountSchema,
+  baseOut: deepbookRawQuoteAmountSchema,
+  quoteOut: deepbookRawQuoteAmountSchema,
+  deepRequired: deepbookRawQuoteAmountSchema,
+  directionalOutput: deepbookRawQuoteAmountSchema,
+  boundary: z.object({
+    outputBeforeSlippagePolicy: z.literal(true),
+    notFor: z.tuple([
+      z.literal("final_min_out"),
+      z.literal("transaction_building"),
+      z.literal("signing_data"),
+      z.literal("signing_readiness"),
+      z.literal("price_impact"),
+      z.literal("mid_price_slippage"),
+      z.literal("quote_vs_mid_slippage"),
+      z.literal("effective_price"),
+      z.literal("venue_comparison"),
+      z.literal("best_route"),
+      z.literal("route_recommendation"),
+      z.literal("fiat_usd_cash_out"),
+      z.literal("external_market_price_conversion"),
+      z.literal("external_market_lookup"),
+      z.literal("usd_peg_assumption"),
+      z.literal("bank_cash_out_estimate"),
+      z.literal("profit_or_pnl"),
+      z.literal("cost_basis")
+    ])
+  })
+});
+
+const deepbookAccountInventoryDetailStatusSchema = z.enum([
+  "manager_discovery_only",
+  "pool_key_required",
+  "manager_address_required",
+  "manager_address_not_discovered_for_active_account",
+  "account_not_found",
+  "available"
+]);
+
+const deepbookAccountSummarySchema = z.object({
+  epoch: z.string(),
+  settledBalances: deepbookDisplayAccountBalancesSchema,
+  owedBalances: deepbookDisplayAccountBalancesSchema,
+  unclaimedRebates: deepbookDisplayAccountBalancesSchema
+});
+
+const deepbookTokenRegistryEntrySchema = z.object({
+  symbol: z.string(),
+  address: z.string(),
+  type: z.string(),
+  scalar: z.number(),
+  decimals: z.number().int().nonnegative(),
+  unitSource: z.literal(DEEPBOOK_SCALAR_UNIT_SOURCE),
+  feed: z.string().optional(),
+  currencyId: z.string().optional(),
+  priceInfoObjectId: z.string().optional(),
+  poolKeys: z.array(z.string())
+});
+
+export function registerDeepbookReadTools(server: McpServer, deps: McpServerDeps): void {
+  server.registerTool(
+    TOOL_NAMES.readListDeepbookPools,
+    {
+      title: "List DeepBook pools",
+      description: "List DeepBook mainnet pools from pinned SDK constants. Static registry only; not live liquidity.",
+      inputSchema: noParamsInputSchema,
+      outputSchema: successOutputSchema({
+        source: z.string(),
+        pools: z.array(unknownRecordSchema)
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async () =>
+      okToolResult({
+        source: "@mysten/deepbook-v3 mainnetPools",
+        pools: Object.entries(mainnetPools).map(([key, pool]) => ({ key, ...pool }))
+      })
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readListDeepbookTokens,
+    {
+      title: "List DeepBook tokens",
+      description: "List DeepBook mainnet tokens from the pinned SDK constants.",
+      inputSchema: noParamsInputSchema,
+      outputSchema: successOutputSchema({
+        source: z.string(),
+        tokens: z.array(deepbookTokenRegistryEntrySchema)
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async () => {
+      try {
+        return okToolResult({
+          source: "@mysten/deepbook-v3 mainnetCoins",
+          tokens: deps.readService.listDeepbookTokenRegistry()
+        });
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readInspectDeepbookOrderbook,
+    {
+      title: "Inspect DeepBook orderbook",
+      description: "Return a pinned-SDK DeepBook mainnet orderbook snapshot at fetchedAt. Not a live stream.",
+      inputSchema: {
+        poolKey: z.string().min(1),
+        ticks: z.number().int().min(1).max(MAX_DEEPBOOK_ORDERBOOK_TICKS).optional()
+      },
+      outputSchema: successOutputSchema({
+        status: z.literal("ok"),
+        poolKey: z.string().optional(),
+        ticks: z.number().int().positive().optional(),
+        fetchedAt: fetchedAtSchema.optional(),
+        userAnswerUse: userAnswerUseSchema,
+        source: readSourceSchema.optional(),
+        midPrice: z.number().optional(),
+        poolBookParams: unknownRecordSchema.optional(),
+        level2TicksFromMid: unknownRecordSchema.optional()
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ poolKey, ticks }) => {
+      try {
+        return okToolResult(
+          await deps.readService.inspectDeepbookOrderbook({
+            poolKey,
+            ticks: ticks ?? 5,
+            simulationSender: DEFAULT_DEEPBOOK_SIMULATION_SENDER
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readGetDeepbookMidPrice,
+    {
+      title: "Get DeepBook mid price",
+      description:
+        "Return a DeepBook pool mid-price snapshot. Not price impact, route quality, global market price, fiat cash-out, transaction building, or signing readiness.",
+      inputSchema: {
+        poolKey: z.string().min(1)
+      },
+      outputSchema: successOutputSchema({
+        status: z.literal("ok"),
+        poolKey: z.string(),
+        base: z.string(),
+        quote: z.string(),
+        price: z.number(),
+        userAnswerUse: userAnswerUseSchema,
+        priceDirection: z.literal(DEEPBOOK_MID_PRICE_DIRECTION),
+        priceType: z.literal(DEEPBOOK_MID_PRICE_TYPE),
+        fetchedAt: fetchedAtSchema,
+        source: deepbookMidPriceSourceSchema,
+        priceSemantics: deepbookMidPriceSemanticsSchema
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ poolKey }) => {
+      try {
+        return okToolResult(
+          await deps.readService.getDeepbookMidPrice({
+            poolKey,
+            simulationSender: DEFAULT_DEEPBOOK_SIMULATION_SENDER
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readQuoteDeepbookAction,
+    {
+      title: "Quote DeepBook action",
+      description: "Pinned-SDK DeepBook raw-quantity quote evidence. Not P&L, price impact, route quality, fiat cash-out, external USD lookup, signing data, or execution promise.",
+      inputSchema: {
+        poolKey: z.string().min(1),
+        direction: z.enum(["base_to_quote", "quote_to_base"]),
+        amountRaw: z.string().regex(/^[1-9]\d*$/)
+      },
+      outputSchema: successOutputSchema({
+        status: z.literal("ok"),
+        poolKey: z.string().optional(),
+        direction: z.enum(["base_to_quote", "quote_to_base"]).optional(),
+        amountRaw: z.string().optional(),
+        fetchedAt: fetchedAtSchema.optional(),
+        userAnswerUse: userAnswerUseSchema,
+        source: readSourceSchema.optional(),
+        quote: deepbookDisplayQuoteSchema.optional(),
+        rawQuote: deepbookRawQuoteSchema.optional(),
+        quantitySemantics: deepbookQuoteQuantitySemanticsSchema.optional()
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ poolKey, direction, amountRaw }) => {
+      try {
+        return okToolResult(
+          await deps.readService.quoteDeepbookAction({
+            poolKey,
+            direction,
+            amountRaw,
+            simulationSender: DEFAULT_DEEPBOOK_SIMULATION_SENDER
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readQuoteDeepbookDisplayAmount,
+    {
+      title: "Quote DeepBook display amount",
+      description: "Pinned-SDK DeepBook display-amount quote evidence. Not fiat cash-out, external USD lookup, P&L, price impact, route, final min-out, signing data, or signing readiness.",
+      inputSchema: {
+        poolKey: z.string().min(1),
+        direction: z.enum(["base_to_quote", "quote_to_base"]),
+        amountDisplay: z.string().min(1)
+      },
+      outputSchema: successOutputSchema({
+        status: z.literal("ok"),
+        pool: z.object({
+          poolKey: z.string(),
+          base: z.string(),
+          quote: z.string()
+        }),
+        direction: z.enum(["base_to_quote", "quote_to_base"]),
+        inputAmount: deepbookDisplayQuoteInputAmountSchema,
+        fetchedAt: fetchedAtSchema,
+        userAnswerUse: userAnswerUseSchema,
+        source: deepbookDisplayQuoteSourceSchema,
+        quote: deepbookDisplayQuoteSchema,
+        rawQuote: deepbookRawQuoteSchema,
+        quantitySemantics: deepbookQuoteQuantitySemanticsSchema
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ poolKey, direction, amountDisplay }) => {
+      try {
+        return okToolResult(
+          await deps.readService.quoteDeepbookDisplayAmount({
+            poolKey,
+            direction,
+            amountDisplay,
+            simulationSender: DEFAULT_DEEPBOOK_SIMULATION_SENDER
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readSummarizeDeepbookAccountInventory,
+    {
+      title: "Summarize DeepBook account inventory",
+      description: "Pinned-SDK DeepBook BalanceManager inventory. Display-like facts, not raw amounts or signing readiness.",
+      inputSchema: {
+        poolKey: z.string().min(1).optional(),
+        managerAddress: z.string().min(1).optional()
+      },
+      outputSchema: successOutputSchema({
+        account: z.string(),
+        status: z.literal("ok"),
+        fetchedAt: fetchedAtSchema,
+        source: deepbookAccountInventorySourceSchema,
+        requested: z.object({
+          poolKey: z.string().optional(),
+          managerAddress: z.string().optional()
+        }),
+        detailStatus: deepbookAccountInventoryDetailStatusSchema,
+        managerAddresses: z.array(z.string()),
+        userAnswerUse: userAnswerUseSchema,
+        quantitySemantics: deepbookAccountQuantitySemanticsSchema,
+        pool: z
+          .object({
+            poolKey: z.string(),
+            base: z.string(),
+            quote: z.string()
+          })
+          .optional(),
+        accountExists: z.boolean().optional(),
+        accountSummary: deepbookAccountSummarySchema.optional(),
+        lockedBalances: deepbookDisplayAccountBalancesSchema.optional(),
+        openOrderIds: z.array(z.string()).max(MAX_DEEPBOOK_ACCOUNT_OPEN_ORDER_IDS).optional(),
+        openOrderCount: z.number().int().nonnegative().optional(),
+        openOrderIdsTruncated: z.boolean().optional()
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ poolKey, managerAddress }) => {
+      let active;
+      try {
+        active = await deps.activityStore.getActiveAccount();
+      } catch (error) {
+        return activityStoreToolError(error, deps.logger);
+      }
+      if (!active) {
+        return errorToolResult({
+          kind: "active_account_not_set",
+          details: {
+            action: "connect_wallet_identity"
+          }
+        });
+      }
+      try {
+        return okToolResult(
+          await deps.readService.summarizeDeepbookAccountInventory({
+            account: active.address,
+            poolKey,
+            managerAddress
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+}

@@ -1,0 +1,70 @@
+{
+  "name": "@stelis/say-ur-intent",
+  "version": "0.1.0-alpha.0",
+  "description": "Say Ur Intent is a local-first toolkit for helping AI applications and users inspect Sui DeFi actions before execution.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "say-ur-intent": "./dist/runtime/start.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "docs/",
+    "protocols/deepbook-v3.md",
+    "protocols/deepbook-margin.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sui",
+    "deepbook",
+    "sui-defi-review",
+    "wallet-review"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stelis-dev/say-ur-intent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stelis-dev/say-ur-intent/issues"
+  },
+  "homepage": "https://github.com/stelis-dev/say-ur-intent#readme",
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json && vite build",
+    "prepublishOnly": "npm run release:check",
+    "release:check": "tsx scripts/release-check.ts",
+    "smoke:mainnet": "node dist/runtime/smokeMainnetRead.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate:deepbook-registry": "tsx scripts/generate-deepbook-registry.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@mysten/dapp-kit-core": "1.3.2",
+    "@mysten/deepbook-v3": "1.3.6",
+    "@mysten/sui": "2.16.2",
+    "@scure/bip39": "2.2.0",
+    "@zktx.io/ptb-model": "0.5.0",
+    "better-sqlite3": "12.9.0",
+    "mermaid": "11.12.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "25.6.2",
+    "tsx": "4.21.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.11",
+    "vitest": "4.1.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
