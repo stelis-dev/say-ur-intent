@@ -1,7 +1,17 @@
 import { createDAppKit } from "@mysten/dapp-kit-core";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
+import { createAgentQSuiBrowserProvider } from "@stelis/agent-q-provider-sui/browser";
+import { createAgentQSuiWalletInitializer } from "@stelis/agent-q-provider-sui/wallet-standard";
 
 export function createLocalDAppKit() {
+  // Register Agent-Q as a Wallet Standard wallet so the hardware device shows up
+  // alongside browser-extension wallets in the same signing list. The browser
+  // provider speaks Web Serial and is created eagerly so the wallet stays visible
+  // before any USB device is chosen; it requests a serial port only inside
+  // connectDevice() on a user gesture and fails closed (unavailable) when Web
+  // Serial is absent. Firmware remains the signing authority — this only routes
+  // sign_transaction / sign_personal_message; no keys or policy live here.
+  const agentQProvider = createAgentQSuiBrowserProvider();
   return createDAppKit({
     networks: ["mainnet"],
     defaultNetwork: "mainnet",
@@ -11,6 +21,7 @@ export function createLocalDAppKit() {
     // autoconnect preference only, never keys.
     autoConnect: true,
     slushWalletConfig: null,
+    walletInitializers: [createAgentQSuiWalletInitializer({ provider: agentQProvider })],
     createClient: () =>
       new SuiGrpcClient({
         network: "mainnet",
