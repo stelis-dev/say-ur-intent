@@ -539,7 +539,7 @@ describe("review HTTP server", () => {
       const response = await fetch(`${base}/review/${session.id}`);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
-      expect(response.headers.get("content-security-policy")).toContain("style-src 'self'");
+      expect(response.headers.get("content-security-policy")).toContain("style-src 'self' 'unsafe-inline'");
       expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
       const html = await response.text();
       expect(html).toContain("/review-assets/review.js");
@@ -760,9 +760,9 @@ describe("review HTTP server", () => {
       const shell = await fetch(`${base}/analysis/${session.id}`);
       expect(shell.status).toBe(200);
       expect(shell.headers.get("content-security-policy")).toContain("script-src 'self'");
-      expect(shell.headers.get("content-security-policy")).toContain("style-src 'self'");
+      expect(shell.headers.get("content-security-policy")).toContain("style-src 'self' 'unsafe-inline'");
       expect(shell.headers.get("content-security-policy")).toContain("img-src 'self' data:");
-      expect(shell.headers.get("content-security-policy")).not.toContain("unsafe-inline");
+      expect(shell.headers.get("content-security-policy")).not.toContain("script-src 'self' 'unsafe-inline'");
       const html = await shell.text();
       expect(html).toContain("/review-assets/analysis.js");
       expect(html).toContain("/review-assets/analysis.css");
@@ -837,8 +837,8 @@ describe("review HTTP server", () => {
       const shell = await fetch(`${base}/settings/${created.session.id}`);
       expect(shell.status).toBe(200);
       expect(shell.headers.get("content-security-policy")).toContain("script-src 'self'");
-      expect(shell.headers.get("content-security-policy")).toContain("style-src 'self'");
-      expect(shell.headers.get("content-security-policy")).not.toContain("unsafe-inline");
+      expect(shell.headers.get("content-security-policy")).toContain("style-src 'self' 'unsafe-inline'");
+      expect(shell.headers.get("content-security-policy")).not.toContain("script-src 'self' 'unsafe-inline'");
       const html = await shell.text();
       expect(html).toContain("/review-assets/settings.js");
       expect(html).toContain("/review-assets/settings.css");

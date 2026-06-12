@@ -178,7 +178,8 @@ async function routeRequest(
         "base-uri 'none'",
         "connect-src 'self'",
         "script-src 'self'",
-        "style-src 'self'",
+        // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
+        "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "form-action 'none'"
       ].join("; ")
@@ -193,7 +194,8 @@ async function routeRequest(
         "base-uri 'none'",
         "connect-src 'self'",
         "script-src 'self'",
-        "style-src 'self'",
+        // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
+        "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "form-action 'none'"
       ].join("; ")
@@ -321,7 +323,8 @@ async function routeRequest(
         "base-uri 'none'",
         "connect-src 'self'",
         "script-src 'self'",
-        "style-src 'self'",
+        // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
+        "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "form-action 'none'"
       ].join("; ")
