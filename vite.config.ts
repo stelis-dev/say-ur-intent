@@ -3,6 +3,10 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "review-app",
+  // The review server serves these bundles under /review-assets/. Without a
+  // matching base, mermaid's lazy-loaded diagram chunks resolve to the site
+  // root (/flowDiagram-*.js) and 404, so PTB graphs never render.
+  base: "/review-assets/",
   build: {
     outDir: "../dist/review-app",
     emptyOutDir: true,
