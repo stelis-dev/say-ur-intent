@@ -1,8 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import { z } from "zod";
 import {
+  actionGroups,
   promptNameFor,
-  shorthandActions,
   type AdapterPromptSurface
 } from "../adapters/adapterPromptSurfaces.js";
 
@@ -107,13 +108,80 @@ export function registerMcpPrompts(server: McpServer, surfaces: readonly Adapter
   for (const surface of surfaces) {
     registerSurfacePrompt(server, promptNameFor(surface), surface, surface.description);
   }
-  // Bare action shorthands while the action has exactly one protocol.
-  for (const [action, surface] of shorthandActions(surfaces)) {
-    registerSurfacePrompt(
-      server,
-      action,
-      surface,
-      `${surface.description} Shorthand for ${promptNameFor(surface)}.`
-    );
+  // Bare action prompts are always registered. One protocol: straight to it.
+  // Several protocols: an optional `protocol` argument (completion suggests
+  // the slugs) and explicit instructions to ask the user - the venue is the
+  // user's choice, never the server's.
+  for (const [action, group] of actionGroups(surfaces)) {
+    registerBareActionPrompt(server, action, group);
   }
+}
+
+export function bareActionPromptText(
+  action: string,
+  group: readonly AdapterPromptSurface[],
+  intent: string,
+  protocol?: string
+): string {
+  const chosen =
+    group.length === 1 ? group[0] : group.find((surface) => surface.protocolSlug === (protocol ?? "").trim());
+  if (chosen) {
+    return surfacePromptText(chosen, intent);
+  }
+  const options = group
+    .map((surface) => `${surface.protocolSlug} (${surface.title}, tool: ${surface.toolName})`)
+    .join("; ");
+  return [
+    `Several protocols support the ${action} action: ${options}.`,
+    `The user's intent: "${intent}".`,
+    "List these protocol options to the user and ask which one to use. Do not pick a protocol on your own.",
+    "Once the user names a protocol, parse the source amount, source symbol, and target symbol from the intent (any language) and call that protocol's tool with them.",
+    ...PLATFORM_PROMPT_BOUNDARY_LINES
+  ].join("\n");
+}
+
+function registerBareActionPrompt(server: McpServer, action: string, group: readonly AdapterPromptSurface[]): void {
+  const single = group.length === 1 ? group[0] : undefined;
+  const first = group[0];
+  if (!first) {
+    return;
+  }
+  const description = single
+    ? `${single.description} Shorthand for ${promptNameFor(single)}.`
+    : `Prepare a reviewable Sui ${action} - several protocols support it (${group
+        .map((surface) => surface.protocolSlug)
+        .join(", ")}); you pick which.`;
+  const slugs = group.map((surface) => surface.protocolSlug);
+  server.registerPrompt(
+    action,
+    {
+      title: single ? single.title : `${action} (choose protocol)`,
+      description,
+      argsSchema: {
+        intent: completable(z.string().describe(first.intentArgDescription), (value) =>
+          value ? [] : group.flatMap((surface) => surface.exampleIntents)
+        ),
+        ...(single
+          ? {}
+          : {
+              protocol: completable(
+                z.string().optional().describe(`Protocol slug (optional): ${slugs.join(" | ")}`),
+                (value) => slugs.filter((slug) => slug.startsWith((value ?? "").toLowerCase()))
+              )
+            })
+      }
+    },
+    async (args) => ({
+      description,
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: bareActionPromptText(action, group, String(args.intent ?? ""), args.protocol)
+          }
+        }
+      ]
+    })
+  );
 }

@@ -828,15 +828,16 @@ Do not rely on contributor-only documents as the runtime source of agent behavio
 | `inspect-supported-sui-actions` | Guides a user through checking server status and supported mainnet surfaces. |
 | `prepare-reviewable-sui-action` | Guides a user through the review-session flow without claiming unsupported signing support. |
 | `swap-deep` | Prepares a reviewable DeepBook swap from a one-line intent argument (any language), e.g. `10 sui to usdc`. |
-| `swap` | Bare-action shorthand for `swap-deep` while exactly one protocol registers the `swap` action. |
+| `swap` | Bare-action prompt, always registered. With one protocol it routes straight there; with several it takes an optional `protocol` argument (completion suggests the slugs) and instructs the model to list the options and ask the user - never to pick a venue silently. |
 
 Adapter prompt surfaces are declared per adapter in
 `src/adapters/adapterPromptSurfaces.ts` and validated against
 `adapterPromptSurfaceSchema`. Names are action-first
 (`<action>-<protocolSlug>`, e.g. `swap-deep`), so autocomplete groups by what
-the user wants to do; a bare action shorthand exists only while a single
-protocol registers that action and disappears automatically when a second one
-does, so it never silently picks a venue. Each surface takes exactly one
+the user wants to do; the bare action prompt stays registered as protocols
+are added, and once several protocols share an action it asks the user to
+choose (optional `protocol` argument with completion), so it never silently
+picks a venue. Each surface takes exactly one
 free-text `intent` argument so MCP clients can pass the whole request in one
 line; the model parses the intent, the server never does. Platform boundary
 language (no signing data, no transaction bytes, local-review-only signing) is

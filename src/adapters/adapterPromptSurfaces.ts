@@ -41,23 +41,18 @@ export function promptNameFor(surface: AdapterPromptSurface): string {
 }
 
 /**
- * Actions with exactly one registered protocol also get the bare action name
- * as a shorthand (today `swap` means `swap-deep`). The shorthand disappears
- * automatically once a second protocol registers the same action, so it never
- * silently picks a venue between competing protocols.
+ * Bare action prompts (`swap`) are always registered. With a single
+ * registered protocol they go straight to that protocol; with several they
+ * carry an optional `protocol` argument (completion suggests the slugs) and
+ * instruct the model to ask the user which protocol to use - never to pick a
+ * venue silently.
  */
-export function shorthandActions(surfaces: readonly AdapterPromptSurface[]): Map<string, AdapterPromptSurface> {
+export function actionGroups(surfaces: readonly AdapterPromptSurface[]): Map<string, AdapterPromptSurface[]> {
   const byAction = new Map<string, AdapterPromptSurface[]>();
   for (const surface of surfaces) {
     byAction.set(surface.action, [...(byAction.get(surface.action) ?? []), surface]);
   }
-  const shorthand = new Map<string, AdapterPromptSurface>();
-  for (const [action, group] of byAction) {
-    if (group.length === 1 && group[0]) {
-      shorthand.set(action, group[0]);
-    }
-  }
-  return shorthand;
+  return byAction;
 }
 
 export const ADAPTER_PROMPT_SURFACES: readonly AdapterPromptSurface[] = [
