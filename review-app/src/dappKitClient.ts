@@ -22,10 +22,14 @@ export function createLocalDAppKit() {
     autoConnect: true,
     slushWalletConfig: null,
     walletInitializers: [createAgentQSuiWalletInitializer({ provider: agentQProvider })],
-    createClient: () =>
-      new SuiGrpcClient({
-        network: "mainnet",
-        baseUrl: "https://fullnode.mainnet.sui.io:443"
-      })
+    createClient: () => suiMainnetClient
   });
 }
+
+// Shared mainnet client: dapp-kit reads through it, and the review page submits
+// signed transaction bytes through it directly. Submission stays on the page
+// because not every wallet exposes sign-and-execute (Agent-Q signs only).
+export const suiMainnetClient = new SuiGrpcClient({
+  network: "mainnet",
+  baseUrl: "https://fullnode.mainnet.sui.io:443"
+});

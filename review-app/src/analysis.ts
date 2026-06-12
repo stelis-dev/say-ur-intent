@@ -26,6 +26,17 @@ let isConnecting = false;
 let isSubmittingResult = false;
 let lastError: string | undefined;
 
+// Avoid flashing the wallet picker before dapp-kit's autoConnect resolves: when a
+// wallet selection is already stored, show a reconnecting placeholder until the
+// connection settles (or a short timeout passes if it never reconnects).
+let autoConnectSettling = hasStoredWalletSelection();
+if (autoConnectSettling) {
+  window.setTimeout(() => {
+    autoConnectSettling = false;
+    render();
+  }, 2000);
+}
+
 void postLifecycle("opened")
   .then(() => render())
   .catch((error) => {
@@ -35,6 +46,14 @@ void postLifecycle("opened")
 
 dAppKit.stores.$wallets.subscribe(() => render());
 dAppKit.stores.$connection.subscribe(() => render());
+
+function hasStoredWalletSelection(): boolean {
+  try {
+    return window.localStorage.getItem("mysten-dapp-kit:selected-wallet-and-address") !== null;
+  } catch {
+    return false;
+  }
+}
 
 function render(): void {
   const connection = dAppKit.stores.$connection.get();
@@ -72,12 +91,27 @@ function render(): void {
     missing.textContent = "Missing wallet session token. Open the wallet URL from your AI client again.";
     section.append(missing);
   } else if (connection.status === "connected") {
+    autoConnectSettling = false;
     const connected = document.createElement("p");
     connected.className = "success";
     connected.textContent = `Connected address: ${connection.account.address}`;
     section.append(connected);
+    const disconnect = document.createElement("button");
+    disconnect.type = "button";
+    disconnect.className = "secondary";
+    disconnect.disabled = isConnecting || isSubmittingResult;
+    disconnect.textContent = "Disconnect / switch wallet";
+    disconnect.onclick = () => {
+      void dAppKit.disconnectWallet().then(() => render());
+    };
+    section.append(disconnect);
     section.append(analysisPanelsContainer());
     void loadAnalysisPanels();
+  } else if (autoConnectSettling || connection.status === "connecting") {
+    const connecting = document.createElement("p");
+    connecting.className = "status";
+    connecting.textContent = "Reconnecting your wallet…";
+    section.append(connecting);
   } else if (wallets.length === 0) {
     const empty = document.createElement("p");
     empty.className = "error";

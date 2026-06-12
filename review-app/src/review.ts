@@ -3,7 +3,7 @@ import "./review.css";
 import { Transaction } from "@mysten/sui/transactions";
 import mermaid from "mermaid";
 import type { UiWallet } from "@mysten/dapp-kit-core";
-import { createLocalDAppKit } from "./dappKitClient.js";
+import { createLocalDAppKit, suiMainnetClient } from "./dappKitClient.js";
 import { isWalletStandardUserRejected } from "./walletStatus.js";
 import { getWalletUniqueIdentifier } from "@mysten/dapp-kit-core";
 
@@ -242,6 +242,25 @@ dAppKit.stores.$connection.subscribe(() => render());
 let isSigning = false;
 let signNotice: { kind: "error" | "info"; text: string } | undefined;
 let sessionGone = false;
+
+// Avoid flashing the wallet picker in the signing section before dapp-kit's
+// autoConnect resolves: when a wallet selection is stored, show a reconnecting
+// placeholder until the connection settles (or a short timeout elapses).
+let autoConnectSettling = hasStoredWalletSelection();
+if (autoConnectSettling) {
+  window.setTimeout(() => {
+    autoConnectSettling = false;
+    render();
+  }, 2000);
+}
+
+function hasStoredWalletSelection(): boolean {
+  try {
+    return window.localStorage.getItem("mysten-dapp-kit:selected-wallet-and-address") !== null;
+  } catch {
+    return false;
+  }
+}
 
 if (reviewSessionId && token) {
   void openAndLoadReview();
@@ -1228,13 +1247,28 @@ async function runAccountBoundReview(): Promise<void> {
   loading = true;
   render();
   try {
-    const result = await requestJson<{ reviewState: ReviewState }>(
-      `/api/review/${encodeURIComponent(reviewSessionId)}/state`,
-      {
+    const stateRequest = () =>
+      requestJson<{ reviewState: ReviewState }>(`/api/review/${encodeURIComponent(reviewSessionId)}/state`, {
         method: "POST",
         body: JSON.stringify({ planId: plan.id, account })
+      });
+    let result;
+    try {
+      result = await stateRequest();
+    } catch (error) {
+      // A stale signing lock (e.g. the page reloaded past a hung wallet call)
+      // refuses recomputes with 409. Cancel the outstanding handoff once and
+      // retry instead of dead-ending the user.
+      if (error instanceof HttpJsonRequestError && error.status === 409 && sessionPayload?.signingInProgress) {
+        await requestJson(`/api/review/${encodeURIComponent(reviewSessionId)}/handoff/cancel`, {
+          method: "POST",
+          body: "{}"
+        });
+        result = await stateRequest();
+      } else {
+        throw error;
       }
-    );
+    }
     sessionPayload = {
       ...(await requestJson<ReviewSessionPayload>(`/api/review/${encodeURIComponent(reviewSessionId)}`, {
         method: "GET"
@@ -1260,6 +1294,7 @@ function renderSigningSection(state: ReviewState): HTMLElement {
   const connection = dAppKit.stores.$connection.get();
   const wallets = dAppKit.stores.$wallets.get();
   if (connection.status === "connected") {
+    autoConnectSettling = false;
     if (connection.account.address !== state.account) {
       wrapper.append(
         element(
@@ -1280,6 +1315,19 @@ function renderSigningSection(state: ReviewState): HTMLElement {
       sign.disabled = isSigning;
       wrapper.append(sign);
     }
+    const disconnect = button(
+      "Disconnect / switch wallet",
+      () => {
+        // Escape hatch: stays enabled even mid-signing so a hung wallet call
+        // cannot trap the page. Releases the local signing flag too.
+        isSigning = false;
+        void dAppKit.disconnectWallet().finally(() => render());
+      },
+      "secondary"
+    );
+    wrapper.append(disconnect);
+  } else if (autoConnectSettling || connection.status === "connecting") {
+    wrapper.append(element("p", "status", "Reconnecting your wallet…"));
   } else if (wallets.length === 0) {
     wrapper.append(element("p", "error", "No compatible Sui wallet was detected in this browser."));
   } else {
@@ -1370,15 +1418,60 @@ async function signInWallet(state: ReviewState): Promise<void> {
       throw new Error("Handoff bytes do not match the reviewed transaction commitment.");
     }
     handedOff = true;
-    const result = await dAppKit.signAndExecuteTransaction({ transaction });
-    const executed = result.$kind === "Transaction" ? result.Transaction : undefined;
-    const digest = executed?.digest;
-    if (typeof digest !== "string" || digest.length === 0) {
-      await postExecutionResult(state, { status: "failure", failureReason: "transaction_submit_failed" });
-      signNotice = { kind: "error", text: "The wallet did not return an executed transaction digest." };
+    // Debug surface for wallet/firmware integration: the exact pre-signature
+    // transaction bytes the wallet receives. Public transaction data only.
+    console.info("[sign-debug] tx bytes (base64):", handoff.transactionBytesBase64);
+    console.info(
+      "[sign-debug] tx bytes (hex):",
+      Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+    );
+    console.info("[sign-debug] tx bytes length:", bytes.length, "digest:", recomputed);
+    // Sign and execute are separated on purpose: not every wallet exposes
+    // sign-and-execute (Agent-Q signs only), and submitting from this page
+    // works identically for every Wallet Standard signer.
+    const signed = await withTimeout(
+      dAppKit.signTransaction({ transaction }),
+      90_000,
+      "The wallet did not respond to the signing request within 90 seconds."
+    );
+    const signedBytes = base64ToBytes(signed.bytes);
+    const signedDigest = await Transaction.from(signedBytes).getDigest();
+    if (signedDigest !== handoff.transactionMaterialCommitment) {
+      await postExecutionResult(state, { status: "failure", failureReason: "wallet_provider_error" });
+      signNotice = {
+        kind: "error",
+        text: "The wallet returned bytes whose digest does not match the reviewed commitment; nothing was submitted."
+      };
       return;
     }
-    await postExecutionResult(state, { status: "signed_pending_result", txDigest: digest });
+    await postExecutionResult(state, { status: "signed_pending_result", txDigest: signedDigest });
+    let executed;
+    try {
+      executed = await suiMainnetClient.core.executeTransaction({
+        transaction: signedBytes,
+        signatures: [signed.signature],
+        include: { effects: true }
+      });
+    } catch (submitError) {
+      await postExecutionResult(state, { status: "failure", failureReason: "transaction_submit_failed" });
+      signNotice = {
+        kind: "error",
+        text: messageForHttpError(submitError, "The signed transaction could not be submitted to the chain.")
+      };
+      return;
+    }
+    if (executed.$kind !== "Transaction" || !executed.Transaction) {
+      await postExecutionResult(state, { status: "failure", failureReason: "execution_result_unavailable" });
+      signNotice = { kind: "error", text: "The chain did not return an executed transaction record." };
+      return;
+    }
+    const digest = executed.Transaction.digest;
+    const effectsStatus = executed.Transaction.effects?.status;
+    if (effectsStatus && !effectsStatus.success) {
+      await postExecutionResult(state, { status: "failure", failureReason: "unknown_failure" });
+      signNotice = { kind: "error", text: "The transaction executed on chain but failed - see the receipt below." };
+      return;
+    }
     await postExecutionResult(state, { status: "success", txDigest: digest });
     signNotice = { kind: "info", text: "Transaction executed successfully - receipt recorded below." };
   } catch (error) {
@@ -1406,6 +1499,20 @@ async function postExecutionResult(
     method: "POST",
     body: JSON.stringify({ planId: state.planId, ...body })
   });
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function base64ToBytes(value: string): Uint8Array {
