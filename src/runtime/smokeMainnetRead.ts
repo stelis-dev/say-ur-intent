@@ -150,6 +150,7 @@ async function main(): Promise<void> {
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
         adapters: buildSupportedReviewAdapters({
+          deepbook: {
           deepbookQuoteSource: readService,
           deepbookDeepBalanceSource: async (account) => {
             const balance = await suiClient.core.getBalance({
@@ -185,6 +186,7 @@ async function main(): Promise<void> {
           }),
           ptbVisualizationProducer: (vizInput) =>
             producePtbVisualizationArtifact({ materialStore: transactionMaterialStore, ...vizInput })
+          }
         })
       }
     }).start(0);

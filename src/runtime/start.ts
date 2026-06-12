@@ -7,6 +7,12 @@ import {
   createDeepbookSwapTransactionMaterialProducer
 } from "../adapters/deepbook/deepbookTransactionMaterialProducer.js";
 import { createDeepbookSwapHumanReadableReviewProducer } from "../adapters/deepbook/deepbookHumanReviewProducer.js";
+import {
+  createFlowxSwapTransactionMaterialDigestProducer,
+  createFlowxSwapTransactionMaterialProducer
+} from "../adapters/flowx/flowxSwapTransactionMaterialProducer.js";
+import { createFlowxSwapHumanReadableReviewProducer } from "../adapters/flowx/flowxSwapHumanReviewProducer.js";
+import { createFlowxSwapReviewQuoteSource } from "../core/read/flowxQuoteClient.js";
 import { validateSupportedAdapterLifecycle } from "../adapters/adapterLifecycleValidators.js";
 import { buildSupportedReviewAdapters } from "../adapters/reviewAdapters.js";
 import { ADAPTER_PROMPT_SURFACES } from "../adapters/adapterPromptSurfaces.js";
@@ -103,43 +109,67 @@ async function main(): Promise<void> {
       localData,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
-        adapters: buildSupportedReviewAdapters({
-        deepbookQuoteSource: readService,
-        deepbookDeepBalanceSource: async (account) => {
-          const balance = await suiClient.core.getBalance({
-            owner: account,
-            coinType: mainnetCoins.DEEP!.type
+        adapters: buildSupportedReviewAdapters((() => {
+          const transactionObjectOwnershipProducer = createTransactionObjectOwnershipProducer({
+            materialStore: transactionMaterialStore,
+            objectSource: suiClient,
+            network: config.network,
+            chainIdentifier,
+            expectedChainIdentifier: config.expectedChainIdentifier
           });
-          return balance.balance.balance.toString();
-        },
-        deepbookTransactionMaterialProducer: createDeepbookSwapTransactionMaterialProducer({
-          client: suiClient,
-          network: config.network,
-          chainIdentifier,
-          expectedChainIdentifier: config.expectedChainIdentifier,
-          materialStore: transactionMaterialStore
-        }),
-        deepbookTransactionMaterialDigestProducer: createDeepbookSwapTransactionMaterialDigestProducer({
-          materialStore: transactionMaterialStore
-        }),
-        transactionObjectOwnershipProducer: createTransactionObjectOwnershipProducer({
-          materialStore: transactionMaterialStore,
-          objectSource: suiClient,
-          network: config.network,
-          chainIdentifier,
-          expectedChainIdentifier: config.expectedChainIdentifier
-        }),
-        deepbookHumanReadableReviewProducer: createDeepbookSwapHumanReadableReviewProducer(),
-        reviewTimeSimulationProducer: createReviewTimeSimulationProducer({
-          client: suiClient,
-          materialStore: transactionMaterialStore,
-          network: config.network,
-          chainIdentifier,
-          expectedChainIdentifier: config.expectedChainIdentifier
-        }),
-          ptbVisualizationProducer: (vizInput) =>
-            producePtbVisualizationArtifact({ materialStore: transactionMaterialStore, ...vizInput })
-        })
+          const reviewTimeSimulationProducer = createReviewTimeSimulationProducer({
+            client: suiClient,
+            materialStore: transactionMaterialStore,
+            network: config.network,
+            chainIdentifier,
+            expectedChainIdentifier: config.expectedChainIdentifier
+          });
+          return {
+            deepbook: {
+              deepbookQuoteSource: readService,
+              deepbookDeepBalanceSource: async (account: string) => {
+                const balance = await suiClient.core.getBalance({
+                  owner: account,
+                  coinType: mainnetCoins.DEEP!.type
+                });
+                return balance.balance.balance.toString();
+              },
+              deepbookTransactionMaterialProducer: createDeepbookSwapTransactionMaterialProducer({
+                client: suiClient,
+                network: config.network,
+                chainIdentifier,
+                expectedChainIdentifier: config.expectedChainIdentifier,
+                materialStore: transactionMaterialStore
+              }),
+              deepbookTransactionMaterialDigestProducer: createDeepbookSwapTransactionMaterialDigestProducer({
+                materialStore: transactionMaterialStore
+              }),
+              transactionObjectOwnershipProducer,
+              deepbookHumanReadableReviewProducer: createDeepbookSwapHumanReadableReviewProducer(),
+              reviewTimeSimulationProducer,
+              ptbVisualizationProducer: (vizInput) =>
+                producePtbVisualizationArtifact({ materialStore: transactionMaterialStore, ...vizInput })
+            },
+            flowx: {
+              flowxQuoteSource: createFlowxSwapReviewQuoteSource(),
+              flowxTransactionMaterialProducer: createFlowxSwapTransactionMaterialProducer({
+                client: suiClient,
+                network: config.network,
+                chainIdentifier,
+                expectedChainIdentifier: config.expectedChainIdentifier,
+                materialStore: transactionMaterialStore
+              }),
+              flowxTransactionMaterialDigestProducer: createFlowxSwapTransactionMaterialDigestProducer({
+                materialStore: transactionMaterialStore
+              }),
+              transactionObjectOwnershipProducer,
+              flowxHumanReadableReviewProducer: createFlowxSwapHumanReadableReviewProducer(),
+              reviewTimeSimulationProducer,
+              ptbVisualizationProducer: (vizInput) =>
+                producePtbVisualizationArtifact({ materialStore: transactionMaterialStore, ...vizInput })
+            }
+          };
+        })())
       },
       serverInfo: {
         name: SERVER_NAME,

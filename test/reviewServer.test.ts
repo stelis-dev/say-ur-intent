@@ -243,12 +243,12 @@ describe("review HTTP server", () => {
       logger,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
-        adapters: buildSupportedReviewAdapters({
+        adapters: buildSupportedReviewAdapters({ deepbook: {
           deepbookQuoteSource: {
             quoteDeepbookDisplayAmount: async () =>
               deepbookDisplayQuote({ fetchedAt: new Date(Date.now() - 1_000).toISOString() })
           }
-        })
+        } })
       }
     }).start(0);
 
@@ -314,7 +314,7 @@ describe("review HTTP server", () => {
       logger,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
-        adapters: buildSupportedReviewAdapters({
+        adapters: buildSupportedReviewAdapters({ deepbook: {
         deepbookQuoteSource: {
           quoteDeepbookDisplayAmount: async () =>
             deepbookDisplayQuote({ fetchedAt: new Date(Date.now() - 1_000).toISOString() })
@@ -362,7 +362,7 @@ describe("review HTTP server", () => {
             ]
           };
         }
-        })
+        } })
       }
     }).start(0);
 
@@ -432,14 +432,14 @@ describe("review HTTP server", () => {
       logger,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
-        adapters: buildSupportedReviewAdapters({
+        adapters: buildSupportedReviewAdapters({ deepbook: {
           deepbookQuoteSource: {
             quoteDeepbookDisplayAmount: async () => {
               quoteCalled = true;
               return deepbookDisplayQuote();
             }
           }
-        })
+        } })
       }
     }).start(0);
 

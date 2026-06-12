@@ -35,7 +35,7 @@ const quotePolicyAssetSchema = z.object({
   symbol: z.string().min(1).max(64),
   coinType: coinTypeSchema,
   decimals: z.number().int().min(0).max(255),
-  unitSource: z.enum(["deepbook_mainnetCoins_scalar", "sui_core_getCoinMetadata"])
+  unitSource: z.enum(["deepbook_mainnetCoins_scalar", "flowx_pinned_registry", "sui_core_getCoinMetadata"])
 }).strict();
 
 const quotePolicyRawAmountSchema = z.object({
@@ -355,6 +355,13 @@ function mapUnitSource(
       sourceOfTruthKind: "pinned_sdk_registry",
       unitClaimSource: "pinned_sdk_metadata",
       sourceDescription: "Pinned DeepBook mainnet coin metadata scalar used for quote raw units"
+    };
+  }
+  if (unitSource === "flowx_pinned_registry") {
+    return {
+      sourceOfTruthKind: "pinned_sdk_registry",
+      unitClaimSource: "pinned_sdk_metadata",
+      sourceDescription: "Pinned FlowX mainnet registry (chain-verified) used for quote raw units"
     };
   }
   if (unitSource === "sui_core_getCoinMetadata") {

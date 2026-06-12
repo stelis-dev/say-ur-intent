@@ -73,7 +73,7 @@ async function readyReviewSession() {
     },
     {
       validateAdapterLifecycle: validateSupportedAdapterLifecycle,
-      adapters: buildSupportedReviewAdapters({
+      adapters: buildSupportedReviewAdapters({ deepbook: {
         deepbookQuoteSource: {
           quoteDeepbookDisplayAmount: async () => deepbookDisplayQuote()
         },
@@ -156,7 +156,7 @@ async function readyReviewSession() {
         }),
         ptbVisualizationProducer: (vizInput) =>
           producePtbVisualizationArtifact({ materialStore, ...vizInput })
-      })
+      } })
     }
   );
   if (!computed.privateArtifacts) {

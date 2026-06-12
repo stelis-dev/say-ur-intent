@@ -17,9 +17,31 @@ import type {
 import type {
   DeepbookSwapHumanReadableReviewProducer
 } from "./deepbook/deepbookHumanReviewProducer.js";
+import {
+  computeFlowxSwapReviewEvidence,
+  type FlowxPtbVisualizationProducer,
+  type FlowxSwapReviewQuoteSource
+} from "./flowx/flowxSwapReviewEvidence.js";
+import {
+  FLOWX_SWAP_ACTION_KIND,
+  FLOWX_SWAP_ADAPTER_ID,
+  FLOWX_SWAP_PROTOCOL,
+  isFlowxSwapActionPlanIdentity
+} from "./flowx/flowxSwapIntent.js";
+import { FLOWX_SWAP_REVIEW_LIFECYCLE_STAGE_CATALOG_ID } from "./flowx/flowxSwapReviewLifecycle.js";
+import type {
+  FlowxSwapTransactionMaterialDigestProducer,
+  FlowxSwapTransactionMaterialProducer
+} from "./flowx/flowxSwapTransactionMaterialProducer.js";
+import type {
+  FlowxSwapHumanReadableReviewProducer
+} from "./flowx/flowxSwapHumanReviewProducer.js";
 import type { ReviewTimeSimulationProducer } from "../core/action/reviewTimeSimulationEvidence.js";
 import type { TransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
-import { unsupportedDeepbookSwapPlanIdentityCheck } from "../core/review/reviewChecks.js";
+import {
+  unsupportedDeepbookSwapPlanIdentityCheck,
+  unsupportedFlowxSwapPlanIdentityCheck
+} from "../core/review/reviewChecks.js";
 import { blockedReviewResult } from "../core/review/reviewComputationResult.js";
 import type {
   ReviewAdapterEvidenceComputer,
@@ -37,6 +59,26 @@ export type DeepbookReviewAdapterWiring = {
   ptbVisualizationProducer?: DeepbookPtbVisualizationProducer | undefined;
 };
 
+export type FlowxReviewAdapterWiring = {
+  flowxQuoteSource: FlowxSwapReviewQuoteSource;
+  flowxTransactionMaterialProducer?: FlowxSwapTransactionMaterialProducer | undefined;
+  flowxTransactionMaterialDigestProducer?: FlowxSwapTransactionMaterialDigestProducer | undefined;
+  transactionObjectOwnershipProducer?: TransactionObjectOwnershipProducer | undefined;
+  flowxHumanReadableReviewProducer?: FlowxSwapHumanReadableReviewProducer | undefined;
+  reviewTimeSimulationProducer?: ReviewTimeSimulationProducer | undefined;
+  ptbVisualizationProducer?: FlowxPtbVisualizationProducer | undefined;
+};
+
+/**
+ * Named per-adapter wiring. A protocol whose wiring field is absent is simply
+ * not registered - the platform then reports unsupported_action for its plans
+ * instead of running with partial producers.
+ */
+export type SupportedReviewAdapterWiring = {
+  deepbook: DeepbookReviewAdapterWiring;
+  flowx?: FlowxReviewAdapterWiring | undefined;
+};
+
 /**
  * One registered review adapter. The platform owns the safety gates (typed
  * evidence claims, commitment equality, digest-gated handoff); a descriptor
@@ -51,17 +93,27 @@ export type ReviewAdapterDescriptor = {
 };
 
 export function buildSupportedReviewAdapterDescriptors(
-  wiring: DeepbookReviewAdapterWiring
+  wiring: SupportedReviewAdapterWiring
 ): ReviewAdapterDescriptor[] {
-  return [
+  const descriptors: ReviewAdapterDescriptor[] = [
     {
       adapterId: DEEPBOOK_SWAP_ADAPTER_ID,
       protocol: DEEPBOOK_SWAP_PROTOCOL,
       actionKind: DEEPBOOK_SWAP_ACTION_KIND,
       stageCatalogId: DEEPBOOK_SWAP_REVIEW_LIFECYCLE_STAGE_CATALOG_ID,
-      computeReview: deepbookSwapEvidenceComputer(wiring)
+      computeReview: deepbookSwapEvidenceComputer(wiring.deepbook)
     }
   ];
+  if (wiring.flowx) {
+    descriptors.push({
+      adapterId: FLOWX_SWAP_ADAPTER_ID,
+      protocol: FLOWX_SWAP_PROTOCOL,
+      actionKind: FLOWX_SWAP_ACTION_KIND,
+      stageCatalogId: FLOWX_SWAP_REVIEW_LIFECYCLE_STAGE_CATALOG_ID,
+      computeReview: flowxSwapEvidenceComputer(wiring.flowx)
+    });
+  }
+  return descriptors;
 }
 
 function deepbookSwapEvidenceComputer(wiring: DeepbookReviewAdapterWiring): ReviewAdapterEvidenceComputer {
@@ -88,7 +140,30 @@ function deepbookSwapEvidenceComputer(wiring: DeepbookReviewAdapterWiring): Revi
   };
 }
 
-export function buildSupportedReviewAdapters(wiring: DeepbookReviewAdapterWiring): ReviewAdapterMap {
+function flowxSwapEvidenceComputer(wiring: FlowxReviewAdapterWiring): ReviewAdapterEvidenceComputer {
+  return async (input) => {
+    if (!isFlowxSwapActionPlanIdentity(input.plan)) {
+      return {
+        result: blockedReviewResult("unsupported_action", [unsupportedFlowxSwapPlanIdentityCheck()])
+      };
+    }
+    return computeFlowxSwapReviewEvidence({
+      reviewSessionId: input.reviewSessionId,
+      plan: input.plan,
+      account: input.account,
+      now: input.now,
+      quoteSource: wiring.flowxQuoteSource,
+      transactionMaterialProducer: wiring.flowxTransactionMaterialProducer,
+      transactionMaterialDigestProducer: wiring.flowxTransactionMaterialDigestProducer,
+      transactionObjectOwnershipProducer: wiring.transactionObjectOwnershipProducer,
+      humanReadableReviewProducer: wiring.flowxHumanReadableReviewProducer,
+      reviewTimeSimulationProducer: wiring.reviewTimeSimulationProducer,
+      ptbVisualizationProducer: wiring.ptbVisualizationProducer
+    });
+  };
+}
+
+export function buildSupportedReviewAdapters(wiring: SupportedReviewAdapterWiring): ReviewAdapterMap {
   const adapters: Record<string, ReviewAdapterEvidenceComputer> = {};
   for (const descriptor of buildSupportedReviewAdapterDescriptors(wiring)) {
     adapters[descriptor.adapterId] = descriptor.computeReview;

@@ -373,13 +373,18 @@ describe("MCP discoverability", () => {
         "inspect-supported-sui-actions",
         "prepare-reviewable-sui-action",
         "swap",
-        "swap-deep"
+        "swap-deep",
+        "swap-flowx"
       ]);
       // Adapter prompt surfaces take exactly one free-text intent argument;
       // the static prompts stay zero-argument. No prompt claims signing
       // support.
       for (const prompt of result.prompts) {
-        if (prompt.name === "swap" || prompt.name === "swap-deep") {
+        if (prompt.name === "swap") {
+          // Two protocols register swap, so the bare action carries the
+          // protocol-choice argument; it never picks a venue silently.
+          expect((prompt.arguments ?? []).map((argument) => argument.name)).toEqual(["intent", "protocol"]);
+        } else if (prompt.name === "swap-deep" || prompt.name === "swap-flowx") {
           expect((prompt.arguments ?? []).map((argument) => argument.name)).toEqual(["intent"]);
         } else {
           expect(prompt.arguments ?? []).toEqual([]);
@@ -2462,7 +2467,8 @@ describe("MCP discoverability", () => {
             type: "swap",
             from: { symbol: "SUI", amount: "1" },
             to: { symbol: "USDC" },
-            maxSlippageBps: 50
+            maxSlippageBps: 50,
+            protocol: "deep"
           }
         }
       });
@@ -2501,7 +2507,8 @@ describe("MCP discoverability", () => {
             type: "swap",
             from: { symbol: "sui", amount: "1" },
             to: { symbol: "usdc" },
-            maxSlippageBps: 50
+            maxSlippageBps: 50,
+            protocol: "deep"
           }
         }
       });
@@ -3659,7 +3666,8 @@ describe("MCP discoverability", () => {
               type: "swap",
               from: { symbol: "SUI", amount: "1" },
               to: { symbol: "USDC" },
-              maxSlippageBps: 50
+              maxSlippageBps: 50,
+              protocol: "deep"
             }
           }
         },

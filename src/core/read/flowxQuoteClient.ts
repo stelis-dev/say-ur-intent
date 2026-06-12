@@ -39,6 +39,45 @@ export function createFlowxQuoteClient(): FlowxQuoteClient {
   };
 }
 
+/**
+ * Build-grade quote source for the FlowX review adapter: one quoter response
+ * yields both the normalized quote (validated against the pinned registry)
+ * and the SDK route entities the local transaction build consumes.
+ */
+export function createFlowxSwapReviewQuoteSource(options?: { now?: () => Date }): {
+  getSwapRoutesForBuild(request: FlowxQuoteRequest): Promise<{
+    normalized: FlowxRouteQuote;
+    sdkRoutes: unknown;
+    fetchedAt: string;
+  }>;
+} {
+  const quoter = new AggregatorQuoter("mainnet");
+  const now = options?.now ?? (() => new Date());
+  return {
+    async getSwapRoutesForBuild(request: FlowxQuoteRequest) {
+      let result;
+      try {
+        result = await quoter.getRoutes({
+          tokenIn: request.tokenInType,
+          tokenOut: request.tokenOutType,
+          amountIn: request.amountInRaw,
+          includeSources: [Protocol.FLOWX_V3],
+          maxHops: FLOWX_QUOTER_MAX_HOPS
+        });
+      } catch (error) {
+        throw new ReadServiceInputError("quote_unavailable", "FlowX quoter request failed", {
+          reason: error instanceof Error ? error.message : "unknown"
+        });
+      }
+      return {
+        normalized: normalizeFlowxQuoterResult(result),
+        sdkRoutes: result.routes,
+        fetchedAt: now().toISOString()
+      };
+    }
+  };
+}
+
 type RawQuoterPath = {
   poolId?: unknown;
   source?: unknown;

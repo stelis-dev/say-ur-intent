@@ -497,7 +497,8 @@ const scenarioInvokers: Record<string, ScenarioInvoker> = {
               type: "swap",
               from: { symbol: "SUI", amount: "1" },
               to: { symbol: "USDC" },
-              maxSlippageBps: 50
+              maxSlippageBps: 50,
+              protocol: "deep"
             }
           }
         })

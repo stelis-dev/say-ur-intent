@@ -14,13 +14,24 @@ const unusedProducer = () => {
 };
 
 const descriptorMetadata = buildSupportedReviewAdapterDescriptors({
-  deepbookQuoteSource: { quoteDeepbookDisplayAmount: unusedProducer },
-  deepbookTransactionMaterialProducer: unusedProducer,
-  deepbookTransactionMaterialDigestProducer: unusedProducer,
-  transactionObjectOwnershipProducer: unusedProducer,
-  deepbookHumanReadableReviewProducer: unusedProducer,
-  reviewTimeSimulationProducer: unusedProducer,
-  ptbVisualizationProducer: unusedProducer
+  deepbook: {
+    deepbookQuoteSource: { quoteDeepbookDisplayAmount: unusedProducer },
+    deepbookTransactionMaterialProducer: unusedProducer,
+    deepbookTransactionMaterialDigestProducer: unusedProducer,
+    transactionObjectOwnershipProducer: unusedProducer,
+    deepbookHumanReadableReviewProducer: unusedProducer,
+    reviewTimeSimulationProducer: unusedProducer,
+    ptbVisualizationProducer: unusedProducer
+  },
+  flowx: {
+    flowxQuoteSource: { getSwapRoutesForBuild: unusedProducer },
+    flowxTransactionMaterialProducer: unusedProducer,
+    flowxTransactionMaterialDigestProducer: unusedProducer,
+    transactionObjectOwnershipProducer: unusedProducer,
+    flowxHumanReadableReviewProducer: unusedProducer,
+    reviewTimeSimulationProducer: unusedProducer,
+    ptbVisualizationProducer: unusedProducer
+  }
 });
 
 describe("adapter prompt surfaces", () => {
@@ -51,11 +62,13 @@ describe("adapter prompt surfaces", () => {
       title: "Other Swap Review",
       toolName: "action.prepare_other_action_review"
     };
-    const single = actionGroups(ADAPTER_PROMPT_SURFACES);
+    const single = actionGroups(ADAPTER_PROMPT_SURFACES.filter((surface) => surface.protocolSlug === "deep"));
     expect(single.get("swap")).toHaveLength(1);
 
+    expect(actionGroups(ADAPTER_PROMPT_SURFACES).get("swap")).toHaveLength(2);
+
     const contested = [...ADAPTER_PROMPT_SURFACES, competitor];
-    expect(actionGroups(contested).get("swap")).toHaveLength(2);
+    expect(actionGroups(contested).get("swap")).toHaveLength(3);
 
     // No protocol chosen: the prompt must list options and forbid silent
     // venue selection.

@@ -56,7 +56,7 @@ function withSupportedLifecycleValidator(
 ): ReviewComputationDeps {
   return {
     validateAdapterLifecycle: validateSupportedAdapterLifecycle,
-    adapters: buildSupportedReviewAdapters(wiring)
+    adapters: buildSupportedReviewAdapters({ deepbook: wiring })
   };
 }
 

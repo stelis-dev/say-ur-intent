@@ -862,6 +862,7 @@ Do not rely on contributor-only documents as the runtime source of agent behavio
 | `inspect-supported-sui-actions` | Guides a user through checking server status and supported mainnet surfaces. |
 | `prepare-reviewable-sui-action` | Guides a user through the review-session flow without claiming unsupported signing support. |
 | `swap-deep` | Prepares a reviewable DeepBook swap from a one-line intent argument (any language), e.g. `10 sui to usdc`. |
+| `swap-flowx` | Prepares a reviewable FlowX CLMM swap from a one-line intent argument (any language), e.g. `10 sui to usdc`. |
 | `swap` | Bare-action prompt, always registered. With one protocol it routes straight there; with several it takes an optional `protocol` argument (completion suggests the slugs) and instructs the model to list the options and ask the user - never to pick a venue silently. |
 
 Adapter prompt surfaces are declared per adapter in

@@ -15,11 +15,26 @@ const competitor: IntentPlanFactory = {
 };
 
 describe("intent plan factories", () => {
-  it("resolves the single registered protocol without an explicit slug", () => {
-    const resolution = resolveIntentPlanFactory(INTENT_PLAN_FACTORIES, "swap");
+  it("resolves a single registered protocol without an explicit slug", () => {
+    const single = INTENT_PLAN_FACTORIES.filter((factory) => factory.protocolSlug === "deep");
+    const resolution = resolveIntentPlanFactory(single, "swap");
     expect(resolution.status).toBe("resolved");
     if (resolution.status === "resolved") {
       expect(resolution.factory.adapterId).toBe("deepbook-swap");
+    }
+  });
+
+  it("requires an explicit protocol now that two protocols register swap", () => {
+    const resolution = resolveIntentPlanFactory(INTENT_PLAN_FACTORIES, "swap");
+    expect(resolution).toMatchObject({
+      status: "protocol_choice_required",
+      available: ["deep", "flowx"]
+    });
+    const flowx = resolveIntentPlanFactory(INTENT_PLAN_FACTORIES, "swap", "flowx");
+    expect(flowx.status).toBe("resolved");
+    if (flowx.status === "resolved") {
+      expect(flowx.factory.adapterId).toBe("flowx-swap");
+      expect(flowx.factory.protocol).toBe("FlowXCLMM");
     }
   });
 
@@ -28,7 +43,7 @@ describe("intent plan factories", () => {
     const resolution = resolveIntentPlanFactory(contested, "swap");
     expect(resolution).toMatchObject({
       status: "protocol_choice_required",
-      available: ["deep", "other"]
+      available: ["deep", "flowx", "other"]
     });
     const explicit = resolveIntentPlanFactory(contested, "swap", "other");
     expect(explicit.status).toBe("resolved");
@@ -36,7 +51,7 @@ describe("intent plan factories", () => {
 
   it("reports unknown protocols with the available slugs", () => {
     const resolution = resolveIntentPlanFactory(INTENT_PLAN_FACTORIES, "swap", "nope");
-    expect(resolution).toMatchObject({ status: "unknown_protocol", available: ["deep"] });
+    expect(resolution).toMatchObject({ status: "unknown_protocol", available: ["deep", "flowx"] });
   });
 
   it("reports unsupported action kinds", () => {
