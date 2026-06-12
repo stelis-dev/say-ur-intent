@@ -257,6 +257,31 @@ describe("prepareWalletHandoff", () => {
     ).resolves.toMatchObject({ id: session.id });
   });
 
+  it("keeps the session signable when material expires during an outstanding handoff", async () => {
+    const { store, session, computed } = await readyReviewSession();
+    await store.prepareWalletHandoff(session.id, plan.id, walletAccount, computeNow);
+    const afterExpiry = new Date("2026-05-15T00:00:31.000Z");
+    // Reading the session after material expiry must not demote it while the
+    // handoff is outstanding (a slow hardware wallet is still signing).
+    const read = await store.getReviewSession(session.id, afterExpiry);
+    expect(read?.reviewState?.status).toBe("ready_for_wallet_review");
+    // A late wallet failure must still be recordable.
+    await expect(
+      store.recordExecutionResult(
+        session.id,
+        {
+          reviewSessionId: session.id,
+          planId: plan.id,
+          status: "failure",
+          failureReason: "wallet_provider_error",
+          recordedAt: afterExpiry.toISOString()
+        },
+        afterExpiry
+      )
+    ).resolves.toMatchObject({ status: "failure" });
+    expect(computed.state.status).toBe("ready_for_wallet_review");
+  });
+
   it("refuses handoff when the stored digest does not match the reviewed contract commitment", async () => {
     const { store, materialStore, session, computed } = await readyReviewSession();
     const other = await recordTestTransactionMaterial({

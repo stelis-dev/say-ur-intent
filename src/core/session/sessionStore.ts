@@ -187,7 +187,7 @@ const ALLOWED_TRANSITIONS: Record<InternalSessionStatus, InternalSessionStatus[]
   proposed: ["awaiting_wallet", "expired"],
   awaiting_wallet: ["wallet_connected", "expired"],
   wallet_connected: ["ready_for_wallet_review", "refresh_required", "blocked", "expired"],
-  ready_for_wallet_review: ["signed_pending_result", "refresh_required", "blocked", "expired"],
+  ready_for_wallet_review: ["signed_pending_result", "failure", "refresh_required", "blocked", "expired"],
   refresh_required: ["ready_for_wallet_review", "blocked", "expired"],
   blocked: ["refresh_required", "expired"],
   signed_pending_result: ["success", "failure", "expired"],
@@ -843,6 +843,14 @@ export class InMemorySessionStore implements SessionStore {
     session: ReviewSession,
     now: Date
   ): Promise<ReviewSession> {
+    // While a wallet handoff is outstanding, the page is signing bytes that
+    // were already handed over; material expiry must not demote the session
+    // out from under that signature (slow hardware wallets legitimately take
+    // longer than the material TTL). The lock still releases on result
+    // recording, explicit cancel, or the recompute-time expiry self-heal.
+    if (session.pendingHandoffDigest !== undefined) {
+      return session;
+    }
     if (
       !canRetainPrivateReviewArtifacts(session.status) ||
       (!session.reviewState?.humanReadableReview && !session.reviewState?.simulation)
