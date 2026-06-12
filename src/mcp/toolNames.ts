@@ -7,6 +7,8 @@ export const TOOL_NAMES = {
   readGetDeepbookMidPrice: "read.get_deepbook_mid_price",
   readQuoteDeepbookAction: "read.quote_deepbook_action",
   readQuoteDeepbookDisplayAmount: "read.quote_deepbook_display_amount",
+  readListFlowxPools: "read.list_flowx_pools",
+  readQuoteFlowxSwap: "read.quote_flowx_swap",
   readSummarizeDeepbookAccountInventory: "read.summarize_deepbook_account_inventory",
   readSummarizeWalletAssets: "read.summarize_wallet_assets",
   readClassifyWalletAssets: "read.classify_wallet_assets",

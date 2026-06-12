@@ -71,6 +71,8 @@ export const IMPLEMENTED_TOOLS = [
   TOOL_NAMES.readGetDeepbookMidPrice,
   TOOL_NAMES.readQuoteDeepbookAction,
   TOOL_NAMES.readQuoteDeepbookDisplayAmount,
+  TOOL_NAMES.readListFlowxPools,
+  TOOL_NAMES.readQuoteFlowxSwap,
   TOOL_NAMES.readSummarizeDeepbookAccountInventory,
   TOOL_NAMES.readSummarizeWalletAssets,
   TOOL_NAMES.readClassifyWalletAssets,

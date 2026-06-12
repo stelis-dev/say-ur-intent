@@ -20,6 +20,8 @@ Tool names use dot prefixes and avoid arbitrary shell, arbitrary Move calls, and
 | `read.get_deepbook_mid_price` | Implemented | Returns a DeepBook pool mid price snapshot from pinned SDK simulation reads. |
 | `read.quote_deepbook_action` | Implemented | Quotes raw integer DeepBook quantities through pinned SDK transaction builders and raw `u64` simulation return values with an internal sender placeholder. |
 | `read.quote_deepbook_display_amount` | Implemented | Converts an explicit display source amount through pinned DeepBook token units, then returns scoped display quote facts plus raw quote evidence. |
+| `read.list_flowx_pools` | Implemented | Lists pinned FlowX CLMM mainnet pools for supported pairs from the chain-verified pinned registry. |
+| `read.quote_flowx_swap` | Implemented | Returns an indicative FlowX route quote for an explicit display source amount; the router-selected pool is reported as evidence and validated against the pinned registry. |
 | `read.summarize_deepbook_account_inventory` | Implemented | Summarizes active-account DeepBook BalanceManager inventory through pinned SDK simulation reads. |
 | `read.summarize_wallet_assets` | Implemented | Reads coin balances for an explicit address or the active account through Sui gRPC `client.core.listBalances`; accepts `cursor` for pagination. |
 | `read.classify_wallet_assets` | Implemented | Classifies coin balances for an explicit address or the active account by spendability and coin-balance roles; accepts `cursor` for pagination. |
@@ -136,6 +138,27 @@ Returned `quantitySemantics.kind: "deepbook_quote_display_amount"` means those d
 They are not raw output amounts, min-out values, liquidity verdicts, route recommendations, venue comparisons, best-route claims, effective prices, price-impact calculations, mid-price slippage calculations, funding sources, fiat USD cash-out estimates, external market-price conversions, external market lookups, USDC/USD peg assumptions, P&L, cost basis, transaction-building inputs, signing data, or signing readiness.
 
 This quote is not a settlement asset choice.
+
+### FlowX read tools
+
+`read.list_flowx_pools` lists the pinned FlowX CLMM mainnet pool registry: every pool for each supported pair, one per fee tier, without ranking. The pins were read from Sui mainnet directly (package introspection, the shared `PoolRegistry` object, and its dynamic fields) and `scripts/generate-flowx-registry.ts` re-verifies them against the chain; verification failure stops the generator instead of rewriting pins. The list is static known metadata, not live liquidity, a pool ranking, or route advice.
+
+`read.quote_flowx_swap` accepts `sourceSymbol`, `targetSymbol`, and `amountDisplay`, converts the display amount through pinned decimals, and requests a quote from the FlowX aggregator quoter restricted to FlowX CLMM single-hop routes.
+
+The route is chosen by the FlowX router, not by this server. The response reports that choice as evidence: `routeEvidence.routeChosenBy: "flowx_router_not_this_server"` and `routeEvidence.pools` name the router-selected pool.
+
+Every quote fails closed unless all of the following hold:
+
+- every route hop source is FlowX CLMM;
+- the route is single-hop;
+- the selected pool is present in the pinned registry with the same fee rate;
+- the route direction agrees with the pinned pair orientation;
+- the echoed input amount equals the requested raw amount;
+- the protocol config carried by the quoter response matches the pinned package and object ids (`protocolConfigPinMatch: true`).
+
+`source.chainVerified: false` and `quantitySemantics.chainVerified: false` state that this quote comes from the FlowX quoter API over HTTPS, not from a chain read. `amountOut.indicative: true` marks the output as an indicative estimate. Signable FlowX review, when it ships, re-verifies any quote through review-time simulation before a transaction can be reviewed.
+
+The same payment-answer blocks as the DeepBook quotes apply: `canUseForPaymentAnswer: false`, `doNotCombineWithPaymentAnswer: true`, and `read.preview_intent_evidence` `responseSummary` stays the only payment-coverage answer source.
 
 `read.summarize_deepbook_account_inventory` uses active account context to discover DeepBook BalanceManager addresses.
 

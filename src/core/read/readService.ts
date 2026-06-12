@@ -5,6 +5,7 @@ import {
   DEEPBOOK_SCALAR_UNIT_SOURCE,
   assertValidDecimals,
   decimalsFromScalar,
+  formatRawAmount,
   parseDisplayAmountToRaw,
   normalizeCoinType,
   type CoinMetadataCache,
@@ -14,6 +15,9 @@ import {
   type WalletBalanceWithUnit
 } from "./coinMetadata.js";
 import { createDeepBookReadClient } from "./deepbookRawQuoteClient.js";
+import { createFlowxQuoteClient } from "./flowxQuoteClient.js";
+import { flowxQuoteQuantitySemantics, validateFlowxRouteQuote } from "./flowxReadHelpers.js";
+import { resolveFlowxSwapPair } from "./flowxRegistry.js";
 import {
   deepbookUnitForCoinType,
   canonicalDeepbookSymbol,
@@ -61,6 +65,7 @@ import {
   deepbookMidPriceUserAnswerUse,
   deepbookOrderbookUserAnswerUse,
   deepbookQuoteUserAnswerUse,
+  flowxQuoteUserAnswerUse,
   intentEvidenceUserAnswerUse,
   settlementAssetGroupParityUserAnswerUse,
   walletBalanceUserAnswerUse,
@@ -126,6 +131,8 @@ import {
   type SettlementAssetGroupParityAsset,
   type SettlementAssetGroupParityInput,
   type SettlementAssetGroupParitySummary,
+  type FlowxQuoteClient,
+  type FlowxSwapQuoteSummary,
   type SuiReadCoreClient,
   type SuiReadServiceOptions,
   type WalletAssetClassificationSummary,
@@ -137,6 +144,13 @@ import {
 
 export * from "./readServiceTypes.js";
 export { listDeepbookTokenRegistry } from "./deepbookRegistry.js";
+export {
+  FLOWX_CLMM_MAINNET,
+  FLOWX_CLMM_PROTOCOL_ID,
+  FLOWX_CLMM_UNIT_SOURCE,
+  assertFlowxRegistryShape,
+  listFlowxPoolRegistry
+} from "./flowxRegistry.js";
 
 type WalletBalanceClassificationScan = {
   classifiedAssets: ClassifiedWalletAsset[];
@@ -155,6 +169,7 @@ export class SuiReadService {
   readonly #deepbookFactory: (simulationSender: string, options?: DeepBookFactoryOptions) => DeepBookReadClient;
   readonly #coinMetadataTtlMs: number;
   readonly #deepbookCoins: DeepBookCoinRegistry;
+  readonly #flowxQuoteClient: FlowxQuoteClient;
 
   constructor(options: SuiReadServiceOptions) {
     this.#client = options.client;
@@ -175,6 +190,64 @@ export class SuiReadService {
             ? {}
             : { balanceManagers: factoryOptions.balanceManagers })
         }));
+    this.#flowxQuoteClient = options.flowxQuoteClient ?? createFlowxQuoteClient();
+  }
+
+  async quoteFlowxSwap(input: {
+    sourceSymbol: string;
+    targetSymbol: string;
+    amountDisplay: string;
+  }): Promise<FlowxSwapQuoteSummary> {
+    const pair = resolveFlowxSwapPair({
+      sourceSymbol: input.sourceSymbol,
+      targetSymbol: input.targetSymbol
+    });
+    const amountInRaw = parseQuoteDisplayAmount(input.amountDisplay, pair.source.decimals);
+
+    const quote = await this.#flowxQuoteClient.getSwapRoutes({
+      tokenInType: pair.source.coinType,
+      tokenOutType: pair.target.coinType,
+      amountInRaw
+    });
+    const { pools } = validateFlowxRouteQuote({ pair, requestedAmountInRaw: amountInRaw, quote });
+
+    return {
+      status: "ok",
+      pair: {
+        sourceSymbol: pair.source.symbol,
+        targetSymbol: pair.target.symbol,
+        sourceCoinType: pair.source.coinType,
+        targetCoinType: pair.target.coinType
+      },
+      amountIn: {
+        raw: amountInRaw,
+        display: formatRawAmount(amountInRaw, pair.source.decimals),
+        decimals: pair.source.decimals
+      },
+      amountOut: {
+        raw: quote.amountOutRaw,
+        display: formatRawAmount(quote.amountOutRaw, pair.target.decimals),
+        decimals: pair.target.decimals,
+        indicative: true
+      },
+      routeEvidence: {
+        kind: "flowx_aggregator_route",
+        routeSource: "flowx_quoter_api",
+        routeChosenBy: "flowx_router_not_this_server",
+        singleHop: true,
+        pools,
+        protocolConfigPinMatch: true
+      },
+      fetchedAt: this.#fetchedAt(),
+      userAnswerUse: flowxQuoteUserAnswerUse(),
+      quantitySemantics: flowxQuoteQuantitySemantics(),
+      source: {
+        sdk: "@flowx-finance/sdk",
+        transport: "https",
+        method: "AggregatorQuoter.getRoutes",
+        chainVerified: false
+      }
+    };
   }
 
   async summarizeWalletAssets(input: WalletBalanceInput): Promise<WalletBalanceSummary> {

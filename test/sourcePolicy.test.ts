@@ -12,6 +12,7 @@ const sourceFiles = [
 const toolFiles = [
   "src/mcp/tools/account/index.ts",
   "src/mcp/tools/read/deepbookReadTools.ts",
+  "src/mcp/tools/read/flowxReadTools.ts",
   "src/mcp/tools/read/reviewActivityTools.ts",
   "src/mcp/tools/read/serverStatusTools.ts",
   "src/mcp/tools/read/transactionActivityTools.ts",

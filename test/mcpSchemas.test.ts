@@ -642,7 +642,11 @@ describe("MCP schemas", () => {
     expect(SUPPORTED_PROTOCOLS.every((protocol) => protocol.status === "mainnet")).toBe(true);
     expect(SUPPORTED_PROTOCOLS.map((protocol) => protocol.id)).toEqual([
       "deepbook-v3",
-      "deepbook-margin"
+      "deepbook-margin",
+      "flowx-clmm"
     ]);
+    expect(
+      SUPPORTED_PROTOCOLS.find((protocol) => protocol.id === "flowx-clmm")?.support
+    ).toBe("read_only");
   });
 });

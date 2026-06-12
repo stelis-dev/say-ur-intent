@@ -20,7 +20,8 @@ import { TOOL_NAMES } from "../../toolNames.js";
 
 export const SUPPORTED_PROTOCOLS = [
   { id: "deepbook-v3", status: "mainnet", support: "read_and_local_review" },
-  { id: "deepbook-margin", status: "mainnet", support: "protocol_notes_only" }
+  { id: "deepbook-margin", status: "mainnet", support: "protocol_notes_only" },
+  { id: "flowx-clmm", status: "mainnet", support: "read_only" }
 ] as const;
 
 export function registerServerStatusTools(server: McpServer): void {
