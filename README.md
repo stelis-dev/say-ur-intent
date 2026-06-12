@@ -89,6 +89,42 @@ For manual maintainer and developer utilities, see [docs/UTILITY_INDEX.md](docs/
 
 User-question flows for USD-denominated coverage, balance totals, and shortfall answers live in [docs/AGENT_BEHAVIOR.md](docs/AGENT_BEHAVIOR.md). The response fields for those answers live in [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
 
+## How Product Quality Improves: Three Axes
+
+Future quality work moves along three axes. They multiply rather than add,
+so neglecting any one of them caps the value of the other two:
+
+- **Axis 1 - intent, evidence, answer quality.** Understanding what the user
+  asked, routing it to the right tool (prompt surfaces, `userAnswerUse`
+  response guidance), and answering only from verified mainnet evidence -
+  including saying plainly when a question cannot be answered from the
+  returned evidence. This axis is never finished; it is sharpened
+  continuously.
+- **Axis 2 - protocol breadth.** Additional protocol adapters registered
+  through the descriptor contract (protocol names appear only after a
+  concrete support decision). Breadth is a multiplier, not a list: with a
+  second protocol, action routing starts doing real work (the bare action
+  prompt asks the user to choose a venue instead of routing silently), and
+  the execution-trust foundation proves it is not single-protocol.
+- **Axis 3 - execution-trust foundation.** The guarantee that what the user
+  reviewed is exactly what gets signed, held under any wallet and any signing
+  speed: the review-session state machine, the one-transaction-per-session
+  handoff lock, sign-only wallets and slow hardware signers, review-page
+  security headers, and runtime lifecycle stability. Packaging and runtime
+  operability belong here too. This axis is the product differentiator, so
+  it is tracked as its own axis rather than as a side effect of feature work.
+
+```text
+axis 1 (intent-evidence quality) --+
+                                   +--x axis 2 (protocol breadth) = product value
+axis 3 (execution-trust base)   --+
+```
+
+Work that advances several axes at once - for example, a new adapter that
+forces the intent entry point to generalize and re-proves the trust pipeline
+on a second protocol - is preferred over work that advances one axis in
+isolation.
+
 ## What Works Today
 
 The current release can run as a local stdio MCP server and expose mainnet Sui DeFi evidence:
