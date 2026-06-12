@@ -1,3 +1,4 @@
+import { ADAPTER_PROMPT_SURFACES } from "../../src/adapters/adapterPromptSurfaces.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { validateSupportedAdapterLifecycle } from "../../src/adapters/adapterLifecycleValidators.js";
 import { TransactionActivityService } from "../../src/core/activity/transactionActivityService.js";
@@ -69,6 +70,7 @@ const logger = {
   error(_message: string, _meta?: Record<string, unknown>) {}
 };
 const server = createMcpServer({
+  promptSurfaces: ADAPTER_PROMPT_SURFACES,
   sessions: new InMemorySessionStore({
     activityStore,
     logger,

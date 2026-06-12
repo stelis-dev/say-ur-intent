@@ -1,3 +1,4 @@
+import { ADAPTER_PROMPT_SURFACES } from "../src/adapters/adapterPromptSurfaces.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { mainnetCoins, type Coin } from "@mysten/deepbook-v3";
@@ -121,6 +122,7 @@ async function connectTestClient(
   });
   let scanCounter = 0;
   const server = createMcpServer({
+    promptSurfaces: ADAPTER_PROMPT_SURFACES,
     sessions,
     activityStore,
     localSettings,
@@ -363,15 +365,37 @@ describe("MCP discoverability", () => {
     }
   });
 
-  it("exposes zero-argument prompts without claiming unsupported signing support", async () => {
+  it("exposes prompts without claiming unsupported signing support", async () => {
     const { client, server } = await connectTestClient();
     try {
       const result = await client.listPrompts();
       expect(result.prompts.map((prompt) => prompt.name).sort()).toEqual([
         "inspect-supported-sui-actions",
-        "prepare-reviewable-sui-action"
+        "prepare-reviewable-sui-action",
+        "swap",
+        "swap-deep"
       ]);
-      expect(result.prompts.every((prompt) => !prompt.arguments)).toBe(true);
+      // Adapter prompt surfaces take exactly one free-text intent argument;
+      // the static prompts stay zero-argument. No prompt claims signing
+      // support.
+      for (const prompt of result.prompts) {
+        if (prompt.name === "swap" || prompt.name === "swap-deep") {
+          expect((prompt.arguments ?? []).map((argument) => argument.name)).toEqual(["intent"]);
+        } else {
+          expect(prompt.arguments ?? []).toEqual([]);
+        }
+      }
+
+      const surfacePrompt = await client.getPrompt({
+        name: "swap-deep",
+        arguments: { intent: "10 sui to usdc" }
+      });
+      const surfaceText = surfacePrompt.messages
+        .map((message) => (message.content.type === "text" ? message.content.text : ""))
+        .join("\n");
+      expect(surfaceText).toContain('intent: "10 sui to usdc"');
+      expect(surfaceText).toContain("action.prepare_sui_action_review");
+      expect(surfaceText).toContain("never contains signing data, transaction bytes, or signing readiness");
 
       const prompt = await client.getPrompt({ name: "prepare-reviewable-sui-action" });
       const text = prompt.messages

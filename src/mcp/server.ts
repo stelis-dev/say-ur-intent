@@ -6,6 +6,7 @@ import type { ActivityStore } from "../core/activity/activityStore.js";
 import type { LocalSettingsService } from "../core/preferences/preferencesStore.js";
 import type { SessionStore } from "../core/session/sessionStore.js";
 import { registerMcpPrompts } from "./prompts.js";
+import type { AdapterPromptSurface } from "../adapters/adapterPromptSurfaces.js";
 import { registerMcpResources } from "./resources.js";
 import { SERVER_INSTRUCTIONS, SERVER_NAME, SERVER_VERSION } from "./serverInfo.js";
 import { assertAllToolNamesValid } from "./toolNames.js";
@@ -16,6 +17,7 @@ import { registerSettingsTools } from "./tools/settings/index.js";
 import { registerSessionTools } from "./tools/session/index.js";
 
 export type McpServerDeps = {
+  promptSurfaces?: readonly AdapterPromptSurface[];
   sessions: SessionStore;
   activityStore: ActivityStore;
   localSettings: LocalSettingsService;
@@ -38,7 +40,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
   });
 
   registerMcpResources(server);
-  registerMcpPrompts(server);
+  registerMcpPrompts(server, deps.promptSurfaces ?? []);
   registerAccountTools(server, deps);
   registerReadTools(server, deps);
   registerSettingsTools(server, deps);

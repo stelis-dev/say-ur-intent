@@ -9,6 +9,7 @@ import {
 import { createDeepbookSwapHumanReadableReviewProducer } from "../adapters/deepbook/deepbookHumanReviewProducer.js";
 import { validateSupportedAdapterLifecycle } from "../adapters/adapterLifecycleValidators.js";
 import { buildSupportedReviewAdapters } from "../adapters/reviewAdapters.js";
+import { ADAPTER_PROMPT_SURFACES } from "../adapters/adapterPromptSurfaces.js";
 import { TransactionActivityService } from "../core/activity/transactionActivityService.js";
 import { createSuiReadService } from "../core/read/readService.js";
 import { createTransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
@@ -200,6 +201,7 @@ async function main(): Promise<void> {
     process.on("SIGTERM", () => handleSignal("SIGTERM"));
 
     mcp = createMcpServer({
+      promptSurfaces: ADAPTER_PROMPT_SURFACES,
       sessions,
       activityStore: store,
       reviewBaseUrl: `http://${reviewServer.host}:${reviewServer.port}`,

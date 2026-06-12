@@ -827,5 +827,22 @@ Do not rely on contributor-only documents as the runtime source of agent behavio
 | --- | --- |
 | `inspect-supported-sui-actions` | Guides a user through checking server status and supported mainnet surfaces. |
 | `prepare-reviewable-sui-action` | Guides a user through the review-session flow without claiming unsupported signing support. |
+| `swap-deep` | Prepares a reviewable DeepBook swap from a one-line intent argument (any language), e.g. `10 sui to usdc`. |
+| `swap` | Bare-action shorthand for `swap-deep` while exactly one protocol registers the `swap` action. |
+
+Adapter prompt surfaces are declared per adapter in
+`src/adapters/adapterPromptSurfaces.ts` and validated against
+`adapterPromptSurfaceSchema`. Names are action-first
+(`<action>-<protocolSlug>`, e.g. `swap-deep`), so autocomplete groups by what
+the user wants to do; a bare action shorthand exists only while a single
+protocol registers that action and disappears automatically when a second one
+does, so it never silently picks a venue. Each surface takes exactly one
+free-text `intent` argument so MCP clients can pass the whole request in one
+line; the model parses the intent, the server never does. Platform boundary
+language (no signing data, no transaction bytes, local-review-only signing) is
+appended at registration time and cannot be weakened by an adapter. Prompts
+are standard MCP `prompts/list` entries, so any MCP client that surfaces
+prompts (Claude Desktop, Claude Code, and others) exposes them without extra
+configuration.
 
 Prompts are explicit runtime-facing workflows. Tool descriptions remain concise, literal, and instruction-free; do not move behavioral policy into tool descriptions.
