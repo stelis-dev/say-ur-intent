@@ -1,9 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  createDeepbookSwapActionPlan,
-  deepbookSwapIntentInputSchema
-} from "../../../adapters/deepbook/deepbookSwapIntent.js";
+  INTENT_PLAN_FACTORIES,
+  resolveIntentPlanFactory,
+  swapIntentInputSchema
+} from "../../../adapters/intentPlanFactories.js";
 import { actionPlanSchema, reviewCheckSchema } from "../../../core/action/schemas.js";
 import type { ActionPlan, McpActionResponse, ReviewCheck } from "../../../core/action/types.js";
 import { externalProposalToActionPlan } from "../../../core/proposal/externalProposalReview.js";
@@ -15,7 +16,7 @@ import {
 import { registerSayUrIntentTool } from "../../registerTool.js";
 import type { McpServerDeps } from "../../server.js";
 import { successOutputSchema } from "../../schemas.js";
-import { okToolResult } from "../../result.js";
+import { errorToolResult, okToolResult } from "../../result.js";
 import { sessionStoreToolError } from "../../toolErrors.js";
 import { TOOL_NAMES } from "../../toolNames.js";
 import { userAnswerUseSchema } from "../read/commonSchemas.js";
@@ -24,10 +25,10 @@ export function registerActionTools(server: McpServer, deps: McpServerDeps): voi
   server.registerTool(
     TOOL_NAMES.actionPrepareSuiActionReview,
     {
-      title: "Prepare DeepBook swap review",
-      description: "Create a local DeepBook swap review session. Returns a review URL; the local review page owns user-controlled signing, and this response contains no signing data.",
+      title: "Prepare swap review",
+      description: "Create a local swap review session on a supported protocol. Returns a review URL; the local review page owns user-controlled signing, and this response contains no signing data.",
       inputSchema: {
-        intent: deepbookSwapIntentInputSchema
+        intent: swapIntentInputSchema
       },
       outputSchema: successOutputSchema({
         reviewSessionId: z.string(),
@@ -40,7 +41,28 @@ export function registerActionTools(server: McpServer, deps: McpServerDeps): voi
     },
     async ({ intent }) => {
       const now = new Date();
-      const plan = createDeepbookSwapActionPlan(intent, now);
+      const { protocol: protocolSlug, ...swapIntent } = intent;
+      const resolution = resolveIntentPlanFactory(INTENT_PLAN_FACTORIES, swapIntent.type, protocolSlug);
+      if (resolution.status !== "resolved") {
+        return errorToolResult({
+          kind: resolution.status === "unsupported_action" ? "unsupported_action" : "input_invalid",
+          details:
+            resolution.status === "unsupported_action"
+              ? { reason: "unsupported_action", actionKind: resolution.actionKind }
+              : resolution.status === "unknown_protocol"
+                ? {
+                    reason: "unknown_protocol",
+                    protocol: resolution.protocolSlug,
+                    availableProtocols: resolution.available
+                  }
+                : {
+                    reason: "protocol_choice_required",
+                    availableProtocols: resolution.available,
+                    guidance: "Several protocols support this action; set intent.protocol to one of availableProtocols. Ask the user - do not pick a protocol silently."
+                  }
+        });
+      }
+      const plan = resolution.factory.createPlan(swapIntent, now);
 
       try {
         const { session, token } = await deps.sessions.createReviewSession([plan], now);

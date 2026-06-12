@@ -512,6 +512,17 @@ If stored or summary details are missing or capped, use the digest metadata with
 | `action.prepare_sui_action_review` | Blocked signing | Creates a local review session and review URL for a supported action proposal. Account-bound DeepBook review may build local unsigned transaction material inside the review server, internally bind a Sui transaction digest to it, and derive object ownership, quote/policy, human-readable review, and review-time simulation evidence. The tool does not return transaction bytes. |
 | `action.prepare_external_proposal_review` | Non-signable review | Creates a local review session and review URL from an untrusted structured external proposal. It does not return transaction bytes. |
 
+`action.prepare_sui_action_review` accepts a protocol-neutral swap `intent`
+(`type: "swap"`, `from.symbol`, `from.amount`, `to.symbol`,
+`maxSlippageBps`, optional `protocol`). The optional `protocol` field carries
+the protocol slug from the adapter registry (the same slug vocabulary as the
+prompt surfaces). With a single registered protocol for the action it may be
+omitted; once several protocols support the same action the tool returns
+`input_invalid` with `reason: "protocol_choice_required"` and
+`availableProtocols`, and the caller must ask the user and retry with
+`intent.protocol` set - the server never picks a venue silently. An unknown
+slug returns `reason: "unknown_protocol"` with the available slugs.
+
 `action.prepare_external_proposal_review` accepts `proposal` with `type:
 "payment"` or `type: "sui_action"`.
 

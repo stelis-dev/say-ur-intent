@@ -42,7 +42,7 @@ const PLATFORM_PROMPT_BOUNDARY_LINES = [
 function surfacePromptText(surface: AdapterPromptSurface, intent: string): string {
   return [
     `Prepare a reviewable Sui mainnet ${surface.action} for this intent: "${intent}".`,
-    `Parse the source amount, source symbol, and target symbol from the intent (any language) and call ${surface.toolName} with them.`,
+    `Parse the source amount, source symbol, and target symbol from the intent (any language) and call ${surface.toolName} with them and intent.protocol set to "${surface.protocolSlug}".`,
     ...PLATFORM_PROMPT_BOUNDARY_LINES
   ].join("\n");
 }
@@ -135,7 +135,7 @@ export function bareActionPromptText(
     `Several protocols support the ${action} action: ${options}.`,
     `The user's intent: "${intent}".`,
     "List these protocol options to the user and ask which one to use. Do not pick a protocol on your own.",
-    "Once the user names a protocol, parse the source amount, source symbol, and target symbol from the intent (any language) and call that protocol's tool with them.",
+    "Once the user names a protocol, parse the source amount, source symbol, and target symbol from the intent (any language) and call that protocol's tool with them and intent.protocol set to the chosen slug.",
     ...PLATFORM_PROMPT_BOUNDARY_LINES
   ].join("\n");
 }
