@@ -6,6 +6,7 @@ import {
   type IntentPlanFactory
 } from "../src/adapters/intentPlanFactories.js";
 import { ADAPTER_PROMPT_SURFACES } from "../src/adapters/adapterPromptSurfaces.js";
+import { SUPPORTED_PROTOCOLS } from "../src/mcp/tools/read/index.js";
 
 const competitor: IntentPlanFactory = {
   ...INTENT_PLAN_FACTORIES[0]!,
@@ -78,5 +79,25 @@ describe("intent plan factories", () => {
     };
     expect(swapIntentInputSchema.safeParse(base).success).toBe(true);
     expect(swapIntentInputSchema.safeParse({ ...base, protocol: "deep" }).success).toBe(true);
+  });
+
+  it("orders swap protocols consistently across selection, prompt, and status surfaces", () => {
+    const factoryOrder = INTENT_PLAN_FACTORIES.filter((factory) => factory.actionKind === "swap").map(
+      (factory) => factory.protocolSlug
+    );
+    const surfaceOrder = ADAPTER_PROMPT_SURFACES.filter((surface) => surface.action === "swap").map(
+      (surface) => surface.protocolSlug
+    );
+    // The user picks a venue from these surfaces, so they must offer the same
+    // order; "deep before flowx" lives in three registries and would otherwise
+    // drift.
+    expect(factoryOrder).toEqual(["deep", "flowx"]);
+    expect(surfaceOrder).toEqual(factoryOrder);
+    // The status list leads with the swap venues in the same order before the
+    // notes-only margin entry.
+    const statusSwapVenues = SUPPORTED_PROTOCOLS.map((protocol) => protocol.id).filter(
+      (id) => id === "deepbook-v3" || id === "flowx-clmm"
+    );
+    expect(statusSwapVenues).toEqual(["deepbook-v3", "flowx-clmm"]);
   });
 });
