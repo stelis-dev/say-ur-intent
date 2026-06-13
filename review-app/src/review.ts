@@ -324,15 +324,22 @@ const STAGE_HEADLINES: Record<PageStage, string> = {
 
 function renderWizardHeader(stage: ReviewWizardStage): HTMLElement {
   const order: Array<{ key: ReviewWizardStage; label: string }> = [
-    { key: "review", label: "1. Review" },
-    { key: "sign", label: "2. Sign" },
-    { key: "result", label: "3. Result" }
+    { key: "review", label: "Review" },
+    { key: "sign", label: "Sign" },
+    { key: "result", label: "Result" }
   ];
   const index = order.findIndex((step) => step.key === stage);
   const headerEl = element("div", "wizard-steps");
   order.forEach((step, stepIndex) => {
-    const cls = stepIndex < index ? "wizard-step done" : stepIndex === index ? "wizard-step current" : "wizard-step";
-    headerEl.append(element("span", cls, step.label));
+    const state = stepIndex < index ? "done" : stepIndex === index ? "current" : "upcoming";
+    const cls = state === "upcoming" ? "wizard-step" : `wizard-step ${state}`;
+    // A distinct glyph per state so completion and the current position both
+    // read without relying on colour: done = check, current = filled marker
+    // (you are here), upcoming = its step number.
+    const marker = state === "done" ? "✓" : state === "current" ? "●" : `${stepIndex + 1}.`;
+    const item = element("span", cls, `${marker} ${step.label}`);
+    item.setAttribute("aria-label", `${step.label} step ${state}`);
+    headerEl.append(item);
     if (stepIndex < order.length - 1) {
       headerEl.append(element("span", "wizard-sep", "→"));
     }
