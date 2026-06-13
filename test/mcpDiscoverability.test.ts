@@ -2457,9 +2457,37 @@ describe("MCP discoverability", () => {
     }
   });
 
-  it("exposes lifecycle timestamps and polling hints through session tools", async () => {
+  it("refuses swap review preparation without an active wallet account", async () => {
     const { client, server } = await connectTestClient();
     try {
+      const result = await client.callTool({
+        name: TOOL_NAMES.actionPrepareSuiActionReview,
+        arguments: {
+          intent: {
+            type: "swap",
+            from: { symbol: "SUI", amount: "1" },
+            to: { symbol: "USDC" },
+            maxSlippageBps: 50,
+            protocol: "deep"
+          }
+        }
+      });
+      // A swap review is account-bound; with no connected account the tool must
+      // refuse instead of creating a hollow proposal that can never compute.
+      expect(textPayload(result)).toMatchObject({
+        ok: false,
+        error: { kind: "active_account_not_set", details: { action: "connect_wallet_identity" } }
+      });
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("exposes lifecycle timestamps and polling hints through session tools", async () => {
+    const { client, server, activityStore } = await connectTestClient();
+    try {
+      // Swap review is account-bound: prepare requires a connected account.
+      await activityStore.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
       const prepared = await client.callTool({
         name: TOOL_NAMES.actionPrepareSuiActionReview,
         arguments: {
@@ -3604,6 +3632,9 @@ describe("MCP discoverability", () => {
   it("maps session store failures to MCP error payloads instead of handler rejections", async () => {
     const logger = { error: vi.fn() };
     const activityStore = new InMemoryActivityStore();
+    // Account-bound prepare needs an active account to reach the (mocked)
+    // session store call this test exercises.
+    await activityStore.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
     const sessions = new InMemorySessionStore({
       activityStore,
       logger,

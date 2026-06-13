@@ -487,8 +487,11 @@ const scenarioInvokers: Record<string, ScenarioInvoker> = {
     }
   },
   deepbook_swap_review_signing_blocked: async (scenario) => {
-    const { client, server } = await connectFreshClient();
+    const { client, server, activityStore } = await connectFreshClient();
     try {
+      // A swap review is account-bound: prepare refuses without a connected
+      // wallet account, so the connect-first flow sets one before preparing.
+      await activityStore.setActiveAccount(accountAddress, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
       return textPayload(
         await client.callTool({
           name: scenario.tool,

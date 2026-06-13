@@ -17,7 +17,7 @@ import { registerSayUrIntentTool } from "../../registerTool.js";
 import type { McpServerDeps } from "../../server.js";
 import { successOutputSchema } from "../../schemas.js";
 import { errorToolResult, okToolResult } from "../../result.js";
-import { sessionStoreToolError } from "../../toolErrors.js";
+import { activityStoreToolError, sessionStoreToolError } from "../../toolErrors.js";
 import { TOOL_NAMES } from "../../toolNames.js";
 import { userAnswerUseSchema } from "../read/commonSchemas.js";
 
@@ -41,6 +41,24 @@ export function registerActionTools(server: McpServer, deps: McpServerDeps): voi
     },
     async ({ intent }) => {
       const now = new Date();
+      // A swap review is account-bound: its evidence (balances, transaction
+      // material, digest, simulation) is computed for a specific sender, and
+      // no transaction can be built without that account. Refuse here when no
+      // wallet account is connected instead of creating a hollow proposal that
+      // can never be computed or signed. Connect first via
+      // session.create_wallet_identity.
+      let activeAccount;
+      try {
+        activeAccount = await deps.activityStore.getActiveAccount();
+      } catch (error) {
+        return activityStoreToolError(error, deps.logger);
+      }
+      if (!activeAccount) {
+        return errorToolResult({
+          kind: "active_account_not_set",
+          details: { action: "connect_wallet_identity" }
+        });
+      }
       const { protocol: protocolSlug, ...swapIntent } = intent;
       const resolution = resolveIntentPlanFactory(INTENT_PLAN_FACTORIES, swapIntent.type, protocolSlug);
       if (resolution.status !== "resolved") {

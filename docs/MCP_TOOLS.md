@@ -535,6 +535,15 @@ If stored or summary details are missing or capped, use the digest metadata with
 | `action.prepare_sui_action_review` | Blocked signing | Creates a local review session and review URL for a supported action proposal. Account-bound DeepBook review may build local unsigned transaction material inside the review server, internally bind a Sui transaction digest to it, and derive object ownership, quote/policy, human-readable review, and review-time simulation evidence. The tool does not return transaction bytes. |
 | `action.prepare_external_proposal_review` | Non-signable review | Creates a local review session and review URL from an untrusted structured external proposal. It does not return transaction bytes. |
 
+`action.prepare_sui_action_review` is account-bound: a swap review computes
+its evidence (balances, transaction material, digest, simulation) for a
+specific sender, so the tool requires an active wallet account. Connect first
+with `session.create_wallet_identity`; with no active account the tool returns
+`active_account_not_set` with `details.action: "connect_wallet_identity"`
+instead of creating a proposal that can never be computed or signed. The
+review page reads that account from the server as the single source of truth
+and never connects a wallet itself.
+
 `action.prepare_sui_action_review` accepts a protocol-neutral swap `intent`
 (`type: "swap"`, `from.symbol`, `from.amount`, `to.symbol`,
 `maxSlippageBps`, optional `protocol`). The optional `protocol` field carries
