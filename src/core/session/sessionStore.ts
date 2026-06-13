@@ -356,7 +356,15 @@ export class InMemorySessionStore implements SessionStore {
         `Review session already bound to a different account: ${id}`
       );
     }
-    if (nextSession.status === "awaiting_wallet") {
+    if (nextSession.status === "proposed") {
+      // Persisted wallet identity (active account already set) lets the review
+      // page skip the wallet-identity prompt, so the session is still
+      // "proposed" when it binds the account. Walk the canonical
+      // proposed -> awaiting_wallet -> wallet_connected path; the active-account
+      // match above already proved the binding is legitimate.
+      transition(nextSession, "awaiting_wallet");
+      transition(nextSession, "wallet_connected");
+    } else if (nextSession.status === "awaiting_wallet") {
       transition(nextSession, "wallet_connected");
     } else if (!REVIEW_STATE_RECOMPUTE_STATUSES.has(nextSession.status)) {
       throw new SessionStoreError(

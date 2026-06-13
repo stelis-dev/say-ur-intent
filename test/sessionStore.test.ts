@@ -315,6 +315,19 @@ describe("InMemorySessionStore", () => {
     expect(connected.lastActivityAt).toBe(new Date(3).toISOString());
   });
 
+  it("binds the account directly from proposed when wallet identity is already persisted", async () => {
+    // Persisted wallet identity lets the review page skip the wallet prompt, so
+    // the session is still "proposed" (never recordReviewPageOpened) when it
+    // binds the account. This must succeed instead of failing closed.
+    const store = createSessionStore();
+    const { session } = await store.createReviewSession([plan], new Date(0));
+    await connectWalletIdentity(store, walletAccount, new Date(1));
+
+    const connected = await store.recordWalletConnected(session.id, walletAccount, new Date(2));
+    expect(connected.status).toBe("wallet_connected");
+    expect(connected.account).toBe(walletAccount);
+  });
+
   it("requires active wallet identity before review account binding", async () => {
     const store = createSessionStore();
     const { session } = await store.createReviewSession([plan], new Date(0));
