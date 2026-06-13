@@ -1,6 +1,6 @@
 {
   "name": "@stelis/say-ur-intent",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Say Ur Intent is a local-first toolkit for helping AI applications and users inspect Sui DeFi actions before execution.",
   "license": "MIT",
   "type": "module",
