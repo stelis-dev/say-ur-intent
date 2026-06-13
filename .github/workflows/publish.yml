@@ -1,0 +1,68 @@
+name: Publish npm package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write # required for npm provenance attestation
+  contents: read
+
+jobs:
+  publish-npm:
+    name: Publish @stelis/say-ur-intent
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify the package is publishable and matches the release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (pkg.private === true) {
+            throw new Error(`${pkg.name} is marked private and cannot be published`);
+          }
+          const tag = process.env.RELEASE_TAG ?? '';
+          const accepted = new Set([`v${pkg.version}`, pkg.version]);
+          if (!accepted.has(tag)) {
+            throw new Error(
+              `release tag "${tag}" does not match ${pkg.name}@${pkg.version} ` +
+                `(tag the release "v${pkg.version}" or "${pkg.version}")`,
+            );
+          }
+          console.log(`Publishing ${pkg.name}@${pkg.version} for release "${tag}"`);
+          NODE
+
+      - name: Publish to npm
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          package: package.json
+          access: public
+          # Build provenance needs a public repository, so it is enabled only when
+          # the repo is public; on a private repo it stays off so the publish still runs.
+          provenance: ${{ !github.event.repository.private }}
+          # Re-running the workflow is a no-op once this version is already on npm.
+          strategy: upgrade
+          # Prerelease GitHub releases publish under the `next` dist-tag; stable
+          # (non-prerelease) releases publish under `latest`.
+          tag: ${{ github.event.release.prerelease && 'next' || 'latest' }}
+          # `npm publish` runs the package's prepublishOnly gate (release:check:
+          # typecheck, tests, build, and a packed-tarball smoke install) before
+          # anything is published, so no separate build/test step is needed here.
