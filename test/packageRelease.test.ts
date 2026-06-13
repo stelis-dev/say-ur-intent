@@ -17,13 +17,13 @@ type PackageJson = {
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as PackageJson;
 
 describe("npm release metadata", () => {
-  it("is configured for public next-tag publishing", () => {
+  it("is configured for public latest-tag publishing", () => {
     expect(packageJson.private).toBeUndefined();
     expect(packageJson.version).toBe("0.0.1");
     expect(PACKAGE_NAME).toBe("@stelis/say-ur-intent");
     expect(SERVER_VERSION).toBe(packageJson.version);
     expect(packageJson.license).toBe("MIT");
-    expect(packageJson.publishConfig).toEqual({ access: "public", tag: "next" });
+    expect(packageJson.publishConfig).toEqual({ access: "public", tag: "latest" });
     expect(packageJson.scripts.prepublishOnly).toBe("npm run release:check");
   });
 

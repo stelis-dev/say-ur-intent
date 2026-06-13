@@ -81,7 +81,7 @@ Published npm package:
 ```bash
 claude mcp add --transport stdio \
   say-ur-intent \
-  -- npx -y @stelis/say-ur-intent@next
+  -- npx -y @stelis/say-ur-intent
 ```
 
 Claude Code scopes:
@@ -144,7 +144,7 @@ Published npm package:
   "mcpServers": {
     "say-ur-intent": {
       "command": "npx",
-      "args": ["-y", "@stelis/say-ur-intent@next"]
+      "args": ["-y", "@stelis/say-ur-intent"]
     }
   }
 }
@@ -157,7 +157,7 @@ On native Windows, use `cmd /c` if direct `npx` or `node` resolution fails:
   "mcpServers": {
     "say-ur-intent": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@stelis/say-ur-intent@next"]
+      "args": ["/c", "npx", "-y", "@stelis/say-ur-intent"]
     }
   }
 }
@@ -185,7 +185,7 @@ Published npm package:
 
 ```bash
 codex mcp add say-ur-intent \
-  -- npx -y @stelis/say-ur-intent@next
+  -- npx -y @stelis/say-ur-intent
 ```
 
 Verify with:
@@ -211,7 +211,7 @@ Equivalent `~/.codex/config.toml` entry after npm publication:
 ```toml
 [mcp_servers.say-ur-intent]
 command = "npx"
-args = ["-y", "@stelis/say-ur-intent@next"]
+args = ["-y", "@stelis/say-ur-intent"]
 startup_timeout_sec = 10
 tool_timeout_sec = 60
 ```
@@ -247,7 +247,7 @@ Published npm package:
   "mcpServers": {
     "say-ur-intent": {
       "command": "npx",
-      "args": ["-y", "@stelis/say-ur-intent@next"]
+      "args": ["-y", "@stelis/say-ur-intent"]
     }
   }
 }

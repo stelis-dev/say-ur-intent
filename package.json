@@ -33,7 +33,7 @@
   "homepage": "https://github.com/stelis-dev/say-ur-intent#readme",
   "publishConfig": {
     "access": "public",
-    "tag": "next"
+    "tag": "latest"
   },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
