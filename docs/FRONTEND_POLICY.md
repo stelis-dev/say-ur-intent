@@ -136,9 +136,10 @@ out-of-state buttons are removed, not disabled.
 
 The sign action appears only on `ready_for_wallet_review` with an emitted
 wallet review contract, a connected wallet whose account equals the reviewed
-account, and a successful digest-gated handoff. The signing wallet list offers
-only the wallet recorded for the active account; other detected wallets are
-not offered. While a handoff is outstanding the server locks the session
+account, and a successful digest-gated handoff. The signing step shows no wallet picker:
+dapp-kit autoconnect restores the wallet recorded for the active account on the
+fixed-port origin, and the sign action stays gated on the connected account
+matching the reviewed account. While a handoff is outstanding the server locks the session
 (state recomputes are refused) and the page shows a signing-in-progress state
 whose only action is cancel. Other states render:
 

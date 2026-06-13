@@ -156,7 +156,7 @@ Every quote fails closed unless all of the following hold:
 - the echoed input amount equals the requested raw amount;
 - the protocol config carried by the quoter response matches the pinned package and object ids (`protocolConfigPinMatch: true`).
 
-`source.chainVerified: false` and `quantitySemantics.chainVerified: false` state that this quote comes from the FlowX quoter API over HTTPS, not from a chain read. `amountOut.indicative: true` marks the output as an indicative estimate. Signable FlowX review, when it ships, re-verifies any quote through review-time simulation before a transaction can be reviewed.
+`source.chainVerified: false` and `quantitySemantics.chainVerified: false` state that this quote comes from the FlowX quoter API over HTTPS, not from a chain read. `amountOut.indicative: true` marks the output as an indicative estimate. Signable FlowX review re-verifies the quote through review-time simulation before the account-bound review reaches `ready_for_wallet_review`.
 
 The same payment-answer blocks as the DeepBook quotes apply: `canUseForPaymentAnswer: false`, `doNotCombineWithPaymentAnswer: true`, and `read.preview_intent_evidence` `responseSummary` stays the only payment-coverage answer source.
 

@@ -30,8 +30,8 @@ choices remain with the user, and what claims are unsupported.
 
 Say Ur Intent is one product, but it must be read at three distinct layers. Do not collapse them:
 
-- **Implemented today:** Sui mainnet evidence, local review, and the first signable review adapter for the DeepBook swap route. The account-bound DeepBook swap review builds unsigned transaction material into a local in-process material store, internally binds a Sui transaction digest to that stored material, derives object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts, emits a schema-validated wallet review contract with a PTB visualization on a `ready_for_wallet_review` state, and serves a digest-gated byte handoff to the same-machine review page for user-controlled wallet signing with execution receipts recorded on the session. MCP responses do not contain transaction bytes, signing data, or signing readiness.
-- **Deliberately sequenced next (planned order, ships only after verified review):** server-side receipt verification against chain state, additional protocol adapters registered through the descriptor contract (protocol names appear only after a concrete support decision), and richer local analysis views. Each step ships only from independently built or verified transaction material with a human-readable local review.
+- **Implemented today:** Sui mainnet evidence, local review, and signable review adapters for the DeepBook and FlowX swap routes. The account-bound DeepBook swap review builds unsigned transaction material into a local in-process material store, internally binds a Sui transaction digest to that stored material, derives object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts, emits a schema-validated wallet review contract with a PTB visualization on a `ready_for_wallet_review` state, and serves a digest-gated byte handoff to the same-machine review page for user-controlled wallet signing with execution receipts recorded on the session. MCP responses do not contain transaction bytes, signing data, or signing readiness.
+- **Deliberately sequenced next (planned order, ships only after verified review):** server-side receipt verification against chain state, further protocol adapters beyond DeepBook and FlowX registered through the descriptor contract (protocol names appear only after a concrete support decision), and richer local analysis views. Each step ships only from independently built or verified transaction material with a human-readable local review.
 - **Never (permanently unsupported at every layer):** no private-key custody, no MCP or AI autonomous execution, no forwarding of opaque external transaction bytes to a wallet, no silent settlement-token or route choice, no fiat cash-out, no P&L, no peg guarantee.
 
 In one sentence: Say Ur Intent is a local-first Sui intent evidence and review layer that progresses from verified evidence to user-controlled wallet signing only after Say Ur Intent independently builds or verifies the transaction material and shows a human-readable local review.
@@ -91,42 +91,6 @@ For manual maintainer and developer utilities, see [docs/UTILITY_INDEX.md](docs/
 
 User-question flows for USD-denominated coverage, balance totals, and shortfall answers live in [docs/AGENT_BEHAVIOR.md](docs/AGENT_BEHAVIOR.md). The response fields for those answers live in [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
 
-## How Product Quality Improves: Three Axes
-
-Future quality work moves along three axes. They multiply rather than add,
-so neglecting any one of them caps the value of the other two:
-
-- **Axis 1 - intent, evidence, answer quality.** Understanding what the user
-  asked, routing it to the right tool (prompt surfaces, `userAnswerUse`
-  response guidance), and answering only from verified mainnet evidence -
-  including saying plainly when a question cannot be answered from the
-  returned evidence. This axis is never finished; it is sharpened
-  continuously.
-- **Axis 2 - protocol breadth.** Additional protocol adapters registered
-  through the descriptor contract (protocol names appear only after a
-  concrete support decision). Breadth is a multiplier, not a list: with a
-  second protocol, action routing starts doing real work (the bare action
-  prompt asks the user to choose a venue instead of routing silently), and
-  the execution-trust foundation proves it is not single-protocol.
-- **Axis 3 - execution-trust foundation.** The guarantee that what the user
-  reviewed is exactly what gets signed, held under any wallet and any signing
-  speed: the review-session state machine, the one-transaction-per-session
-  handoff lock, sign-only wallets and slow hardware signers, review-page
-  security headers, and runtime lifecycle stability. Packaging and runtime
-  operability belong here too. This axis is the product differentiator, so
-  it is tracked as its own axis rather than as a side effect of feature work.
-
-```text
-axis 1 (intent-evidence quality) --+
-                                   +--x axis 2 (protocol breadth) = product value
-axis 3 (execution-trust base)   --+
-```
-
-Work that advances several axes at once - for example, a new adapter that
-forces the intent entry point to generalize and re-proves the trust pipeline
-on a second protocol - is preferred over work that advances one axis in
-isolation.
-
 ## What Works Today
 
 The current release can run as a local stdio MCP server and expose mainnet Sui DeFi evidence:
@@ -136,10 +100,11 @@ The current release can run as a local stdio MCP server and expose mainnet Sui D
 - USD-denominated settlement asset groups derived from pinned DeepBook SDK registry metadata;
 - intent evidence with response summaries for natural-language USD-denominated payment coverage, balance-total, and shortfall questions;
 - DeepBook pools, tokens, mid price, orderbook context, raw quotes, display-amount quotes, and account inventory;
+- FlowX CLMM pools and indicative single-hop swap route quotes from the chain-verified pinned registry;
 - user-requested bounded Sui transaction digest lookup, account activity scans, sent-function activity scans with known-wallet-only persistence, and stored normalized activity summaries;
 - read-only external proposal review sessions that display proposed action, asset flow, recipient or target, freshness, missing evidence, user choices, unsupported claims, and non-signable reason;
 - local Say Ur Intent review evidence and review-session status reads;
-- account-bound DeepBook swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence; when every stage completes the review reaches `ready_for_wallet_review` and the local review page offers a digest-gated byte handoff, user-controlled wallet signing, and execution-receipt recording. The MCP layer and review API never sign, execute, or return transaction bytes.
+- account-bound DeepBook and FlowX swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence; when every stage completes the review reaches `ready_for_wallet_review` and the local review page offers a digest-gated byte handoff, user-controlled wallet signing, and execution-receipt recording. The MCP layer and review API never sign, execute, or return transaction bytes.
 
 It also includes:
 

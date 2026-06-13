@@ -738,3 +738,23 @@ Work is complete only when:
 - final repository status is checked, including untracked files;
 - unexpected files are classified or cleaned up before final response;
 - if previous progress was overstated, the final response corrects the record.
+
+## Quality direction
+
+Quality work continues along three areas; progress in all three matters, and
+work that advances more than one at once is preferred over work that advances
+only one in isolation:
+
+- Intent, evidence, and answer quality: understand the request, route it to the
+  right tool (prompt surfaces, `userAnswerUse` response guidance), and answer
+  only from verified mainnet evidence, including saying plainly when a question
+  cannot be answered from the returned evidence.
+- Protocol breadth: additional protocol adapters registered through the
+  descriptor contract; protocol names appear in public docs only after a
+  concrete support decision. A second protocol is why the bare action prompt
+  asks the user to choose a venue instead of routing silently.
+- Execution-trust foundation: what the user reviewed is exactly what gets
+  signed, under any wallet and any signing speed — the review-session state
+  machine, the one-transaction-per-session handoff lock, sign-only wallets and
+  slow hardware signers, review-page security headers, runtime lifecycle
+  stability, and packaging and runtime operability.
