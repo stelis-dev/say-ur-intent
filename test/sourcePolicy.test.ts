@@ -965,7 +965,7 @@ describe("source policy", () => {
     expect(docs).toMatch(/producer_stage_missing[\s\S]{0,120}missingStages/i);
     expect(docs).toMatch(/derived raw min-out policy/i);
     expect(docs).toMatch(/DEEP fee raw evidence/i);
-    expect(docs).toMatch(/current release still blocks wallet signing/i);
+    expect(docs).toMatch(/MCP layer never signs, executes, or returns transaction bytes/i);
     expect(docs).toMatch(/review page[\s\S]{0,180}server-computed review state/i);
     expect(docs).toMatch(/wallet identity session[\s\S]{0,180}account-bound review computation/i);
     expect(docs).toMatch(/account-bound review action[\s\S]{0,260}compute review state/i);

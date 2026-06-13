@@ -74,7 +74,7 @@ The pinned `@mysten/dapp-kit-core` frontend connection store has `disconnected`,
 
 Those raw statuses are frontend internals and must be mapped into the product status model.
 
-`reconnecting` is out of scope because wallet identity disables auto-connect and persistent wallet storage.
+`reconnecting` occurs when dapp-kit autoconnect restores a previously selected wallet on the same fixed-port origin; the frontend maps it to the `connecting` product status while the signer settles. dapp-kit storage holds the wallet autoconnect preference only, never keys.
 
 ## Failure Reasons
 
@@ -126,9 +126,9 @@ Account-bound review sessions must bind to the active wallet identity account be
 
 A review account that does not match the active account context is rejected.
 
-Current review sessions still block signing until the signable adapter is implemented.
+Once the signable adapter's review evidence completes, the account-bound review reaches `ready_for_wallet_review` and the local review page offers a digest-gated handoff and user-controlled wallet signing.
 
-Here, block means the current release intentionally stops before wallet authorization because the prerequisite signable adapter does not exist yet.
+The active account context stays read context and wallet preference only; it is not signing authorization, and the MCP layer does not sign, execute, or return transaction bytes on its own.
 
 ## Frontend Boundary
 

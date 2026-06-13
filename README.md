@@ -4,9 +4,11 @@ Say Ur Intent is a local-first, evidence-first Sui intent toolkit for AI clients
 
 For natural-language Sui DeFi questions, the current release returns verified,
 AI-readable evidence before transaction creation. That answer path remains
-separate from account-bound DeepBook review, where the review server may build
-local unsigned transaction material internally while still blocking wallet
-handoff, signing, and execution.
+separate from account-bound DeepBook review, where the review server builds
+local unsigned transaction material internally and, once every review evidence
+stage completes, the local review page offers a digest-gated handoff,
+user-controlled wallet signing, and execution-receipt recording. The MCP layer
+and review API never sign, execute, or return transaction bytes.
 
 Users can ask ordinary questions:
 
@@ -137,7 +139,7 @@ The current release can run as a local stdio MCP server and expose mainnet Sui D
 - user-requested bounded Sui transaction digest lookup, account activity scans, sent-function activity scans with known-wallet-only persistence, and stored normalized activity summaries;
 - read-only external proposal review sessions that display proposed action, asset flow, recipient or target, freshness, missing evidence, user choices, unsupported claims, and non-signable reason;
 - local Say Ur Intent review evidence and review-session status reads;
-- account-bound DeepBook swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence, all still blocked before wallet handoff, signing, and execution.
+- account-bound DeepBook swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence; when every stage completes the review reaches `ready_for_wallet_review` and the local review page offers a digest-gated byte handoff, user-controlled wallet signing, and execution-receipt recording. The MCP layer and review API never sign, execute, or return transaction bytes.
 
 It also includes:
 
@@ -152,11 +154,11 @@ It also includes:
 
 The items in this section are deliberately sequenced roadmap steps, not product
 refusals. Server-side receipt verification against chain state is not
-implemented yet. Additional protocol adapters are not implemented yet.
-Transaction material build, contract emit, digest-gated wallet handoff, and
-user-controlled signing are implemented only for the account-bound DeepBook
-swap review.
-External proposal execution is not implemented.
+implemented yet. The full analysis page is not implemented yet. Transaction
+material build, contract emit, digest-gated wallet handoff, and user-controlled
+signing are implemented for the account-bound DeepBook swap review, which
+resolves its protocol through a plan-factory registry so further swap adapters
+attach the same way. External proposal execution is not implemented.
 
 External proposal ingestion is implemented only for read-only local review
 sessions. It accepts structured proposal facts, rejects forbidden executable or

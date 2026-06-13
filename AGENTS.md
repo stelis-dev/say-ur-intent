@@ -36,14 +36,16 @@ and both must stay explicit in this file:
   transaction digest to that stored material. It can derive object ownership
   evidence, quote/policy provenance, human-readable review facts, and
   review-time simulation evidence from the same material-bound private
-  artifacts. The current release does not yet expose transaction bytes, request
-  wallet signatures, provide signing readiness, or execute payments.
-- Deliberately sequenced next: the product continues past verified review to
-  user-controlled wallet signing, wallet handoff, execution result polling, and
-  digest/receipt evidence, only after Say Ur Intent independently builds or
-  verifies the transaction material inside a human-readable local review.
-  Signing and execution are deliberately sequenced later on the roadmap, not
-  outside the product.
+  artifacts. When every review evidence stage completes, the local review page
+  offers a digest-gated byte handoff, user-controlled wallet signing, and
+  execution-receipt recording. The MCP layer and review API themselves never
+  expose transaction bytes, request wallet signatures, provide signing
+  readiness, or execute on the user's behalf.
+- Deliberately sequenced next: server-side receipt verification against chain
+  state, the full analysis page, further protocol adapters, and external
+  proposal execution, each added only after Say Ur Intent independently builds or
+  verifies the transaction material inside a human-readable local review, and
+  never outside the product's permanent boundaries.
 
 This sequencing never weakens the Non-Negotiable Boundaries below. "The current
 release does not include X yet (deliberately sequenced later)" and "the final
@@ -84,14 +86,16 @@ a task easier.
 
 - The product must not provide private-key custody, autonomous execution, or
   unchecked AI-controlled authorization.
-- The current release does not yet request wallet signatures, execute payments,
-  or provide signing or payment-execution readiness; those steps are
-  deliberately sequenced roadmap stages. Exposing transaction bytes through MCP
+- The MCP layer and review API never request wallet signatures, execute on the
+  user's behalf, or provide signing or payment-execution readiness; wallet
+  signing and execution happen only on the local review page under the user's
+  control. Exposing transaction bytes through MCP
   or review-API output and trusting external transaction material remain
   forbidden at every stage. Its only current
   transaction-material build path is local unsigned account-bound DeepBook swap
-  review material, with an internal digest commitment, that remains internal and
-  blocked before wallet handoff. Object ownership, quote/policy provenance,
+  review material, with an internal digest commitment, that stays inside the
+  review-server session and reaches the user's wallet only through the
+  digest-gated handoff on the page. Object ownership, quote/policy provenance,
   human-readable review facts, and review-time simulation evidence derived from
   that material are pre-signing review evidence only.
 - Current read-only external proposal review records structured proposal facts

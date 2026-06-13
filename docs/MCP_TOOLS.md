@@ -607,14 +607,14 @@ Account-bound review computation for external proposals returns `blocked` with
 recorded the proposal facts but did not build, regenerate, simulate, or verify
 transaction material.
 
-The current DeepBook swap review remains blocked before wallet signing until
-runtime contract emit and wallet handoff are implemented.
+When every review evidence stage completes, the account-bound DeepBook swap
+review reaches `ready_for_wallet_review` and the local review page offers a
+digest-gated byte handoff, user-controlled wallet signing, and execution-receipt
+recording.
 
-Here, blocked means the current release intentionally stops before wallet signing because
-runtime contract emission, wallet handoff, signing, and execution are still not
-implemented.
-
-The current release still blocks wallet signing.
+The MCP layer never signs, executes, or returns transaction bytes; the
+digest-verified bytes stay in the local review-server session and reach the
+user's wallet only on the page.
 
 After the wallet account is bound to a review session, the review page and `session.get_review_status` may show scoped DeepBook display-amount quote evidence and review-state checks for:
 
@@ -745,7 +745,7 @@ returned as `reviewState.ptbVisualization` next to
 `deepbook_ptb_visualization_unavailable` check instead and does not invalidate
 the emitted contract. PTB visualization is not a transaction builder,
 not wallet handoff, and not a signing data source.
-It is not a signing readiness signal. Current review-state checks remain blocked before wallet signing.
+It is not a signing readiness signal. Review-state checks are pre-signing review evidence; wallet signing happens afterward on the local review page under the user's control.
 
 ## Session Tools
 

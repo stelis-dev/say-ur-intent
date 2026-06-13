@@ -32,9 +32,9 @@ No MCP response or review UI response exposes executable transaction material.
 The emitted contract carries the Sui transaction digest as
 `transactionMaterialCommitment` (a hash only); raw transaction bytes stay
 inside the review-server session and leave it only through the digest-gated
-handoff endpoint for the same-machine browser. Wallet signature requests and
-execution are not implemented, so signing stays unavailable after the handoff
-gate.
+handoff endpoint for the same-machine browser. After the handoff gate, the
+same-machine browser page requests the user's wallet signature and submits the
+signed transaction; the contract layer itself never signs or executes.
 
 ## Final Acceptance Gate
 
