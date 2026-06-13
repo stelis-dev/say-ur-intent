@@ -64,6 +64,58 @@ On native Windows clients that need `cmd`, use the same command through `cmd /c`
 }
 ```
 
+## Published Package Setup
+
+Once `@stelis/say-ur-intent` is on npm there are two ways to run it. Both start
+the same `say-ur-intent` stdio MCP server; pick based on whether you want
+automatic updates or the fastest, most reliable startup.
+
+### Download on demand (npx, tracks the latest release)
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@stelis/say-ur-intent"]
+}
+```
+
+No install step, and each launch resolves the latest published version. The
+trade-off: the first launch (or the first after the npx cache is cleared)
+downloads the package and its native dependencies. On a cold cache this can take
+long enough to exceed a client's MCP startup timeout, so the client may stop the
+server before it connects. If that happens, warm the cache once in a terminal and
+then restart the client:
+
+```bash
+npx -y @stelis/say-ur-intent
+# wait until it logs "review server started", then stop it with Ctrl-C
+```
+
+### Install once (global, fastest startup, pinned version)
+
+```bash
+npm install -g @stelis/say-ur-intent
+```
+
+```json
+{
+  "command": "say-ur-intent"
+}
+```
+
+The global `say-ur-intent` command starts with no per-launch download, so it
+avoids the cold-start timeout, and it stays on the installed version until you
+update it explicitly:
+
+```bash
+npm install -g @stelis/say-ur-intent@latest
+```
+
+The per-client sections below use the `npx` form. To use a global install
+instead, replace the published-package command with `"command": "say-ur-intent"`
+and drop the `args`. On native Windows clients that need `cmd`, wrap either
+command, for example `"command": "cmd", "args": ["/c", "npx", "-y", "@stelis/say-ur-intent"]`.
+
 ## Claude Code
 
 Claude Code supports local stdio MCP servers through `claude mcp add`. Put Claude CLI options such as `--transport` and `--scope` before the server name; the `--` separator starts the command that runs Say Ur Intent.
@@ -358,7 +410,7 @@ To reset local product data files, stop the MCP server and delete `say-ur-intent
 ### Fixed review server port
 
 `SAY_UR_INTENT_REVIEW_PORT` pins the local review server to a fixed loopback
-port (1-65535; default is a random free port). A fixed port keeps the review
+port (1-65535; default `8765`). A fixed port keeps the review
 page origin stable across server restarts, so the browser wallet's
 authorization and the signing auto-reconnect persist instead of being asked
 again on every restart. If the port is taken, the server fails to start
