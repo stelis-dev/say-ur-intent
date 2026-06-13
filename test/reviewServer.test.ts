@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ActionPlan } from "../src/core/action/types.js";
@@ -10,6 +12,10 @@ import { InMemorySessionStore, type InMemorySessionStoreOptions } from "../src/c
 import { InMemoryLocalTransactionMaterialStore } from "../src/core/session/transactionMaterialStore.js";
 import { recordTestTransactionMaterial } from "./fixtures/transactionMaterial.js";
 import { createReviewHttpServer } from "../src/review-server/server.js";
+import {
+  probeReviewServerIdentity,
+  startReviewServerWithTakeover
+} from "../src/runtime/reviewServerAcquire.js";
 import type { Logger } from "../src/runtime/logger.js";
 import { deepbookDisplayQuote } from "./fixtures/deepbookQuote.js";
 import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
@@ -1741,6 +1747,149 @@ describe("review HTTP server", () => {
       const json = (await response.json()) as { internalStatus: string; pollingStatus: string };
       expect(json.internalStatus).toBe("wallet_connected");
       expect(json.pollingStatus).toBe("awaiting_signature");
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe("review server port takeover", () => {
+  it("serves a loopback identity endpoint with no token and no session data", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      serverInfo: { name: "say-ur-intent", version: "9.9.9-test", network: "mainnet" }
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const response = await fetch(`${base}/__identity`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        service: string;
+        role: string;
+        version: string;
+        pid: number;
+      };
+      expect(body.service).toBe("say-ur-intent");
+      expect(body.role).toBe("review-server");
+      expect(body.version).toBe("9.9.9-test");
+      expect(body.pid).toBe(process.pid);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("identifies our own running server through the probe", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      serverInfo: { name: "say-ur-intent", version: "0.0.0-test", network: "mainnet" }
+    }).start(0);
+
+    try {
+      const identity = await probeReviewServerIdentity(server.port);
+      expect(identity?.service).toBe("say-ur-intent");
+      expect(identity?.role).toBe("review-server");
+      expect(identity?.pid).toBe(process.pid);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rebinds the same fixed port after the prior server is stopped", async () => {
+    const store = createSessionStore();
+    const serverInfo = { name: "say-ur-intent" as const, version: "0.0.0-test", network: "mainnet" as const };
+    const previous = await createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo }).start(0);
+    const port = previous.port;
+
+    const factory = createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo });
+    let terminated = false;
+    const next = await startReviewServerWithTakeover((bindPort) => factory.start(bindPort), port, {
+      probeIdentity: (probePort) => probeReviewServerIdentity(probePort),
+      terminate: () => {
+        terminated = true;
+        void previous.close();
+        return { ok: true };
+      },
+      delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      // Pretend the holder is a different process so the takeover path runs even
+      // though the prior server shares this test process.
+      currentPid: process.pid + 1,
+      serviceName: "say-ur-intent",
+      logger,
+      pollIntervalMs: 20,
+      waitForReleaseMs: 4000
+    });
+
+    try {
+      expect(terminated).toBe(true);
+      expect(next.port).toBe(port);
+    } finally {
+      await next.close();
+    }
+  });
+
+  it("refuses to take over a port held by a non-say-ur-intent server", async () => {
+    const foreign = createServer((_request, response) => {
+      response.statusCode = 200;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ service: "some-other-dev-server" }));
+    });
+    await new Promise<void>((resolve) => foreign.listen(0, "127.0.0.1", resolve));
+    const port = (foreign.address() as AddressInfo).port;
+
+    const store = createSessionStore();
+    const serverInfo = { name: "say-ur-intent" as const, version: "0.0.0-test", network: "mainnet" as const };
+    const factory = createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo });
+    let terminateCalls = 0;
+
+    try {
+      await expect(
+        startReviewServerWithTakeover((bindPort) => factory.start(bindPort), port, {
+          probeIdentity: (probePort) => probeReviewServerIdentity(probePort),
+          terminate: () => {
+            terminateCalls += 1;
+            return { ok: true };
+          },
+          delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          currentPid: process.pid + 1,
+          serviceName: "say-ur-intent",
+          logger
+        })
+      ).rejects.toThrow(/not a say-ur-intent review server/);
+      expect(terminateCalls).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        foreign.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  });
+});
+
+describe("review page content security policy", () => {
+  it("allows browser-side signed-transaction submission to the Sui fullnode", async () => {
+    const store = createSessionStore();
+    const { session } = await store.createReviewSession([plan]);
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const response = await fetch(`${base}/review/${session.id}`);
+      expect(response.status).toBe(200);
+      const csp = response.headers.get("content-security-policy") ?? "";
+      const connectSrc = csp.split(";").map((part) => part.trim()).find((part) => part.startsWith("connect-src"));
+      expect(connectSrc).toBeDefined();
+      expect(connectSrc).toContain("'self'");
+      // The page signs then submits to the fullnode directly; without this the
+      // submission is blocked by CSP. Host must be port-less to match the
+      // browser's default-port (443) request.
+      expect(connectSrc).toContain("https://fullnode.mainnet.sui.io");
+      expect(connectSrc).not.toContain("fullnode.mainnet.sui.io:443");
     } finally {
       await server.close();
     }

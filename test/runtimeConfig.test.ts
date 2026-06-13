@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_REVIEW_PORT,
   DEFAULT_SUI_GRAPHQL_URL,
   DEFAULT_SUI_GRPC_URL,
   SUI_MAINNET_CHAIN_IDENTIFIER,
@@ -25,6 +26,17 @@ describe("runtime config", () => {
   it("does not allow overriding the expected mainnet chain identifier", () => {
     const config = loadBootConfig({ SUI_MAINNET_CHAIN_IDENTIFIER: "fake-chain" });
     expect(config.expectedChainIdentifier).toBe(SUI_MAINNET_CHAIN_IDENTIFIER);
+  });
+
+  it("defaults the review port to a fixed value so the wallet autoconnect origin is stable", () => {
+    expect(DEFAULT_REVIEW_PORT).toBe(8765);
+    expect(loadBootConfig({}).reviewPort).toBe(DEFAULT_REVIEW_PORT);
+  });
+
+  it("overrides the review port from SAY_UR_INTENT_REVIEW_PORT", () => {
+    expect(loadBootConfig({ SAY_UR_INTENT_REVIEW_PORT: "9123" }).reviewPort).toBe(9123);
+    expect(() => loadBootConfig({ SAY_UR_INTENT_REVIEW_PORT: "0" })).toThrow("between 1 and 65535");
+    expect(() => loadBootConfig({ SAY_UR_INTENT_REVIEW_PORT: "notaport" })).toThrow("between 1 and 65535");
   });
 
   it("rejects JSON-RPC configuration", () => {

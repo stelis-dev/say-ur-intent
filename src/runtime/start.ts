@@ -27,6 +27,11 @@ import { createMcpServer, startMcp } from "../mcp/server.js";
 import { SERVER_NAME, SERVER_NETWORK, SERVER_VERSION } from "../mcp/serverInfo.js";
 import { createReviewHttpServer } from "../review-server/server.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL, composeRuntimeConfig, loadBootConfig } from "./config.js";
+import {
+  probeReviewServerIdentity,
+  startReviewServerWithTakeover,
+  terminateProcessByPid
+} from "./reviewServerAcquire.js";
 import { RuntimeLocalSettingsService } from "./localSettingsService.js";
 import { createStderrLogger } from "./logger.js";
 import { SuiEndpointError, verifyMainnetGraphqlEndpoint, verifyMainnetGrpcEndpoint } from "./suiEndpoint.js";
@@ -100,7 +105,7 @@ async function main(): Promise<void> {
       chainIdentifier,
       coinMetadataCache: store.createCoinMetadataCache()
     });
-    const reviewServer = await createReviewHttpServer({
+    const reviewServerFactory = createReviewHttpServer({
       host: config.reviewHost,
       store: sessions,
       logger,
@@ -176,7 +181,22 @@ async function main(): Promise<void> {
         version: SERVER_VERSION,
         network: SERVER_NETWORK
       }
-    }).start(config.reviewPort);
+    });
+    // The review origin is a single-port singleton: the newest instance takes
+    // the fixed port over from a previous instance of our own review server so
+    // the most recently started client owns the one wallet-autoconnect origin.
+    const reviewServer = await startReviewServerWithTakeover(
+      (port) => reviewServerFactory.start(port),
+      config.reviewPort,
+      {
+        probeIdentity: (probePort) => probeReviewServerIdentity(probePort, config.reviewHost),
+        terminate: terminateProcessByPid,
+        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+        currentPid: process.pid,
+        serviceName: SERVER_NAME,
+        logger
+      }
+    );
     reviewServerForCleanup = reviewServer;
 
     logger.info("review server started", {

@@ -27,7 +27,7 @@ import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
 import { analysisHtml, reviewHtml, settingsHtml } from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
-import { ALLOWED_HOSTNAMES } from "./reviewServerPolicy.js";
+import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
 import { routeSettingsApi } from "./settingsApi.js";
 import { walletIdentitySessionResponse } from "./walletIdentityResponse.js";
 
@@ -141,6 +141,21 @@ async function routeRequest(
   }
 
   const url = new URL(request.url ?? "/", "http://localhost");
+
+  // Loopback identity probe used by a newer instance to confirm this port is
+  // held by our own review server before taking it over. It exposes only the
+  // service name, role, version, and pid — no addresses, tokens, or session
+  // data — and is reachable only on the loopback host this server binds.
+  if (request.method === "GET" && url.pathname === "/__identity") {
+    sendJson(response, 200, {
+      service: options.serverInfo?.name ?? "say-ur-intent",
+      role: "review-server",
+      version: options.serverInfo?.version,
+      pid: process.pid
+    });
+    return;
+  }
+
   const reviewMatch = /^\/review\/([^/]+)$/.exec(url.pathname);
   const apiReviewMatch = /^\/api\/review\/([^/]+)$/.exec(url.pathname);
   const apiReviewWalletIdentityMatch = /^\/api\/review\/([^/]+)\/wallet-identity$/.exec(url.pathname);
@@ -150,7 +165,6 @@ async function routeRequest(
   const apiResultMatch = /^\/api\/result\/([^/]+)$/.exec(url.pathname);
   const walletMatch = /^\/analysis\/([^/]+)$/.exec(url.pathname);
   const apiReviewHandoffMatch = /^\/api\/review\/([^/]+)\/handoff$/.exec(url.pathname);
-  const apiReviewWalletMetaMatch = /^\/api\/review\/([^/]+)\/wallet-meta$/.exec(url.pathname);
   const apiReviewHandoffCancelMatch = /^\/api\/review\/([^/]+)\/handoff\/cancel$/.exec(url.pathname);
   const analysisAssetsMatch = /^\/api\/analysis\/([^/]+)\/assets$/.exec(url.pathname);
   const analysisActivityMatch = /^\/api\/analysis\/([^/]+)\/review-activity$/.exec(url.pathname);
@@ -176,7 +190,9 @@ async function routeRequest(
       "content-security-policy": [
         "default-src 'none'",
         "base-uri 'none'",
-        "connect-src 'self'",
+        // 'self' for review-server APIs; the Sui fullnode origin for the
+        // browser-side signed-transaction submission (see reviewServerPolicy).
+        `connect-src 'self' ${SUI_BROWSER_EXECUTION_ORIGIN}`,
         "script-src 'self'",
         // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
         "style-src 'self' 'unsafe-inline'",
@@ -192,7 +208,9 @@ async function routeRequest(
       "content-security-policy": [
         "default-src 'none'",
         "base-uri 'none'",
-        "connect-src 'self'",
+        // 'self' for review-server APIs; the Sui fullnode origin so the dapp-kit
+        // chain client can read mainnet state during wallet connect.
+        `connect-src 'self' ${SUI_BROWSER_EXECUTION_ORIGIN}`,
         "script-src 'self'",
         // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
         "style-src 'self' 'unsafe-inline'",
@@ -200,29 +218,6 @@ async function routeRequest(
         "form-action 'none'"
       ].join("; ")
     });
-    return;
-  }
-
-  if (request.method === "POST" && apiReviewWalletMetaMatch?.[1]) {
-    const sessionId = apiReviewWalletMetaMatch[1];
-    const token = await requireReviewSessionToken(options.store, sessionId, request, response);
-    if (!token) {
-      return;
-    }
-    const body = await readJsonBody(request);
-    const account = typeof body.account === "string" ? body.account : "";
-    const walletName = typeof body.walletName === "string" ? body.walletName : undefined;
-    const walletId = typeof body.walletId === "string" ? body.walletId : undefined;
-    const active = options.activityStore ? await options.activityStore.getActiveAccount() : undefined;
-    if (!active || !account || active.address !== account) {
-      sendJson(response, 409, { error: "invalid_session_transition" });
-      return;
-    }
-    await options.activityStore!.setActiveAccount(active.address, "wallet_identity", new Date(), {
-      name: walletName,
-      id: walletId
-    });
-    sendJson(response, 200, { recorded: true });
     return;
   }
 
