@@ -49,6 +49,13 @@ jobs:
           console.log(`Publishing ${pkg.name}@${pkg.version} for release "${tag}"`);
           NODE
 
+      - name: Build and verify the publishable package
+        # JS-DevTools/npm-publish does not run npm lifecycle scripts, so the build
+        # and gate run here explicitly. release:check typechecks, runs tests,
+        # builds dist/, and asserts the packed tarball contents (including
+        # dist/runtime/start.js) with a packed-tarball smoke install.
+        run: npm run release:check
+
       - name: Publish to npm
         uses: JS-DevTools/npm-publish@v3
         with:
@@ -63,6 +70,5 @@ jobs:
           # Prerelease GitHub releases publish under the `next` dist-tag; stable
           # (non-prerelease) releases publish under `latest`.
           tag: ${{ github.event.release.prerelease && 'next' || 'latest' }}
-          # `npm publish` runs the package's prepublishOnly gate (release:check:
-          # typecheck, tests, build, and a packed-tarball smoke install) before
-          # anything is published, so no separate build/test step is needed here.
+          # dist/ is built and gated by the release:check step above; this step
+          # only packs (per the package "files" field) and publishes that output.
