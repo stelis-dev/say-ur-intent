@@ -44,10 +44,17 @@ The active account is persisted in the local SQLite store and survives server
 restarts. It remains the read-context account until the user clears it through
 `account.clear_active_account` or the settings page. A connected identity
 result also records which wallet held the account (wallet name and wallet
-standard id); the review page's signing section offers only that recorded
-wallet and records it back (`POST /api/review/:id/wallet-meta`) when the user
-connects the matching account for signing. The record is read context and
-wallet preference only; it is not signing authorization.
+standard id). Wallet connection happens only on the connection page; the
+review page reads the recorded account from the server as its single source of
+truth, shows it in the header, and never connects a wallet itself. For the
+signing step it relies on dapp-kit autoconnect restoring the signer on the
+same fixed-port origin where the wallet was connected. That review origin is a
+single per-machine port (default 8765, overridable per registration with
+SAY_UR_INTENT_REVIEW_PORT): when a newer server instance finds the port already
+held by a previous Say Ur Intent review server, it stops that previous instance
+and takes the port over so the most recently started client owns the one
+origin, and a port held by any other process is never taken over. The record is
+read context and wallet preference only; it is not signing authorization.
 
 ## Status Model
 

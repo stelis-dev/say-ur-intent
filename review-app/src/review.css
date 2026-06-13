@@ -413,3 +413,79 @@ ul {
   color: #4b5563;
   font-size: 0.9rem;
 }
+
+.header-wallet {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.header-wallet .status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.header-wallet-button {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.wallet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.wallet-chip-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #16a34a;
+}
+
+.header-wallet {
+  position: relative;
+}
+
+.wallet-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 11rem;
+  z-index: 30;
+}
+
+.wallet-menu-item {
+  width: 100%;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+/* Signer-readiness dot on the header identity chip. Green (default) = the
+   browser wallet signer is connected for this account; amber = autoconnect is
+   still settling; grey = no live signer yet (signing step will surface it). */
+.wallet-chip-dot-settling {
+  background: #d97706;
+}
+
+.wallet-chip-dot-idle {
+  background: #9ca3af;
+}

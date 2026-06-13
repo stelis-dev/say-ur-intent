@@ -981,9 +981,11 @@ describe("source policy", () => {
     expect(source).toMatch(/renderSimulationSummary/);
     expect(source).toMatch(/Review-time simulation/);
     expect(source).toMatch(/Redacted summary of private review-time simulation evidence/);
-    expect(source).toMatch(/case "no_identity"[\s\S]{0,600}Open wallet page/);
+    expect(source).toMatch(/case "no_identity"[\s\S]{0,900}No active wallet account/);
+    expect(source).toMatch(/function renderHeaderWallet[\s\S]{0,900}sessionPayload\?\.activeAccount/);
+    expect(source).toMatch(/Wallet connection is not done on this review page/);
     expect(source).toMatch(/case "pre_review"[\s\S]{0,400}Start review/);
-    expect(source).toMatch(/wallet-identity/);
+    expect(source).toMatch(/create_wallet_identity/);
     expect(source).toMatch(/deepbook_quote_policy/);
     expect(source).toMatch(/producer_stage_missing/);
     expect(source).toMatch(/wallet_review_contract_emit_missing/);

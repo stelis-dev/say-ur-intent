@@ -2,10 +2,8 @@ import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from
 import "./review.css";
 import { Transaction } from "@mysten/sui/transactions";
 import mermaid from "mermaid";
-import type { UiWallet } from "@mysten/dapp-kit-core";
-import { createLocalDAppKit, suiMainnetClient } from "./dappKitClient.js";
+import { createLocalDAppKit, hasStoredWalletSelection, suiMainnetClient } from "./dappKitClient.js";
 import { isWalletStandardUserRejected } from "./walletStatus.js";
-import { getWalletUniqueIdentifier } from "@mysten/dapp-kit-core";
 
 type GuardianCheck = {
   id: string;
@@ -213,12 +211,6 @@ type ReviewSessionPayload = {
   plans: ActionPlan[];
 };
 
-type WalletIdentityResponse = {
-  walletUrl: string;
-  walletSessionId: string;
-  openTarget: "system_browser";
-};
-
 const root = document.querySelector<HTMLElement>("#review-app");
 if (!root) {
   throw new Error("review app root missing");
@@ -252,14 +244,6 @@ if (autoConnectSettling) {
     autoConnectSettling = false;
     render();
   }, 2000);
-}
-
-function hasStoredWalletSelection(): boolean {
-  try {
-    return window.localStorage.getItem("mysten-dapp-kit:selected-wallet-and-address") !== null;
-  } catch {
-    return false;
-  }
 }
 
 if (reviewSessionId && token) {
@@ -327,7 +311,7 @@ function wizardStage(stage: PageStage): ReviewWizardStage {
 }
 
 const STAGE_HEADLINES: Record<PageStage, string> = {
-  no_identity: "Connect a wallet first - ask your AI client to connect, or open the wallet page below.",
+  no_identity: "No active wallet account for this review - see the details below.",
   pre_review: "Start the review to check this transaction against live mainnet data.",
   stopped: "The review stopped - see the reason below, then run it again.",
   ready: "Ready to sign - check the summary, then sign in your wallet.",
@@ -356,12 +340,52 @@ function renderWizardHeader(stage: ReviewWizardStage): HTMLElement {
   return headerEl;
 }
 
+function shortAddress(address: string): string {
+  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
+}
+
+/**
+ * Header-resident wallet identity - read straight from the server review
+ * session payload (the DB active account), which is the single source of
+ * truth. The page never derives "who is connected" from the browser wallet
+ * here; the small dot only reflects whether the browser signer is ready for
+ * the signing step. Wallet connect/disconnect lives solely on the connection
+ * page, so there are no connect controls in this header.
+ */
+function renderHeaderWallet(): HTMLElement {
+  const slot = element("div", "header-wallet");
+  const account = sessionPayload?.activeAccount;
+  if (!account || sessionGone) {
+    return slot;
+  }
+  const connection = dAppKit.stores.$connection.get();
+  const signerReady = connection.status === "connected" && connection.account.address === account.account;
+  const settling = autoConnectSettling || connection.status === "connecting";
+  const chip = element("span", "wallet-chip");
+  const dot = element("span", "wallet-chip-dot");
+  if (!signerReady) {
+    dot.classList.add(settling ? "wallet-chip-dot-settling" : "wallet-chip-dot-idle");
+  }
+  chip.append(dot);
+  const label = account.walletName
+    ? `${account.walletName} · ${shortAddress(account.account)}`
+    : shortAddress(account.account);
+  chip.append(element("span", undefined, label));
+  chip.title = account.account;
+  slot.append(chip);
+  if (settling && !signerReady) {
+    slot.append(element("span", "status", "Reconnecting signer…"));
+  }
+  return slot;
+}
+
 function render(): void {
   rootElement.innerHTML = "";
   const shell = element("section", "review-shell");
   const header = element("div", "page-header");
   header.append(element("h1", undefined, "Say Ur Intent"));
   header.append(element("span", "page-subtitle", "Transaction review and signing"));
+  header.append(renderHeaderWallet());
   shell.append(header);
   if (errorMessage) {
     const status = element("p", "status error", errorMessage);
@@ -452,17 +476,26 @@ function render(): void {
       break;
     }
     case "no_identity": {
-      const panel = card("Wallet needed");
+      // Should not happen: a swap review is only created when an active wallet
+      // account already exists (the prepare tool refuses otherwise), so the
+      // review payload always carries that account. If it is missing, the
+      // active account was cleared after the review was created - surface it as
+      // an error rather than trying to connect from here.
+      const panel = card("No active wallet account");
       panel.append(
         element(
           "p",
-          undefined,
-          "This review needs a connected wallet account for its checks. Connect on the wallet page, then come back here."
+          "error",
+          "This review has no active wallet account. The account was cleared after the review was created, so its checks cannot run."
         )
       );
-      const actions = element("div", "actions");
-      actions.append(button("Open wallet page", () => void createWalletIdentity(), "primary"));
-      panel.append(actions);
+      panel.append(
+        element(
+          "p",
+          "boundary-note",
+          "Connect a wallet from your AI client (session.create_wallet_identity) and prepare the review again. Wallet connection is not done on this review page."
+        )
+      );
       shell.append(panel);
       break;
     }
@@ -1219,27 +1252,6 @@ async function loadReview(): Promise<void> {
   }
 }
 
-async function createWalletIdentity(): Promise<void> {
-  loading = true;
-  render();
-  try {
-    const result = await requestJson<WalletIdentityResponse>(
-      `/api/review/${encodeURIComponent(reviewSessionId)}/wallet-identity`,
-      { method: "POST", body: "{}" }
-    );
-    const opened = window.open(result.walletUrl, "_blank", "noopener,noreferrer");
-    message = opened
-      ? "Wallet identity page opened. After it reports the account result, reload this review session."
-      : `Open this wallet identity URL in the same browser, then reload this review session: ${result.walletUrl}`;
-    errorMessage = "";
-  } catch (error) {
-    errorMessage = messageForHttpError(error, "Could not create a wallet identity session.");
-  } finally {
-    loading = false;
-    render();
-  }
-}
-
 async function runAccountBoundReview(): Promise<void> {
   const account = sessionPayload?.activeAccount?.account;
   const plan = sessionPayload ? selectedPlan(sessionPayload) : undefined;
@@ -1315,54 +1327,25 @@ function renderSigningSection(state: ReviewState): HTMLElement {
       sign.disabled = isSigning;
       wrapper.append(sign);
     }
-    const disconnect = button(
-      "Disconnect / switch wallet",
-      () => {
-        // Escape hatch: stays enabled even mid-signing so a hung wallet call
-        // cannot trap the page. Releases the local signing flag too.
-        isSigning = false;
-        void dAppKit.disconnectWallet().finally(() => render());
-      },
-      "secondary"
-    );
-    wrapper.append(disconnect);
   } else if (autoConnectSettling || connection.status === "connecting") {
     wrapper.append(element("p", "status", "Reconnecting your wallet…"));
   } else if (wallets.length === 0) {
     wrapper.append(element("p", "error", "No compatible Sui wallet was detected in this browser."));
   } else {
-    const preferredId = sessionPayload?.activeAccount?.walletId;
-    const preferredName = sessionPayload?.activeAccount?.walletName;
-    const matching = wallets.filter(
-      (wallet) =>
-        (preferredId !== undefined && getWalletUniqueIdentifier(wallet) === preferredId) ||
-        (preferredName !== undefined && wallet.name === preferredName)
+    wrapper.append(
+      element(
+        "p",
+        "error",
+        "Your wallet signer is not connected, so this transaction cannot be signed yet."
+      )
     );
-    const offered = preferredId || preferredName ? matching : wallets;
-    if (offered.length === 0) {
-      wrapper.append(
-        element(
-          "p",
-          "error",
-          `The wallet of your reviewed account (${preferredName ?? "unknown"}) was not detected in this browser. Open that wallet extension and reload.`
-        )
-      );
-    } else {
-      wrapper.append(element("p", undefined, "Connect the reviewed wallet account in this page to sign."));
-      wrapper.append(
-        element(
-          "p",
-          "boundary-note",
-          "Your wallet asks for this once per server address; afterwards it reconnects automatically."
-        )
-      );
-      const list = element("div", "wallet-list");
-      for (const wallet of offered) {
-        const label = preferredId || preferredName ? `Connect ${wallet.name} (your account's wallet)` : `Connect ${wallet.name}`;
-        list.append(button(label, () => void connectForSigning(wallet), "secondary"));
-      }
-      wrapper.append(list);
-    }
+    wrapper.append(
+      element(
+        "p",
+        "boundary-note",
+        "If your wallet is locked, unlock it and it reconnects automatically. If it was never connected on this server, connect it from your AI client (session.create_wallet_identity), then reopen this review."
+      )
+    );
   }
   wrapper.append(
     element(
@@ -1374,31 +1357,6 @@ function renderSigningSection(state: ReviewState): HTMLElement {
   return wrapper;
 }
 
-async function connectForSigning(wallet: UiWallet): Promise<void> {
-  signNotice = undefined;
-  try {
-    await dAppKit.connectWallet({ wallet });
-    const connection = dAppKit.stores.$connection.get();
-    if (connection.status === "connected" && connection.account.address === sessionPayload?.activeAccount?.account) {
-      // Remember which wallet holds the reviewed account so future sessions
-      // only offer that wallet. Failure here is non-blocking.
-      void requestJson(`/api/review/${encodeURIComponent(reviewSessionId)}/wallet-meta`, {
-        method: "POST",
-        body: JSON.stringify({
-          account: connection.account.address,
-          walletName: wallet.name,
-          walletId: getWalletUniqueIdentifier(wallet)
-        })
-      }).catch(() => undefined);
-    }
-  } catch (error) {
-    signNotice = {
-      kind: "error",
-      text: messageForHttpError(error, "The wallet connection request was not completed.")
-    };
-  }
-  render();
-}
 
 async function signInWallet(state: ReviewState): Promise<void> {
   if (isSigning) return;
@@ -1418,14 +1376,6 @@ async function signInWallet(state: ReviewState): Promise<void> {
       throw new Error("Handoff bytes do not match the reviewed transaction commitment.");
     }
     handedOff = true;
-    // Debug surface for wallet/firmware integration: the exact pre-signature
-    // transaction bytes the wallet receives. Public transaction data only.
-    console.info("[sign-debug] tx bytes (base64):", handoff.transactionBytesBase64);
-    console.info(
-      "[sign-debug] tx bytes (hex):",
-      Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
-    );
-    console.info("[sign-debug] tx bytes length:", bytes.length, "digest:", recomputed);
     // Sign and execute are separated on purpose: not every wallet exposes
     // sign-and-execute (Agent-Q signs only), and submitting from this page
     // works identically for every Wallet Standard signer.

@@ -29,7 +29,24 @@ export function createLocalDAppKit() {
 // Shared mainnet client: dapp-kit reads through it, and the review page submits
 // signed transaction bytes through it directly. Submission stays on the page
 // because not every wallet exposes sign-and-execute (Agent-Q signs only).
+// The base URL host is allowlisted in the review/analysis page CSP connect-src
+// (src/review-server/reviewServerPolicy.ts SUI_BROWSER_EXECUTION_ORIGIN); keep
+// the two in sync or the browser submission is blocked by CSP.
 export const suiMainnetClient = new SuiGrpcClient({
   network: "mainnet",
   baseUrl: "https://fullnode.mainnet.sui.io:443"
 });
+
+// localStorage key dapp-kit uses to remember the selected wallet+address for
+// per-origin autoConnect. Both the analysis and review pages read it to show a
+// "reconnecting" placeholder until autoConnect settles, instead of flashing the
+// wallet picker first.
+export const WALLET_SELECTION_STORAGE_KEY = "mysten-dapp-kit:selected-wallet-and-address";
+
+export function hasStoredWalletSelection(): boolean {
+  try {
+    return window.localStorage.getItem(WALLET_SELECTION_STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}

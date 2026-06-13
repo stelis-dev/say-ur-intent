@@ -1,5 +1,5 @@
 import { getWalletUniqueIdentifier, type UiWallet } from "@mysten/dapp-kit-core";
-import { createLocalDAppKit } from "./dappKitClient.js";
+import { createLocalDAppKit, hasStoredWalletSelection } from "./dappKitClient.js";
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
 import "./analysis.css";
 import {
@@ -46,14 +46,6 @@ void postLifecycle("opened")
 
 dAppKit.stores.$wallets.subscribe(() => render());
 dAppKit.stores.$connection.subscribe(() => render());
-
-function hasStoredWalletSelection(): boolean {
-  try {
-    return window.localStorage.getItem("mysten-dapp-kit:selected-wallet-and-address") !== null;
-  } catch {
-    return false;
-  }
-}
 
 function render(): void {
   const connection = dAppKit.stores.$connection.get();
