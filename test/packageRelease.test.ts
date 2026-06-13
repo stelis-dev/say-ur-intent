@@ -17,9 +17,9 @@ type PackageJson = {
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as PackageJson;
 
 describe("npm release metadata", () => {
-  it("is configured for public next-tag alpha publishing", () => {
+  it("is configured for public next-tag publishing", () => {
     expect(packageJson.private).toBeUndefined();
-    expect(packageJson.version).toBe("0.1.0-alpha.0");
+    expect(packageJson.version).toBe("0.0.0");
     expect(PACKAGE_NAME).toBe("@stelis/say-ur-intent");
     expect(SERVER_VERSION).toBe(packageJson.version);
     expect(packageJson.license).toBe("MIT");
