@@ -216,6 +216,69 @@ export class LocalTransactionMaterialStoreError extends Error {
   }
 }
 
+// Validate the store input and build the stored record (with cloned bytes). Shared
+// by every LocalTransactionMaterialStore implementation so validation never drifts
+// between the in-memory and SQLite backends.
+export function buildTransactionMaterialRecord(
+  input: StoreLocalTransactionMaterialInput,
+  now: Date = new Date()
+): LocalTransactionMaterialRecord {
+  const account = parseSuiAddress(input.account);
+  if (!account) {
+    throw new LocalTransactionMaterialStoreError("Invalid transaction material account");
+  }
+  if (!input.reviewSessionId) {
+    throw new LocalTransactionMaterialStoreError("reviewSessionId is required");
+  }
+  if (!input.planId) {
+    throw new LocalTransactionMaterialStoreError("planId is required");
+  }
+  if (!LOCAL_TRANSACTION_MATERIAL_KINDS.includes(input.kind)) {
+    throw new LocalTransactionMaterialStoreError("Invalid transaction material kind");
+  }
+  if (!LOCAL_TRANSACTION_MATERIAL_SOURCES.includes(input.source)) {
+    throw new LocalTransactionMaterialStoreError("Invalid transaction material source");
+  }
+  if (input.transactionBytes.byteLength === 0) {
+    throw new LocalTransactionMaterialStoreError("transactionBytes must not be empty");
+  }
+  const createdAt = now.toISOString();
+  const expiresAt = input.expiresAt.toISOString();
+  if (Date.parse(expiresAt) <= Date.parse(createdAt)) {
+    throw new LocalTransactionMaterialStoreError("expiresAt must be after createdAt");
+  }
+  return {
+    materialId: `txmat_${randomUUID()}`,
+    reviewSessionId: input.reviewSessionId,
+    planId: input.planId,
+    account,
+    kind: input.kind,
+    source: input.source,
+    createdAt,
+    expiresAt,
+    transactionBytes: cloneBytes(input.transactionBytes),
+    ...(input.redactedDiagnostics === undefined
+      ? {}
+      : { redactedDiagnostics: structuredClone(input.redactedDiagnostics) })
+  };
+}
+
+// Project the public (redacted) handle out of a stored record.
+export function toMaterialHandle(
+  record: LocalTransactionMaterialRecord
+): LocalTransactionMaterialHandle {
+  return {
+    materialId: record.materialId,
+    reviewSessionId: record.reviewSessionId,
+    planId: record.planId,
+    account: record.account,
+    kind: record.kind,
+    source: record.source,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt
+  };
+}
+
 export class InMemoryLocalTransactionMaterialStore implements LocalTransactionMaterialStore {
   private readonly records = new Map<string, LocalTransactionMaterialRecord>();
 
@@ -223,51 +286,9 @@ export class InMemoryLocalTransactionMaterialStore implements LocalTransactionMa
     input: StoreLocalTransactionMaterialInput,
     now = new Date()
   ): LocalTransactionMaterialHandle {
-    const account = parseSuiAddress(input.account);
-    if (!account) {
-      throw new LocalTransactionMaterialStoreError("Invalid transaction material account");
-    }
-    if (!input.reviewSessionId) {
-      throw new LocalTransactionMaterialStoreError("reviewSessionId is required");
-    }
-    if (!input.planId) {
-      throw new LocalTransactionMaterialStoreError("planId is required");
-    }
-    if (!LOCAL_TRANSACTION_MATERIAL_KINDS.includes(input.kind)) {
-      throw new LocalTransactionMaterialStoreError("Invalid transaction material kind");
-    }
-    if (!LOCAL_TRANSACTION_MATERIAL_SOURCES.includes(input.source)) {
-      throw new LocalTransactionMaterialStoreError("Invalid transaction material source");
-    }
-    if (input.transactionBytes.byteLength === 0) {
-      throw new LocalTransactionMaterialStoreError("transactionBytes must not be empty");
-    }
-
-    const createdAt = now.toISOString();
-    const expiresAt = input.expiresAt.toISOString();
-    if (Date.parse(expiresAt) <= Date.parse(createdAt)) {
-      throw new LocalTransactionMaterialStoreError("expiresAt must be after createdAt");
-    }
-
-    const handle: LocalTransactionMaterialHandle = {
-      materialId: `txmat_${randomUUID()}`,
-      reviewSessionId: input.reviewSessionId,
-      planId: input.planId,
-      account,
-      kind: input.kind,
-      source: input.source,
-      createdAt,
-      expiresAt
-    };
-
-    this.records.set(handle.materialId, {
-      ...handle,
-      transactionBytes: cloneBytes(input.transactionBytes),
-      ...(input.redactedDiagnostics === undefined
-        ? {}
-        : { redactedDiagnostics: structuredClone(input.redactedDiagnostics) })
-    });
-    return { ...handle };
+    const record = buildTransactionMaterialRecord(input, now);
+    this.records.set(record.materialId, record);
+    return toMaterialHandle(record);
   }
 
   getTransactionMaterial(
@@ -303,7 +324,7 @@ export class InMemoryLocalTransactionMaterialStore implements LocalTransactionMa
   }
 }
 
-function sameHandle(
+export function sameHandle(
   record: LocalTransactionMaterialHandle,
   handle: LocalTransactionMaterialHandle
 ): boolean {

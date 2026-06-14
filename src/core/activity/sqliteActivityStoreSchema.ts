@@ -9,6 +9,9 @@ export function configureDatabase(db: SqliteDatabase): void {
   db.exec("PRAGMA journal_mode=WAL");
   db.exec("PRAGMA synchronous=NORMAL");
   db.exec("PRAGMA foreign_keys=ON");
+  // Multiple client processes share this database; wait instead of failing with
+  // SQLITE_BUSY when another process holds the write lock.
+  db.exec("PRAGMA busy_timeout=5000");
 }
 
 export function initializeDatabase(db: SqliteDatabase): void {
@@ -164,6 +167,28 @@ export function initializeDatabase(db: SqliteDatabase): void {
       PRIMARY KEY (coin_type, chain_identifier)
     );
 
+  `);
+
+  // Live multi-client state (Option B): runtime session state lives in the shared
+  // database so any review-server process can serve any session. Added WITHOUT a
+  // DB_USER_VERSION bump — older runtimes ignore unknown tables, so a newer client can
+  // introduce them without breaking a concurrently-running older client.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS live_transaction_materials (
+      material_id TEXT PRIMARY KEY,
+      review_session_id TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
+      account TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      source TEXT NOT NULL,
+      transaction_bytes BLOB NOT NULL,
+      redacted_diagnostics_json TEXT,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_live_transaction_materials_session
+      ON live_transaction_materials(review_session_id);
   `);
   migrateDatabase(db, currentUserVersion);
   if ((db.pragma("user_version", { simple: true }) as number) !== DB_USER_VERSION) {

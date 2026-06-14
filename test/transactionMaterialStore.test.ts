@@ -1,16 +1,38 @@
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import {
   InMemoryLocalTransactionMaterialStore,
   LocalTransactionMaterialStoreError,
-  verifyLocalTransactionMaterialArtifacts
+  verifyLocalTransactionMaterialArtifacts,
+  type LocalTransactionMaterialStore
 } from "../src/core/session/transactionMaterialStore.js";
+import { SqliteTransactionMaterialStore } from "../src/core/session/sqliteTransactionMaterialStore.js";
+import {
+  configureDatabase,
+  initializeDatabase
+} from "../src/core/activity/sqliteActivityStoreSchema.js";
 import { recordTestTransactionMaterial } from "./fixtures/transactionMaterial.js";
 
 const account = `0x${"a".repeat(64)}`;
 
-describe("local transaction material store", () => {
+// The same contract must hold for both backends; the SQLite case also exercises the
+// BLOB round-trip the digest-binding invariant depends on.
+const stores: Array<[string, () => LocalTransactionMaterialStore]> = [
+  ["in-memory", () => new InMemoryLocalTransactionMaterialStore()],
+  [
+    "sqlite",
+    () => {
+      const db = new Database(":memory:");
+      configureDatabase(db);
+      initializeDatabase(db);
+      return new SqliteTransactionMaterialStore(db);
+    }
+  ]
+];
+
+describe.each(stores)("local transaction material store (%s)", (_label, makeStore) => {
   it("stores transaction bytes behind a redacted handle", () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     const bytes = new Uint8Array([1, 2, 3]);
     const handle = store.recordTransactionMaterial(
       {
@@ -47,7 +69,7 @@ describe("local transaction material store", () => {
   });
 
   it("requires the full handle identity before returning local bytes", () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     const handle = store.recordTransactionMaterial(
       {
         reviewSessionId: "review_1",
@@ -67,7 +89,7 @@ describe("local transaction material store", () => {
   });
 
   it("expires and deletes local transaction material records", () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     const handle = store.recordTransactionMaterial(
       {
         reviewSessionId: "review_1",
@@ -101,7 +123,7 @@ describe("local transaction material store", () => {
   });
 
   it("rejects invalid material records", () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     expect(() =>
       store.recordTransactionMaterial({
         reviewSessionId: "review_1",
@@ -143,7 +165,7 @@ describe("local transaction material store", () => {
   });
 
   it("validates matching material handles and bytes-derived digest commitments as one artifact", async () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     const { handle, digest } = await recordTestTransactionMaterial({
       materialStore: store,
       reviewSessionId: "review_1",
@@ -170,7 +192,7 @@ describe("local transaction material store", () => {
   });
 
   it("rejects invalid digest commitments and stale artifact timestamps", async () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     const { handle, digest } = await recordTestTransactionMaterial({
       materialStore: store,
       reviewSessionId: "review_1",
@@ -214,7 +236,7 @@ describe("local transaction material store", () => {
   });
 
   it("rejects digest commitments derived from different stored bytes", async () => {
-    const store = new InMemoryLocalTransactionMaterialStore();
+    const store = makeStore();
     const first = await recordTestTransactionMaterial({
       materialStore: store,
       reviewSessionId: "review_1",

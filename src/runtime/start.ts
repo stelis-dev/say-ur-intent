@@ -21,7 +21,6 @@ import { createSuiReadService } from "../core/read/readService.js";
 import { createTransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
 import { createReviewTimeSimulationProducer } from "../core/action/reviewTimeSimulationEvidence.js";
 import { producePtbVisualizationArtifact } from "../core/action/ptbVisualizationProducer.js";
-import { InMemoryLocalTransactionMaterialStore } from "../core/session/transactionMaterialStore.js";
 import { InMemorySessionStore } from "../core/session/sessionStore.js";
 import { createMcpServer, startMcp } from "../mcp/server.js";
 import { SERVER_NAME, SERVER_NETWORK, SERVER_VERSION } from "../mcp/serverInfo.js";
@@ -92,7 +91,7 @@ async function main(): Promise<void> {
         });
       }
     });
-    const transactionMaterialStore = new InMemoryLocalTransactionMaterialStore();
+    const transactionMaterialStore = store.createTransactionMaterialStore();
     const sessions = new InMemorySessionStore({
       activityStore: store,
       transactionMaterialStore,

@@ -13,7 +13,6 @@ import { InMemorySessionStore } from "../core/session/sessionStore.js";
 import { createMcpServer } from "../mcp/server.js";
 import { TOOL_NAMES } from "../mcp/toolNames.js";
 import { createReviewHttpServer } from "../review-server/server.js";
-import { InMemoryLocalTransactionMaterialStore } from "../core/session/transactionMaterialStore.js";
 import { buildSupportedReviewAdapters } from "../adapters/reviewAdapters.js";
 import {
   createDeepbookSwapTransactionMaterialDigestProducer,
@@ -137,7 +136,7 @@ async function main(): Promise<void> {
       chainIdentifier,
       coinMetadataCache: activityStore.createCoinMetadataCache()
     });
-    const transactionMaterialStore = new InMemoryLocalTransactionMaterialStore();
+    const transactionMaterialStore = activityStore.createTransactionMaterialStore();
     const sessions = new InMemorySessionStore({
       activityStore,
       logger,

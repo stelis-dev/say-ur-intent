@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
@@ -9,6 +9,8 @@ import { actionPlanSchema, executionResultSchema } from "../action/schemas.js";
 import type { ActionPlan, ExecutionResult, InternalSessionStatus, ReviewState } from "../action/types.js";
 import { parseSuiAddress } from "../suiAddress.js";
 import { SqlitePreferencesRepository } from "../preferences/sqlitePreferencesRepository.js";
+import { SqliteTransactionMaterialStore } from "../session/sqliteTransactionMaterialStore.js";
+import type { LocalTransactionMaterialStore } from "../session/transactionMaterialStore.js";
 import type {
   CoinMetadataCache,
   CoinMetadataCacheLookup,
@@ -117,14 +119,25 @@ const ACTIVE_ACCOUNT_SINGLETON_ID = 1;
 export const DATA_DIR_ENV = "SAY_UR_INTENT_DATA_DIR";
 export const ACTIVITY_DATABASE_FILENAME = "say-ur-intent.sqlite";
 
+// Best-effort permission hardening. The owner-only data directory is the primary
+// protection; failures (e.g. on Windows, which ignores POSIX modes) are non-fatal.
+function restrictPathPermissions(path: string, mode: number): void {
+  try {
+    chmodSync(path, mode);
+  } catch {
+    // Non-fatal: the 0700 directory remains the primary protection.
+  }
+}
+
 export class SqliteActivityStore implements ActivityStore {
   private readonly db: SqliteDatabase;
   private readonly validateAdapterLifecycle: AdapterLifecycleValidator;
 
   constructor(options: SqliteActivityStoreOptions) {
     this.validateAdapterLifecycle = options.validateAdapterLifecycle;
+    const dataDirectory = dirname(options.databasePath);
     try {
-      mkdirSync(dirname(options.databasePath), { recursive: true });
+      mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
     } catch {
       throw new ActivityStoreError(
         `Could not create the local activity data directory. Check directory permissions or set ${DATA_DIR_ENV}.`
@@ -138,6 +151,12 @@ export class SqliteActivityStore implements ActivityStore {
       this.db.close();
       throw error;
     }
+    // This database persists unsigned transaction material (Option B), so restrict it to
+    // the owner. The 0700 directory is the primary protection (it also covers the WAL/SHM
+    // sidecars and blocks other OS users); the 0600 file is belt-and-suspenders. Best-effort
+    // because some platforms (e.g. Windows) ignore POSIX modes.
+    restrictPathPermissions(dataDirectory, 0o700);
+    restrictPathPermissions(options.databasePath, 0o600);
   }
 
   async upsertAccount(address: string, source: AccountSource, now = new Date()): Promise<AccountRecord> {
@@ -892,6 +911,10 @@ export class SqliteActivityStore implements ActivityStore {
 
   createCoinMetadataCache(): CoinMetadataCache {
     return new SqliteCoinMetadataCache(this.db);
+  }
+
+  createTransactionMaterialStore(): LocalTransactionMaterialStore {
+    return new SqliteTransactionMaterialStore(this.db);
   }
 
   private upsertAccountSync(address: string, source: AccountSource, timestamp: string): AccountRecord {
