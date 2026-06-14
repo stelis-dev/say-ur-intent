@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.stelis-dev/say-ur-intent",
+  "description": "Local-first Sui intent toolkit: an AI prepares the transaction, you review it and sign in your own wallet. The AI never holds your keys.",
+  "repository": {
+    "url": "https://github.com/stelis-dev/say-ur-intent",
+    "source": "github"
+  },
+  "version": "0.0.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@stelis/say-ur-intent",
+      "version": "0.0.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

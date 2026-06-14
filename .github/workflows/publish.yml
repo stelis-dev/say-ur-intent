@@ -1,4 +1,4 @@
-name: Publish npm package
+name: Publish npm package and MCP Registry entry
 
 on:
   release:
@@ -72,3 +72,39 @@ jobs:
           tag: ${{ github.event.release.prerelease && 'next' || 'latest' }}
           # dist/ is built and gated by the release:check step above; this step
           # only packs (per the package "files" field) and publishes that output.
+
+  publish-mcp-registry:
+    name: Register on the MCP Registry
+    needs: publish-npm
+    # Only stable releases create an MCP Registry entry; prereleases still
+    # publish to npm under the "next" dist-tag (handled by the job above).
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Keep the registry entry version in lockstep with the published npm
+      # package so the two never drift.
+      - name: Sync server.json version to package.json
+        run: |
+          VERSION="$(jq -r .version package.json)"
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.json.tmp
+          mv server.json.tmp server.json
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      # GitHub OIDC authorizes the io.github.stelis-dev/* namespace from this
+      # repository, so no token or secret is needed (it reuses the workflow-level
+      # id-token: write permission). The registry validates ownership against the
+      # published package's "mcpName" field, so this job runs after the npm
+      # publish job (needs: publish-npm).
+      - name: Authenticate to the MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to the MCP Registry
+        run: ./mcp-publisher publish
