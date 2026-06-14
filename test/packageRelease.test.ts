@@ -19,7 +19,8 @@ const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as PackageJ
 describe("npm release metadata", () => {
   it("is configured for public latest-tag publishing", () => {
     expect(packageJson.private).toBeUndefined();
-    expect(packageJson.version).toBe("0.0.2");
+    // Validate the semver shape, not an exact value — pinning the version drifts every release.
+    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
     expect(PACKAGE_NAME).toBe("@stelis/say-ur-intent");
     expect(SERVER_VERSION).toBe(packageJson.version);
     expect(packageJson.license).toBe("MIT");
