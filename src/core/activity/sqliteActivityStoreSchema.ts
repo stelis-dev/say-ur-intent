@@ -209,6 +209,16 @@ export function initializeDatabase(db: SqliteDatabase): void {
         REFERENCES live_review_sessions(id) ON DELETE CASCADE,
       artifacts_json TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS live_wallet_identity_sessions (
+      id TEXT PRIMARY KEY,
+      session_json TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS live_settings_sessions (
+      id TEXT PRIMARY KEY,
+      session_json TEXT NOT NULL
+    );
   `);
   migrateDatabase(db, currentUserVersion);
   if ((db.pragma("user_version", { simple: true }) as number) !== DB_USER_VERSION) {

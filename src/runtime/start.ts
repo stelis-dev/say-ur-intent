@@ -98,7 +98,9 @@ async function main(): Promise<void> {
       logger,
       validateAdapterLifecycle: validateSupportedAdapterLifecycle,
       sessions: store.createSessionRecordStore(),
-      artifacts: store.createPrivateReviewArtifactStore()
+      artifacts: store.createPrivateReviewArtifactStore(),
+      walletIdentityStore: store.createWalletIdentityRecordStore(),
+      settingsStore: store.createSettingsRecordStore()
     });
     const readService = createSuiReadService({
       client: suiClient,

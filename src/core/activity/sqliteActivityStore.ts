@@ -11,9 +11,17 @@ import { parseSuiAddress } from "../suiAddress.js";
 import { SqlitePreferencesRepository } from "../preferences/sqlitePreferencesRepository.js";
 import { SqliteTransactionMaterialStore } from "../session/sqliteTransactionMaterialStore.js";
 import type { LocalTransactionMaterialStore } from "../session/transactionMaterialStore.js";
-import { SqliteSessionRecordStore, SqlitePrivateReviewArtifactStore } from "../session/sqliteSessionStore.js";
+import {
+  SqliteSessionRecordStore,
+  SqlitePrivateReviewArtifactStore,
+  createSqliteWalletIdentityRecordStore,
+  createSqliteSettingsRecordStore
+} from "../session/sqliteSessionStore.js";
 import type { SessionRecordStore } from "../session/sessionRecordStore.js";
 import type { PrivateReviewArtifactStore } from "../session/privateReviewArtifacts.js";
+import type { KeyedRecordStore } from "../session/keyedRecordStore.js";
+import type { WalletIdentitySession } from "../session/walletIdentity.js";
+import type { SettingsSession } from "../session/settingsSession.js";
 import type {
   CoinMetadataCache,
   CoinMetadataCacheLookup,
@@ -926,6 +934,14 @@ export class SqliteActivityStore implements ActivityStore {
 
   createPrivateReviewArtifactStore(): PrivateReviewArtifactStore {
     return new SqlitePrivateReviewArtifactStore(this.db);
+  }
+
+  createWalletIdentityRecordStore(): KeyedRecordStore<WalletIdentitySession> {
+    return createSqliteWalletIdentityRecordStore(this.db);
+  }
+
+  createSettingsRecordStore(): KeyedRecordStore<SettingsSession> {
+    return createSqliteSettingsRecordStore(this.db);
   }
 
   private upsertAccountSync(address: string, source: AccountSource, timestamp: string): AccountRecord {

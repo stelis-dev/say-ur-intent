@@ -42,6 +42,7 @@ import {
   InMemorySessionRecordStore,
   type SessionRecordStore
 } from "./sessionRecordStore.js";
+import type { KeyedRecordStore } from "./keyedRecordStore.js";
 import { isFinalSessionStatus } from "./status.js";
 import { parseSuiAddress } from "../suiAddress.js";
 import {
@@ -177,6 +178,8 @@ export type InMemorySessionStoreOptions = {
 export type LocalSessionStoreOptions = InMemorySessionStoreOptions & {
   sessions: SessionRecordStore;
   artifacts: PrivateReviewArtifactStore;
+  walletIdentityStore?: KeyedRecordStore<WalletIdentitySession>;
+  settingsStore?: KeyedRecordStore<SettingsSession>;
 };
 
 export { SessionStoreError } from "./sessionErrors.js";
@@ -230,11 +233,13 @@ export class LocalSessionStore implements SessionStore {
       appendEventLog: (record) => this.appendEventLog(record),
       setActiveAccount: async (account, now, wallet) => {
         await this.activityStore.setActiveAccount(account, "wallet_identity", now, wallet);
-      }
+      },
+      ...(options.walletIdentityStore ? { recordStore: options.walletIdentityStore } : {})
     });
     this.settings = new SettingsSessionManager({
       ttlMs: this.ttlMs,
-      appendEventLog: (record) => this.appendEventLog(record)
+      appendEventLog: (record) => this.appendEventLog(record),
+      ...(options.settingsStore ? { recordStore: options.settingsStore } : {})
     });
     this.eventLog = options.eventLog ?? new NullEventLogSink();
     this.activityStore = options.activityStore;

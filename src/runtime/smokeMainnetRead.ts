@@ -142,7 +142,9 @@ async function main(): Promise<void> {
       logger,
       validateAdapterLifecycle: validateSupportedAdapterLifecycle,
       sessions: activityStore.createSessionRecordStore(),
-      artifacts: activityStore.createPrivateReviewArtifactStore()
+      artifacts: activityStore.createPrivateReviewArtifactStore(),
+      walletIdentityStore: activityStore.createWalletIdentityRecordStore(),
+      settingsStore: activityStore.createSettingsRecordStore()
     });
     reviewServer = await createReviewHttpServer({
       host: config.reviewHost,

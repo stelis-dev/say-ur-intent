@@ -6,10 +6,15 @@ import {
   tokenMatchesHash
 } from "./localSession.js";
 import type { SettingsSession } from "./settingsSession.js";
+import {
+  InMemoryKeyedRecordStore,
+  type KeyedRecordStore
+} from "./keyedRecordStore.js";
 
 export type SettingsSessionManagerOptions = {
   ttlMs: number;
   appendEventLog: (record: EventLogRecord) => Promise<void>;
+  recordStore?: KeyedRecordStore<SettingsSession>;
 };
 
 export type CreatedSettingsSessionRecord = {
@@ -18,9 +23,11 @@ export type CreatedSettingsSessionRecord = {
 };
 
 export class SettingsSessionManager {
-  private readonly sessions = new Map<string, SettingsSession>();
+  private readonly sessions: KeyedRecordStore<SettingsSession>;
 
-  constructor(private readonly options: SettingsSessionManagerOptions) {}
+  constructor(private readonly options: SettingsSessionManagerOptions) {
+    this.sessions = options.recordStore ?? new InMemoryKeyedRecordStore<SettingsSession>();
+  }
 
   async create(now: Date): Promise<CreatedSettingsSessionRecord> {
     const { base, token } = createLocalSessionBase(now, this.options.ttlMs);

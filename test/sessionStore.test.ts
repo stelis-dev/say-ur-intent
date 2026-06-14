@@ -35,10 +35,15 @@ import {
 } from "../src/core/activity/sqliteActivityStoreSchema.js";
 import {
   SqlitePrivateReviewArtifactStore,
-  SqliteSessionRecordStore
+  SqliteSessionRecordStore,
+  createSqliteWalletIdentityRecordStore,
+  createSqliteSettingsRecordStore
 } from "../src/core/session/sqliteSessionStore.js";
 import type { SessionRecordStore } from "../src/core/session/sessionRecordStore.js";
 import type { PrivateReviewArtifactStore } from "../src/core/session/privateReviewArtifacts.js";
+import type { KeyedRecordStore } from "../src/core/session/keyedRecordStore.js";
+import type { WalletIdentitySession } from "../src/core/session/walletIdentity.js";
+import type { SettingsSession } from "../src/core/session/settingsSession.js";
 import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
 import { deepbookDisplayQuote } from "./fixtures/deepbookQuote.js";
 import { createTestSwapHumanReadableReviewEvidence } from "./fixtures/humanReadableReview.js";
@@ -65,7 +70,12 @@ const suiCoinObjectType = "0x2::coin::Coin<0x2::sui::SUI>";
 const nonCoinObjectType = "0x2::object::UID";
 const sharedObjectType = "0x2::clock::Clock";
 const testLogger = { error() {} };
-type SessionRecordStores = { sessions: SessionRecordStore; artifacts: PrivateReviewArtifactStore };
+type SessionRecordStores = {
+  sessions: SessionRecordStore;
+  artifacts: PrivateReviewArtifactStore;
+  walletIdentityStore: KeyedRecordStore<WalletIdentitySession>;
+  settingsStore: KeyedRecordStore<SettingsSession>;
+};
 
 // Run the full session-store contract against both backends. The orchestration is
 // shared (LocalSessionStore); only the record/artifact storage differs, so the SQLite
@@ -80,7 +90,9 @@ const SESSION_STORE_BACKENDS: Array<[string, () => SessionRecordStores | undefin
       initializeDatabase(db);
       return {
         sessions: new SqliteSessionRecordStore(db),
-        artifacts: new SqlitePrivateReviewArtifactStore(db)
+        artifacts: new SqlitePrivateReviewArtifactStore(db),
+        walletIdentityStore: createSqliteWalletIdentityRecordStore(db),
+        settingsStore: createSqliteSettingsRecordStore(db)
       };
     }
   ]
@@ -303,7 +315,13 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
     };
     const recordStores = makeRecordStores();
     return recordStores
-      ? new LocalSessionStore({ ...base, sessions: recordStores.sessions, artifacts: recordStores.artifacts })
+      ? new LocalSessionStore({
+          ...base,
+          sessions: recordStores.sessions,
+          artifacts: recordStores.artifacts,
+          walletIdentityStore: recordStores.walletIdentityStore,
+          settingsStore: recordStores.settingsStore
+        })
       : new InMemorySessionStore(base);
   }
 

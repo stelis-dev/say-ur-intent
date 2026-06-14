@@ -7,6 +7,10 @@ import {
 } from "./localSession.js";
 import { SessionStoreError } from "./sessionErrors.js";
 import {
+  InMemoryKeyedRecordStore,
+  type KeyedRecordStore
+} from "./keyedRecordStore.js";
+import {
   isTerminalWalletIdentityStatus,
   walletIdentityResultInputSchema,
   walletIdentitySessionSchema,
@@ -54,6 +58,7 @@ export type WalletIdentitySessionManagerOptions = {
   ttlMs: number;
   appendEventLog: (record: EventLogRecord) => Promise<void>;
   setActiveAccount: (account: string, now: Date, wallet?: { name?: string | undefined; id?: string | undefined }) => Promise<void>;
+  recordStore?: KeyedRecordStore<WalletIdentitySession>;
 };
 
 export type CreatedWalletIdentitySessionRecord = {
@@ -62,9 +67,11 @@ export type CreatedWalletIdentitySessionRecord = {
 };
 
 export class WalletIdentitySessionManager {
-  private readonly sessions = new Map<string, WalletIdentitySession>();
+  private readonly sessions: KeyedRecordStore<WalletIdentitySession>;
 
-  constructor(private readonly options: WalletIdentitySessionManagerOptions) {}
+  constructor(private readonly options: WalletIdentitySessionManagerOptions) {
+    this.sessions = options.recordStore ?? new InMemoryKeyedRecordStore<WalletIdentitySession>();
+  }
 
   async create(now: Date): Promise<CreatedWalletIdentitySessionRecord> {
     const { base, token } = createLocalSessionBase(now, this.options.ttlMs);
@@ -99,7 +106,7 @@ export class WalletIdentitySessionManager {
 
   async list(now: Date): Promise<WalletIdentitySession[]> {
     const sessions: WalletIdentitySession[] = [];
-    for (const id of this.sessions.keys()) {
+    for (const id of this.sessions.ids()) {
       const session = await this.get(id, now);
       if (session) {
         sessions.push(session);
