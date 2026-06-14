@@ -21,7 +21,7 @@ import { createSuiReadService } from "../core/read/readService.js";
 import { createTransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
 import { createReviewTimeSimulationProducer } from "../core/action/reviewTimeSimulationEvidence.js";
 import { producePtbVisualizationArtifact } from "../core/action/ptbVisualizationProducer.js";
-import { InMemorySessionStore } from "../core/session/sessionStore.js";
+import { LocalSessionStore } from "../core/session/sessionStore.js";
 import { createMcpServer, startMcp } from "../mcp/server.js";
 import { SERVER_NAME, SERVER_NETWORK, SERVER_VERSION } from "../mcp/serverInfo.js";
 import { createReviewHttpServer } from "../review-server/server.js";
@@ -92,11 +92,13 @@ async function main(): Promise<void> {
       }
     });
     const transactionMaterialStore = store.createTransactionMaterialStore();
-    const sessions = new InMemorySessionStore({
+    const sessions = new LocalSessionStore({
       activityStore: store,
       transactionMaterialStore,
       logger,
-      validateAdapterLifecycle: validateSupportedAdapterLifecycle
+      validateAdapterLifecycle: validateSupportedAdapterLifecycle,
+      sessions: store.createSessionRecordStore(),
+      artifacts: store.createPrivateReviewArtifactStore()
     });
     const readService = createSuiReadService({
       client: suiClient,

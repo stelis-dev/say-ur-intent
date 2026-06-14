@@ -23,10 +23,22 @@ import type { ActionPlan, ReviewState } from "../src/core/action/types.js";
 import type { EventLogRecord } from "../src/core/eventlog/sink.js";
 import {
   InMemorySessionStore,
+  LocalSessionStore,
   SessionStoreError,
   type InMemorySessionStoreOptions
 } from "../src/core/session/sessionStore.js";
 import { InMemoryLocalTransactionMaterialStore } from "../src/core/session/transactionMaterialStore.js";
+import Database from "better-sqlite3";
+import {
+  configureDatabase,
+  initializeDatabase
+} from "../src/core/activity/sqliteActivityStoreSchema.js";
+import {
+  SqlitePrivateReviewArtifactStore,
+  SqliteSessionRecordStore
+} from "../src/core/session/sqliteSessionStore.js";
+import type { SessionRecordStore } from "../src/core/session/sessionRecordStore.js";
+import type { PrivateReviewArtifactStore } from "../src/core/session/privateReviewArtifacts.js";
 import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
 import { deepbookDisplayQuote } from "./fixtures/deepbookQuote.js";
 import { createTestSwapHumanReadableReviewEvidence } from "./fixtures/humanReadableReview.js";
@@ -53,14 +65,26 @@ const suiCoinObjectType = "0x2::coin::Coin<0x2::sui::SUI>";
 const nonCoinObjectType = "0x2::object::UID";
 const sharedObjectType = "0x2::clock::Clock";
 const testLogger = { error() {} };
-function createSessionStore(options: Partial<InMemorySessionStoreOptions> = {}): InMemorySessionStore {
-  return new InMemorySessionStore({
-    ...options,
-    activityStore: options.activityStore ?? new InMemoryActivityStore(),
-    logger: options.logger ?? testLogger,
-    validateAdapterLifecycle: options.validateAdapterLifecycle ?? validateSupportedAdapterLifecycle
-  });
-}
+type SessionRecordStores = { sessions: SessionRecordStore; artifacts: PrivateReviewArtifactStore };
+
+// Run the full session-store contract against both backends. The orchestration is
+// shared (LocalSessionStore); only the record/artifact storage differs, so the SQLite
+// case proves the persistence layer upholds every behaviour the in-memory case does.
+const SESSION_STORE_BACKENDS: Array<[string, () => SessionRecordStores | undefined]> = [
+  ["in-memory", () => undefined],
+  [
+    "sqlite",
+    () => {
+      const db = new Database(":memory:");
+      configureDatabase(db);
+      initializeDatabase(db);
+      return {
+        sessions: new SqliteSessionRecordStore(db),
+        artifacts: new SqlitePrivateReviewArtifactStore(db)
+      };
+    }
+  ]
+];
 
 function deepbookLifecycle(completedCount: number) {
   return deepbookSwapReviewLifecycleSchema.parse({
@@ -74,7 +98,7 @@ function deepbookLifecycle(completedCount: number) {
 }
 
 async function openAndConnectReview(
-  store: InMemorySessionStore,
+  store: LocalSessionStore,
   sessionId: string,
   account = walletAccount,
   now = new Date()
@@ -85,7 +109,7 @@ async function openAndConnectReview(
 }
 
 async function connectWalletIdentity(
-  store: InMemorySessionStore,
+  store: LocalSessionStore,
   account = walletAccount,
   now = new Date()
 ) {
@@ -100,7 +124,7 @@ async function connectWalletIdentity(
 }
 
 async function recordReadyReviewStateWithPrivateMaterial(input: {
-  store: InMemorySessionStore;
+  store: LocalSessionStore;
   materialStore: InMemoryLocalTransactionMaterialStore;
   sessionId: string;
   account?: string | undefined;
@@ -269,7 +293,20 @@ async function testReviewTimeSimulationEvidence(input: {
   return outcome.evidence;
 }
 
-describe("InMemorySessionStore", () => {
+describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, makeRecordStores) => {
+  function createSessionStore(options: Partial<InMemorySessionStoreOptions> = {}): LocalSessionStore {
+    const base = {
+      ...options,
+      activityStore: options.activityStore ?? new InMemoryActivityStore(),
+      logger: options.logger ?? testLogger,
+      validateAdapterLifecycle: options.validateAdapterLifecycle ?? validateSupportedAdapterLifecycle
+    };
+    const recordStores = makeRecordStores();
+    return recordStores
+      ? new LocalSessionStore({ ...base, sessions: recordStores.sessions, artifacts: recordStores.artifacts })
+      : new InMemorySessionStore(base);
+  }
+
   it("creates sessions with token validation", async () => {
     const store = createSessionStore();
     const { session, token } = await store.createReviewSession([plan], new Date(0));

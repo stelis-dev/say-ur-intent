@@ -84,7 +84,16 @@ export function clonePrivateReviewArtifacts(
   };
 }
 
-export class InMemoryPrivateReviewArtifactStore {
+// Persistence seam for private review artifacts. The in-memory and SQLite session
+// stores share all orchestration; only this storage backend differs.
+export interface PrivateReviewArtifactStore {
+  get(reviewSessionId: string): PrivateReviewArtifacts | undefined;
+  set(reviewSessionId: string, artifacts: PrivateReviewArtifacts): void;
+  delete(reviewSessionId: string): void;
+  clear(): void;
+}
+
+export class InMemoryPrivateReviewArtifactStore implements PrivateReviewArtifactStore {
   private readonly artifacts = new Map<string, PrivateReviewArtifacts>();
 
   get(reviewSessionId: string): PrivateReviewArtifacts | undefined {

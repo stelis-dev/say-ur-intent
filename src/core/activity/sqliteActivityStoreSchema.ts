@@ -189,6 +189,26 @@ export function initializeDatabase(db: SqliteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_live_transaction_materials_session
       ON live_transaction_materials(review_session_id);
+
+    CREATE TABLE IF NOT EXISTS live_review_sessions (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      account TEXT,
+      pending_handoff_digest TEXT,
+      plans_json TEXT NOT NULL,
+      review_state_json TEXT,
+      execution_result_json TEXT,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      last_activity_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS live_private_review_artifacts (
+      review_session_id TEXT PRIMARY KEY
+        REFERENCES live_review_sessions(id) ON DELETE CASCADE,
+      artifacts_json TEXT NOT NULL
+    );
   `);
   migrateDatabase(db, currentUserVersion);
   if ((db.pragma("user_version", { simple: true }) as number) !== DB_USER_VERSION) {

@@ -9,7 +9,7 @@ import { validateSupportedAdapterLifecycle } from "../adapters/adapterLifecycleV
 import { SqliteActivityStore } from "../core/activity/sqliteActivityStore.js";
 import { TransactionActivityService } from "../core/activity/transactionActivityService.js";
 import { createSuiReadService } from "../core/read/readService.js";
-import { InMemorySessionStore } from "../core/session/sessionStore.js";
+import { LocalSessionStore } from "../core/session/sessionStore.js";
 import { createMcpServer } from "../mcp/server.js";
 import { TOOL_NAMES } from "../mcp/toolNames.js";
 import { createReviewHttpServer } from "../review-server/server.js";
@@ -137,10 +137,12 @@ async function main(): Promise<void> {
       coinMetadataCache: activityStore.createCoinMetadataCache()
     });
     const transactionMaterialStore = activityStore.createTransactionMaterialStore();
-    const sessions = new InMemorySessionStore({
+    const sessions = new LocalSessionStore({
       activityStore,
       logger,
-      validateAdapterLifecycle: validateSupportedAdapterLifecycle
+      validateAdapterLifecycle: validateSupportedAdapterLifecycle,
+      sessions: activityStore.createSessionRecordStore(),
+      artifacts: activityStore.createPrivateReviewArtifactStore()
     });
     reviewServer = await createReviewHttpServer({
       host: config.reviewHost,

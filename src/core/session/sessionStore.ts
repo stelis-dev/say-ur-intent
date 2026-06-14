@@ -35,8 +35,13 @@ import {
 } from "../action/humanReadableReviewProjectionVerifier.js";
 import {
   InMemoryPrivateReviewArtifactStore,
+  type PrivateReviewArtifactStore,
   type PrivateReviewArtifacts
 } from "./privateReviewArtifacts.js";
+import {
+  InMemorySessionRecordStore,
+  type SessionRecordStore
+} from "./sessionRecordStore.js";
 import { isFinalSessionStatus } from "./status.js";
 import { parseSuiAddress } from "../suiAddress.js";
 import {
@@ -169,6 +174,11 @@ export type InMemorySessionStoreOptions = {
   validateAdapterLifecycle: AdapterLifecycleValidator;
 };
 
+export type LocalSessionStoreOptions = InMemorySessionStoreOptions & {
+  sessions: SessionRecordStore;
+  artifacts: PrivateReviewArtifactStore;
+};
+
 export { SessionStoreError } from "./sessionErrors.js";
 export type { SessionStoreErrorCode } from "./sessionErrors.js";
 
@@ -196,9 +206,9 @@ const ALLOWED_TRANSITIONS: Record<InternalSessionStatus, InternalSessionStatus[]
   expired: []
 };
 
-export class InMemorySessionStore implements SessionStore {
-  private readonly sessions = new Map<string, ReviewSession>();
-  private readonly privateReviewArtifacts = new InMemoryPrivateReviewArtifactStore();
+export class LocalSessionStore implements SessionStore {
+  private readonly sessions: SessionRecordStore;
+  private readonly privateReviewArtifacts: PrivateReviewArtifactStore;
   private readonly walletIdentity: WalletIdentitySessionManager;
   private readonly settings: SettingsSessionManager;
   private readonly ttlMs: number;
@@ -211,7 +221,9 @@ export class InMemorySessionStore implements SessionStore {
   private readonly logger: InMemorySessionStoreOptions["logger"];
   private readonly validateAdapterLifecycle: InMemorySessionStoreOptions["validateAdapterLifecycle"];
 
-  constructor(options: InMemorySessionStoreOptions) {
+  constructor(options: LocalSessionStoreOptions) {
+    this.sessions = options.sessions;
+    this.privateReviewArtifacts = options.artifacts;
     this.ttlMs = options.ttlMs ?? DEFAULT_SESSION_TTL_MS;
     this.walletIdentity = new WalletIdentitySessionManager({
       ttlMs: this.ttlMs,
@@ -274,7 +286,7 @@ export class InMemorySessionStore implements SessionStore {
 
   async listReviewSessions(now = new Date()): Promise<ReviewSession[]> {
     const sessions: ReviewSession[] = [];
-    for (const id of this.sessions.keys()) {
+    for (const id of this.sessions.ids()) {
       const session = await this.getReviewSession(id, now);
       if (session) {
         sessions.push(session);
@@ -694,8 +706,7 @@ export class InMemorySessionStore implements SessionStore {
     if (!session || session.pendingHandoffDigest === undefined) {
       return;
     }
-    delete session.pendingHandoffDigest;
-    this.sessions.set(id, session);
+    this.sessions.releaseHandoffLock(id);
     await this.appendEventLog({
       type: "handoff.cancelled",
       sessionId: id,
@@ -769,8 +780,12 @@ export class InMemorySessionStore implements SessionStore {
     // One-transaction lock: while a handoff is outstanding, state recomputes
     // are refused so a second, different transaction cannot be signed from
     // the same session. Cleared on result recording, cancel, or material expiry.
-    session.pendingHandoffDigest = contract.transactionMaterialCommitment;
-    this.sessions.set(id, session);
+    if (!this.sessions.acquireHandoffLock(id, contract.transactionMaterialCommitment)) {
+      throw new SessionStoreError(
+        "handoff_unavailable",
+        "Another signing is already in progress for this review session"
+      );
+    }
     await this.appendEventLog({
       type: "handoff.prepared",
       sessionId: id,
@@ -786,7 +801,7 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   async invalidateAllLocalSessions(reason: string, now = new Date()): Promise<void> {
-    for (const id of this.sessions.keys()) {
+    for (const id of this.sessions.ids()) {
       this.deleteReviewSessionTransactionMaterials(id);
     }
     this.sessions.clear();
@@ -1049,6 +1064,19 @@ export class InMemorySessionStore implements SessionStore {
     };
     assertPrivateDerivedReviewStateProjections(state, verifiedArtifacts);
     return verifiedArtifacts;
+  }
+}
+
+// In-memory session store: the orchestration above with Map-backed record and
+// artifact stores. Public name + constructor are unchanged so existing callers and
+// the session-store contract test keep working as the regression wall.
+export class InMemorySessionStore extends LocalSessionStore {
+  constructor(options: InMemorySessionStoreOptions) {
+    super({
+      ...options,
+      sessions: new InMemorySessionRecordStore(),
+      artifacts: new InMemoryPrivateReviewArtifactStore()
+    });
   }
 }
 
