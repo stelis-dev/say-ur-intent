@@ -350,7 +350,8 @@ function ptbVisualizationFixture() {
     },
     mermaid: {
       diagramType: "flowchart",
-      text: "flowchart TD\n  sender[Sender]\n  quote[Quote policy]\n  simulate[Simulation]\n  sender --> quote --> simulate"
+      text: "flowchart TD\n  sender[Sender]\n  quote[Quote policy]\n  simulate[Simulation]\n  sender --> quote --> simulate",
+      namedText: "flowchart TD\n  sender[Sender]\n  quote[Quote policy]\n  simulate[Simulation]\n  sender --> quote --> simulate"
     },
     diagnostics: [
       {

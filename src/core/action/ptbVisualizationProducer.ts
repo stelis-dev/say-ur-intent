@@ -1,5 +1,6 @@
 import { Transaction } from "@mysten/sui/transactions";
 import { rawTransactionToIR, transactionIRToMermaid } from "@zktx.io/ptb-model";
+import { applyContractNamesToMermaid } from "./contractNameRegistry.js";
 import {
   PTB_VISUALIZATION_CONTRACT_VERSION,
   PTB_VISUALIZATION_REQUIRED_UNSUPPORTED_USES,
@@ -72,7 +73,11 @@ export async function producePtbVisualizationArtifact(
     },
     mermaid: {
       diagramType: "flowchart",
-      text: mermaidText
+      // text keeps raw package addresses (truth/audit and copyable source);
+      // namedText relabels registered packages with their Move Registry name for
+      // the default graph, with a review-page toggle back to raw addresses.
+      text: mermaidText,
+      namedText: applyContractNamesToMermaid(mermaidText)
     },
     diagnostics: [],
     unsupportedUse: [...PTB_VISUALIZATION_REQUIRED_UNSUPPORTED_USES],

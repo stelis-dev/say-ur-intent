@@ -303,6 +303,21 @@ AI client answer behavior must be mirrored in runtime-facing instructions, resou
 - `AGENTS.md`: root repository development contract and non-negotiable product boundaries for coding agents working on this codebase.
 - `docs/AGENT_DEVELOPMENT_POLICY.md`: detailed binding development, review, documentation, source-of-truth, and completion policies for coding agents.
 
+## Contract Name Registry
+
+The PTB visualization on the review page can show a registered Move Registry
+(MVR) package name in place of a raw package address (for example
+`@deepbook/core`), with a toggle back to the raw address and a copyable Mermaid
+source that keeps raw addresses. The name is a package identity label only, not a
+safety, trust, route-quality, or signing-readiness signal.
+
+If you maintain a Sui DeFi protocol that has a registered MVR name and want its
+package to display that name in the review graph, open a pull request adding your
+mainnet package address and MVR name to
+[`src/core/action/contractNameRegistry.ts`](src/core/action/contractNameRegistry.ts).
+Only packages listed in this registry are relabeled; every other package keeps
+its raw address.
+
 ## For Maintainers
 
 This section is for people operating releases, running smoke checks, changing runtime storage, or debugging startup. Normal users and MCP client users can stop at the documentation map above.

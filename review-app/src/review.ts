@@ -172,7 +172,7 @@ type PtbVisualizationArtifact = {
     authority: string;
     renderer?: { name: string; packageName?: string; version?: string };
   };
-  mermaid: { diagramType: string; text: string };
+  mermaid: { diagramType: string; text: string; namedText: string };
   diagnostics: Array<{ severity: string; code: string; message: string; source: string }>;
   unsupportedUse: string[];
 };
@@ -1048,21 +1048,49 @@ function renderPtbVisualization(artifact: PtbVisualizationArtifact): HTMLElement
       )
     );
   }
+  const rawText = artifact.mermaid.text;
+  const namedText = artifact.mermaid.namedText;
+  const hasNames = namedText !== rawText;
+  let showingNames = hasNames;
+
   const graph = document.createElement("div");
   graph.className = "ptb-visualization-graph";
   graph.textContent = "Rendering PTB graph...";
+
+  const renderGraph = (text: string): void => {
+    graph.textContent = "Rendering PTB graph...";
+    graph.classList.remove("error");
+    ptbRenderSequence += 1;
+    void mermaid
+      .render(`ptb-graph-${ptbRenderSequence}`, text)
+      .then((rendered) => {
+        graph.innerHTML = rendered.svg;
+      })
+      .catch((error: unknown) => {
+        // Do not hide render errors behind the text fallback; name the failure.
+        graph.textContent = `PTB graph rendering failed: ${error instanceof Error ? error.message : String(error)}`;
+        graph.classList.add("error");
+      });
+  };
+
+  if (hasNames) {
+    // Default shows registered package names; the toggle reveals raw addresses.
+    // The name is a package identity label only and the raw address stays one
+    // click away (and in the copyable Mermaid source below).
+    const toggle = button(
+      "Show addresses",
+      () => {
+        showingNames = !showingNames;
+        toggle.textContent = showingNames ? "Show addresses" : "Show names";
+        renderGraph(showingNames ? namedText : rawText);
+      },
+      "secondary"
+    );
+    toggle.classList.add("ptb-name-toggle");
+    wrapper.append(toggle);
+  }
   wrapper.append(graph);
-  ptbRenderSequence += 1;
-  void mermaid
-    .render(`ptb-graph-${ptbRenderSequence}`, artifact.mermaid.text)
-    .then((rendered) => {
-      graph.innerHTML = rendered.svg;
-    })
-    .catch((error: unknown) => {
-      // Do not hide render errors behind the text fallback; name the failure.
-      graph.textContent = `PTB graph rendering failed: ${error instanceof Error ? error.message : String(error)}`;
-      graph.classList.add("error");
-    });
+  renderGraph(showingNames ? namedText : rawText);
   const source = document.createElement("details");
   source.className = "ptb-visualization-source";
   const summary = document.createElement("summary");

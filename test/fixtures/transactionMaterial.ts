@@ -7,7 +7,7 @@ import type {
 
 export async function buildTestTransactionBytes(
   account: string,
-  options: { includeSharedObject?: boolean | undefined } = {}
+  options: { includeSharedObject?: boolean | undefined; moveCallTarget?: string | undefined } = {}
 ): Promise<Uint8Array> {
   const transaction = new Transaction();
   transaction.setSender(account);
@@ -20,6 +20,12 @@ export async function buildTestTransactionBytes(
       digest: "7".repeat(44)
     }
   ]);
+  if (options.moveCallTarget) {
+    transaction.moveCall({
+      target: options.moveCallTarget,
+      arguments: [transaction.pure.u64(1n)]
+    });
+  }
   if (options.includeSharedObject) {
     const shared = transaction.object(
       Inputs.SharedObjectRef({
@@ -45,12 +51,14 @@ export async function recordTestTransactionMaterial(input: {
   computedAt?: Date | undefined;
   expiresAt: Date;
   includeSharedObject?: boolean | undefined;
+  moveCallTarget?: string | undefined;
 }): Promise<{
   handle: LocalTransactionMaterialHandle;
   digest: LocalTransactionMaterialDigestCommitment;
 }> {
   const transactionBytes = await buildTestTransactionBytes(input.account, {
-    includeSharedObject: input.includeSharedObject
+    includeSharedObject: input.includeSharedObject,
+    moveCallTarget: input.moveCallTarget
   });
   const handle = input.materialStore.recordTransactionMaterial(
     {

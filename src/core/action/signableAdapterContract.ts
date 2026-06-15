@@ -1290,7 +1290,8 @@ export const ptbVisualizationArtifactSchema = z.object({
   }).strict(),
   mermaid: z.object({
     diagramType: z.literal("flowchart"),
-    text: displayTextWithoutExecutableMaterial(20_000, "mermaid.text")
+    text: displayTextWithoutExecutableMaterial(20_000, "mermaid.text"),
+    namedText: displayTextWithoutExecutableMaterial(20_000, "mermaid.namedText")
   }).strict(),
   diagnostics: z.array(z.object({
     severity: z.enum(["info", "warning", "error"]),

@@ -118,6 +118,11 @@ Review checks are generally details. Failed checks and warning checks that deter
 If the server returns a `PtbVisualizationArtifact`, the frontend may render only
 Mermaid flowchart text plus diagnostics. The panel must show the generated time,
 source, diagnostics, and unsupported-use boundary when those fields are present.
+The Mermaid graph may show a registered Move Registry package name in place of a
+registered package address, with a control to switch back to raw addresses and a
+copyable Mermaid source that keeps raw addresses; that name is a package identity
+label, not a safety, trust, route-quality, or signing-readiness signal, and any
+package that is not registered keeps its raw address.
 It must not store or render executable transaction material, wallet signature
 requests, private-key material, or arbitrary Move calls. A PTB graph is not a
 sign action, not a transaction-building action, not a wallet readiness signal,
