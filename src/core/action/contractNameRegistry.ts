@@ -1,39 +1,116 @@
 import { mainnetPackageIds } from "@mysten/deepbook-v3";
+import {
+  MOVE_STDLIB_ADDRESS,
+  normalizeSuiAddress,
+  SUI_CLOCK_OBJECT_ID,
+  SUI_COIN_REGISTRY_OBJECT_ID,
+  SUI_DENY_LIST_OBJECT_ID,
+  SUI_FRAMEWORK_ADDRESS,
+  SUI_RANDOM_OBJECT_ID,
+  SUI_SYSTEM_ADDRESS,
+  SUI_SYSTEM_STATE_OBJECT_ID
+} from "@mysten/sui/utils";
 
 /**
- * Pinned contract-name registry for review-time display labels.
+ * Pinned name registries for review-time PTB display labels.
  *
- * Maps a verified mainnet package address to its registered Move Registry (MVR)
- * name so the PTB visualization can show a human-readable label instead of a raw
- * address. The name is a display label only: only registered addresses are
- * relabeled, any package that is not registered keeps its raw address, and the
- * raw address stays available in the artifact (the review page can toggle back
- * to addresses and the copyable Mermaid source keeps raw addresses). A
- * registered name is package identity, not a safety, trust, or signing-readiness
- * signal.
+ * A PTB graph shows two distinct kinds of address, matched in two distinct
+ * contexts, so they are kept as two registries:
  *
- * The single current entry is the DeepBook swap package the account-bound
- * DeepBook swap review builds with. Its address is taken directly from
- * `@mysten/deepbook-v3` `mainnetPackageIds.DEEPBOOK_PACKAGE_ID` (the same
- * constant the swap MoveCall targets, so the registry address always matches the
- * address that appears in the PTB and follows a pinned SDK version). The
- * `@deepbook/core` MVR name is confirmed by live review after deploy.
+ *  - {@link PACKAGE_NAME_REGISTRY} — packages, which appear as a MoveCall target
+ *    or type path (`<address>::module::name`). Relabeled only in that path
+ *    position. DeepBook is labeled by its Move Registry (MVR) name
+ *    `@deepbook/core`; the Sui framework packages by their canonical Move aliases
+ *    (`std` = 0x1, `sui` = 0x2, `sui_system` = 0x3).
+ *  - {@link OBJECT_NAME_REGISTRY} — well-known shared system objects, which appear
+ *    as an object input (a bare object id). Relabeled only as a bare id, by their
+ *    object type (`SuiSystemState` = 0x5, `Clock` = 0x6, `Random` = 0x8,
+ *    `DenyList` = 0x403, `CoinRegistry` = 0xc, `AccumulatorRoot` = 0xacc — the
+ *    root for address-based balances).
+ *
+ * The label is display only: only registered addresses are relabeled, anything
+ * unregistered keeps its raw address, and the raw address stays available in the
+ * artifact (the review page toggles back to addresses and the copyable Mermaid
+ * source keeps raw addresses). A label is address identity, not a safety, trust,
+ * or signing-readiness signal.
+ *
+ * Every address comes from a pinned SDK constant rather than a hard-coded literal:
+ * DeepBook from `@mysten/deepbook-v3` `mainnetPackageIds.DEEPBOOK_PACKAGE_ID` (the
+ * same constant the swap MoveCall targets) and the framework/system addresses from
+ * `@mysten/sui/utils`. The one exception is the accumulator root (`0xacc`), which
+ * `@mysten/sui` currently defines only internally (not an exported constant); it
+ * is written as `normalizeSuiAddress("0xacc")`, exactly as the SDK does. The
+ * `@deepbook/core` MVR name is confirmed by live review after deploy; the
+ * framework labels are Sui genesis constants.
  */
 
 export type ContractNameEntry = {
-  /** Mainnet package address. */
+  /** Mainnet package or well-known object address. */
   readonly address: string;
-  /** Registered Move Registry (MVR) name shown as a display label. */
+  /** Human-readable display label (MVR name, Move alias, or object type). */
   readonly name: string;
   /** Provenance of the entry. */
   readonly source: string;
 };
 
-export const CONTRACT_NAME_REGISTRY: readonly ContractNameEntry[] = [
+/** Packages, relabeled only where they appear as a `<address>::...` path. */
+export const PACKAGE_NAME_REGISTRY: readonly ContractNameEntry[] = [
   {
     address: mainnetPackageIds.DEEPBOOK_PACKAGE_ID,
     name: "@deepbook/core",
     source: "deepbook_v3_sdk_mainnet_package_id"
+  },
+  {
+    address: MOVE_STDLIB_ADDRESS,
+    name: "std",
+    source: "sui_sdk_move_stdlib_address"
+  },
+  {
+    address: SUI_FRAMEWORK_ADDRESS,
+    name: "sui",
+    source: "sui_sdk_framework_address"
+  },
+  {
+    address: SUI_SYSTEM_ADDRESS,
+    name: "sui_system",
+    source: "sui_sdk_system_address"
+  }
+];
+
+/** Well-known shared system objects, relabeled only as a bare object id. */
+export const OBJECT_NAME_REGISTRY: readonly ContractNameEntry[] = [
+  {
+    address: SUI_SYSTEM_STATE_OBJECT_ID,
+    name: "SuiSystemState",
+    source: "sui_sdk_system_state_object_id"
+  },
+  {
+    address: SUI_CLOCK_OBJECT_ID,
+    name: "Clock",
+    source: "sui_sdk_clock_object_id"
+  },
+  {
+    address: SUI_RANDOM_OBJECT_ID,
+    name: "Random",
+    source: "sui_sdk_random_object_id"
+  },
+  {
+    address: SUI_DENY_LIST_OBJECT_ID,
+    name: "DenyList",
+    source: "sui_sdk_deny_list_object_id"
+  },
+  {
+    address: SUI_COIN_REGISTRY_OBJECT_ID,
+    name: "CoinRegistry",
+    source: "sui_sdk_coin_registry_object_id"
+  },
+  {
+    // Address-based balances (coin reservation / fast path) reference the
+    // accumulator root object. @mysten/sui defines this id only internally as
+    // normalizeSuiAddress("0xacc") (not an exported constant), so mirror it here.
+    address: normalizeSuiAddress("0xacc"),
+    name: "AccumulatorRoot",
+    source: "sui_accumulator_root_object_id_0xacc"
   }
 ];
 
@@ -52,32 +129,49 @@ function normalizeContractAddress(value: string): string | undefined {
   return `0x${body.padStart(64, "0")}`;
 }
 
-const NAME_BY_ADDRESS: ReadonlyMap<string, string> = new Map(
-  CONTRACT_NAME_REGISTRY.flatMap((entry) => {
-    const normalized = normalizeContractAddress(entry.address);
-    return normalized === undefined ? [] : [[normalized, entry.name] as const];
-  })
-);
+function buildNameMap(entries: readonly ContractNameEntry[]): ReadonlyMap<string, string> {
+  return new Map(
+    entries.flatMap((entry) => {
+      const normalized = normalizeContractAddress(entry.address);
+      return normalized === undefined ? [] : [[normalized, entry.name] as const];
+    })
+  );
+}
+
+const PACKAGE_NAME_BY_ADDRESS = buildNameMap(PACKAGE_NAME_REGISTRY);
+const OBJECT_NAME_BY_ADDRESS = buildNameMap(OBJECT_NAME_REGISTRY);
 
 /**
- * Replace every registered package address in PTB Mermaid label text with its
- * registered name. Only exact normalized-address matches are replaced; unknown
- * addresses are left unchanged. Mermaid node ids are synthetic (`command0`,
- * `input0`, ...) and the address only appears inside quoted label text.
+ * Replace registered addresses in PTB Mermaid label text with their display
+ * names. Mermaid node ids are synthetic (`command0`, `input0`, ...), so an
+ * address only appears inside quoted label text, and matching is context-aware:
  *
- * Registered names are Move Registry names like `@deepbook/core`. Mermaid v11
- * reads a literal `@` as node/edge metadata syntax even inside a quoted label
- * and crashes the renderer, so the inserted name's `@` is written as the Mermaid
- * decimal entity `#64;`, which renders as `@` without a literal `@` in the
- * source. The copyable Mermaid source keeps raw addresses (it is built from the
- * unmodified text), so this only affects the named, rendered graph.
+ *  - A package is relabeled only where it is a path prefix (`<address>::`), the
+ *    form a MoveCall target or type path takes — never a bare object id.
+ *  - A well-known object is relabeled only where it is a bare id (not followed by
+ *    `::`), the form an object input takes — never a package path.
+ *
+ * Unknown addresses are left unchanged. Matching uses the full `0x` + 64-hex
+ * address form the PTB renderer (`@zktx.io/ptb-model`) emits; the registry keys
+ * are normalized to that same form.
+ *
+ * Registered package names may be Move Registry names like `@deepbook/core`;
+ * Mermaid v11 reads a literal `@` as node/edge metadata syntax even inside a
+ * quoted label and crashes the renderer, so an inserted `@` is written as the
+ * decimal entity `#64;`, which renders as `@` without a literal `@`. The copyable
+ * Mermaid source keeps raw addresses (it is built from the unmodified text), so
+ * this only affects the rendered graph.
  */
 export function applyContractNamesToMermaid(mermaidText: string): string {
   let text = mermaidText;
-  for (const [address, name] of NAME_BY_ADDRESS) {
-    if (text.includes(address)) {
-      text = text.split(address).join(mermaidSafeName(name));
-    }
+  // Packages: only in path position (`<address>::...`).
+  for (const [address, name] of PACKAGE_NAME_BY_ADDRESS) {
+    text = text.split(`${address}::`).join(`${mermaidSafeName(name)}::`);
+  }
+  // Objects: only as a bare id (anything but a `::` path prefix).
+  for (const [address, name] of OBJECT_NAME_BY_ADDRESS) {
+    const safe = mermaidSafeName(name);
+    text = text.replace(new RegExp(`${address}(?!::)`, "g"), () => safe);
   }
   return text;
 }
@@ -85,8 +179,8 @@ export function applyContractNamesToMermaid(mermaidText: string): string {
 /**
  * Escape characters that break Mermaid label parsing. A literal `@` triggers
  * Mermaid v11 node/edge metadata syntax (even inside quotes) and throws, so it
- * is written as the `#64;` decimal entity, which renders as `@`. Other Move
- * Registry name characters (letters, `/`, `-`, `_`, `.`, `:`) are valid in
+ * is written as the `#64;` decimal entity, which renders as `@`. The other
+ * registered label characters (letters, `/`, `-`, `_`, `.`, `:`) are valid in
  * Mermaid label text.
  */
 function mermaidSafeName(name: string): string {
