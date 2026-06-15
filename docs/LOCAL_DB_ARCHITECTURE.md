@@ -1,6 +1,6 @@
 # Local DB Architecture
 
-Say Ur Intent uses a local SQLite database for durable product state that must survive MCP server restarts. The database stores account read context, Say Ur Intent review activity evidence, and user-requested bounded Sui activity facts. It is not a custody store, wallet authorization store, background indexer, complete wallet-history store, or raw transaction archive.
+Say Ur Intent uses a local SQLite database for durable product state that must survive MCP server restarts. The database stores account read context, Say Ur Intent review activity evidence, live review and session state shared across local AI clients, and user-requested bounded Sui activity facts. It is not a custody store, wallet authorization store, background indexer, complete wallet-history store, or raw transaction archive.
 
 This document is for maintainers and contributors who change local state, import/export behavior, activity queries, or review evidence storage. Product users normally need only the README and `docs/MCP_SETUP.md`.
 
@@ -53,6 +53,15 @@ WAL mode can create companion files next to the main database, such as `say-ur-i
 - `local_settings`: allowlisted local settings. The current key set is `suiGrpcUrl` and `suiGraphqlUrl`, stored as JSON-encoded text and applied after restart.
 - `coin_metadata_cache`: account-independent positive cache for Sui coin metadata used only to format wallet balance display amounts. Rows are keyed by normalized coin type and verified mainnet chain identifier, expire after 24 hours, and are excluded from local data export/import. Read or write failures for this cache block affected wallet unit reads with `metadata_cache_unavailable`; they are not reported as unavailable token decimals.
 
+The following live session tables hold runtime session state in the shared database so any one review server can serve a session another client created (see [Shared single-origin review server](#shared-single-origin-review-server)):
+
+- `live_review_sessions`: the live review session record — status, bound account, the pending wallet-handoff lock, the plan / review-state / execution-result JSON, and timestamps — keyed by session id.
+- `live_private_review_artifacts`: per-session private review evidence (the transaction-material handle, its digest commitment, and derived evidence), cascade-deleted with its review session.
+- `live_transaction_materials`: locally built unsigned transaction bytes stored as a BLOB behind a redacted handle, with a TTL; deleted on signing, terminal result, or expiry.
+- `live_wallet_identity_sessions` and `live_settings_sessions`: the short-lived wallet-identity and settings capture sessions, stored as validated JSON keyed by session id.
+
+These live tables are distinct from the append-only review evidence tables above: the evidence tables remain the durable activity/audit record, while the live tables hold the in-flight session state that the review server serves.
+
 Database columns use snake_case. MCP and HTTP JSON fields use camelCase, so the database `review_session_id` column stores the same review-session identity exposed as `reviewSessionId` in API responses.
 
 Table relationships:
@@ -71,6 +80,20 @@ Schema version 4 adds the `external_activity_scans.kind = 'function_scan'` prove
 Logical local data reset is the local settings page action that clears stored product state through the runtime without requiring manual database-file deletion. Replace-only import is the settings page import path that replaces local product state from a validated backup. Both logical local data reset and replace-only import clear `coin_metadata_cache`. Clearing active account context does not clear it because coin metadata is account-independent.
 
 Non-terminal review session expiry is recorded lazily when the session is read or mutated after its TTL. There is no background expiry worker.
+
+## Shared single-origin review server
+
+All live session state lives in this one shared database, so multiple local AI clients (for example Claude and Codex running at the same time) share it. Exactly one process binds the fixed review port and serves every client's review pages from the shared database. A second client's MCP does not take the port over; it defers to that healthy peer and takes the origin over only if the owner exits. Because whichever process owns the port reads and writes the same session rows, a review created by one client is servable by the review server of another, and the single fixed origin keeps the browser wallet autoconnect stable.
+
+Cross-process writes rely on WAL plus `PRAGMA busy_timeout`. The one write that must be atomic across processes — the wallet handoff lock — is a single conditional `UPDATE` on `live_review_sessions.pending_handoff_digest`, so two processes cannot hand off two different transactions for the same session.
+
+### Unsigned transaction material on disk
+
+`live_transaction_materials` stores locally built unsigned transaction bytes so a review can be signed by whichever process owns the port, not only the process that built it. Because these bytes are now on disk in the shared database rather than only in one process's memory, the data directory is created `0700` and the database file is set `0600` so other operating-system users cannot read them; the bytes carry a short TTL and are deleted on signing, terminal result, or expiry. This store is separate from the review evidence path: the MCP tool layer still does not return transaction bytes, and the activity-store evidence inputs still reject transaction bytes, signatures, and signing material before write.
+
+### Schema versioning across shared clients
+
+The live session tables are added without changing `user_version`. A runtime that does not know a live table simply ignores it, so a newer client can introduce live tables while an older client keeps opening the same shared database. Only a change that an older runtime cannot safely read should raise `user_version`, and such a change requires updating every client that shares the database, because a runtime does not open a database whose `user_version` is newer than it supports.
 
 ## Boundaries
 
