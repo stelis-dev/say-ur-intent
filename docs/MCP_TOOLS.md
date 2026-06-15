@@ -595,7 +595,7 @@ Use these `reviewModel` fields for the proposal review answer:
   proposal;
 - `evidenceUsed`: local schema and proposal facts used for the review;
 - `missingEvidence`: wallet, recipient, target, simulation, or adapter evidence
-  not yet verified;
+  not verified;
 - `requiredUserChoices`: choices that remain with the user;
 - `unsupportedClaims`: conclusions the review does not support;
 - `freshness`: timestamp status for the proposal;
@@ -654,7 +654,7 @@ is completed and not listed as missing, and `reviewState.simulation` is valid
 only after `review_time_simulation` is completed and not listed as missing.
 
 When `reviewState.humanReadableReview` is present, it is displayable review
-evidence projected from previously verified review artifacts. Its `kind`
+evidence projected from verified review artifacts. Its `kind`
 currently identifies the first swap review projection. Its `assetFlow` raw
 amounts, coin types, decimals, minimum output, and fee facts come from the
 material-bound quote policy evidence. Its target pool and direction come from

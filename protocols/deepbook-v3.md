@@ -15,10 +15,10 @@ Protocol concepts referenced by current runtime evidence include:
 
 DeepBook orderbook, raw-quantity quote, and display-amount quote reads use an internal SDK simulation sender placeholder. They do not require wallet connection because these market reads are not wallet-account reads.
 
-Not yet implemented:
+Signable swap review for the account-bound DeepBook swap route is part of current runtime support; `read.list_supported_protocols` and the concrete MCP tool responses are the authoritative status. Before a `ready_for_wallet_review` state allows user-controlled signing on the local review page, the review server validates the pinned registry, refreshes the live quote, resolves objects, and runs `client.core.simulateTransaction` review.
 
-- Signable swap review.
+Out of scope:
+
 - Limit or market order review.
-- Wallet signing or execution.
 
-No DeepBook transaction should be exposed as signable until registry validation, live quote refresh, object resolution, and `client.core.simulateTransaction` review are implemented.
+The MCP layer and review API do not sign, execute, or return transaction bytes. Wallet signing and execution happen only in the user's wallet from the local review page.

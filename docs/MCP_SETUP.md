@@ -434,9 +434,10 @@ rather than silently moving.
 - Here, `blocked` means required review evidence or user action is missing for
   that session (for example `wallet_review_contract_emit_missing`), not a
   release-wide signing stop.
-- The package is not yet published to npm: use a developer checkout (local
-  build) or packed tarball. `npx` client configs in this guide start working
-  after the first npm publish.
+- The package is published to npm as `@stelis/say-ur-intent`, so the `npx` and
+  global-install client configs in this guide work directly. A developer
+  checkout (local build) or packed tarball is an option for testing local
+  changes.
 
 ## Mainnet Read Smoke
 

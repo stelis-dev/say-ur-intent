@@ -115,15 +115,13 @@ It also includes:
 
 ## Current Limits
 
-### Not Implemented Yet (Deliberately Sequenced)
+### Not Implemented
 
-The items in this section are deliberately sequenced roadmap steps, not product
-refusals. Server-side receipt verification against chain state is not
-implemented yet. The full analysis page is not implemented yet. Transaction
-material build, contract emit, digest-gated wallet handoff, and user-controlled
-signing are implemented for the account-bound DeepBook swap review, which
-resolves its protocol through a plan-factory registry so further swap adapters
-attach the same way. External proposal execution is not implemented.
+Server-side receipt verification against chain state is not implemented. The
+full analysis page is not implemented. External proposal execution is not
+implemented. Transaction material build, contract emit, digest-gated wallet
+handoff, and user-controlled signing are implemented for the account-bound
+DeepBook and FlowX swap review through a plan-factory registry.
 
 External proposal ingestion is implemented only for read-only local review
 sessions. It accepts structured proposal facts, rejects forbidden executable or
