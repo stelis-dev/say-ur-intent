@@ -14,7 +14,7 @@ import { recordTestTransactionMaterial } from "./fixtures/transactionMaterial.js
 import { createReviewHttpServer } from "../src/review-server/server.js";
 import {
   probeReviewServerIdentity,
-  startReviewServerWithTakeover
+  startOrDeferReviewServer
 } from "../src/runtime/reviewServerAcquire.js";
 import type { Logger } from "../src/runtime/logger.js";
 import { deepbookDisplayQuote } from "./fixtures/deepbookQuote.js";
@@ -1801,40 +1801,40 @@ describe("review server port takeover", () => {
     }
   });
 
-  it("rebinds the same fixed port after the prior server is stopped", async () => {
+  it("defers to a healthy peer review server already holding the fixed port", async () => {
     const store = createSessionStore();
     const serverInfo = { name: "say-ur-intent" as const, version: "0.0.0-test", network: "mainnet" as const };
-    const previous = await createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo }).start(0);
-    const port = previous.port;
+    const peer = await createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo }).start(0);
+    const port = peer.port;
 
     const factory = createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo });
-    let terminated = false;
-    const next = await startReviewServerWithTakeover((bindPort) => factory.start(bindPort), port, {
+    let releaseDelay: (() => void) | undefined;
+    const lifecycle = await startOrDeferReviewServer((bindPort) => factory.start(bindPort), port, {
       probeIdentity: (probePort) => probeReviewServerIdentity(probePort),
-      terminate: () => {
-        terminated = true;
-        void previous.close();
-        return { ok: true };
-      },
-      delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      // Pretend the holder is a different process so the takeover path runs even
-      // though the prior server shares this test process.
+      // Park the watch loop so it never retries during the test (no real timer leaks).
+      delay: () => new Promise<void>((resolve) => {
+        releaseDelay = resolve;
+      }),
+      // Pretend a different process so the live peer is "ours but not us".
       currentPid: process.pid + 1,
       serviceName: "say-ur-intent",
-      logger,
-      pollIntervalMs: 20,
-      waitForReleaseMs: 4000
+      logger
     });
 
     try {
-      expect(terminated).toBe(true);
-      expect(next.port).toBe(port);
+      // A healthy peer owns the port, so we defer instead of taking it over.
+      expect(lifecycle.deferred).toBe(true);
+      // The peer is untouched and still serving the shared origin.
+      const identity = await probeReviewServerIdentity(port);
+      expect(identity?.service).toBe("say-ur-intent");
     } finally {
-      await next.close();
+      await lifecycle.close();
+      releaseDelay?.();
+      await peer.close();
     }
   });
 
-  it("refuses to take over a port held by a non-say-ur-intent server", async () => {
+  it("errors instead of touching a port held by a non-say-ur-intent server", async () => {
     const foreign = createServer((_request, response) => {
       response.statusCode = 200;
       response.setHeader("content-type", "application/json");
@@ -1846,23 +1846,17 @@ describe("review server port takeover", () => {
     const store = createSessionStore();
     const serverInfo = { name: "say-ur-intent" as const, version: "0.0.0-test", network: "mainnet" as const };
     const factory = createReviewHttpServer({ host: "127.0.0.1", store, logger, serverInfo });
-    let terminateCalls = 0;
 
     try {
       await expect(
-        startReviewServerWithTakeover((bindPort) => factory.start(bindPort), port, {
+        startOrDeferReviewServer((bindPort) => factory.start(bindPort), port, {
           probeIdentity: (probePort) => probeReviewServerIdentity(probePort),
-          terminate: () => {
-            terminateCalls += 1;
-            return { ok: true };
-          },
           delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
           currentPid: process.pid + 1,
           serviceName: "say-ur-intent",
           logger
         })
-      ).rejects.toThrow(/not a say-ur-intent review server/);
-      expect(terminateCalls).toBe(0);
+      ).rejects.toThrow(/not a separate say-ur-intent review server/);
     } finally {
       await new Promise<void>((resolve, reject) =>
         foreign.close((error) => (error ? reject(error) : resolve()))

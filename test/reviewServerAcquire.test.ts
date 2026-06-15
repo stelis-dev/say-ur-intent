@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  startReviewServerWithTakeover,
-  type ProcessTerminationResult,
+  startOrDeferReviewServer,
   type ReviewServerIdentity,
   type StartedReviewServerLike
 } from "../src/runtime/reviewServerAcquire.js";
@@ -10,8 +9,16 @@ const SERVICE = "say-ur-intent";
 const noopLogger = { info() {}, warn() {} };
 const noDelay = async () => {};
 
-function startedServer(port = 8765): StartedReviewServerLike {
-  return { host: "127.0.0.1", port, close: async () => {} };
+function startedServer(port = 8765): StartedReviewServerLike & { closed: boolean } {
+  const server = {
+    host: "127.0.0.1" as const,
+    port,
+    closed: false,
+    close: async () => {
+      server.closed = true;
+    }
+  };
+  return server;
 }
 
 function addrInUse(): Error {
@@ -22,10 +29,9 @@ function ownIdentity(pid: number): ReviewServerIdentity {
   return { service: SERVICE, role: "review-server", pid };
 }
 
-function baseDeps(overrides: Partial<Parameters<typeof startReviewServerWithTakeover>[2]> = {}) {
+function baseDeps(overrides: Partial<Parameters<typeof startOrDeferReviewServer>[2]> = {}) {
   return {
     probeIdentity: vi.fn(async () => null as ReviewServerIdentity | null),
-    terminate: vi.fn((): ProcessTerminationResult => ({ ok: true })),
     delay: noDelay,
     currentPid: 999,
     serviceName: SERVICE,
@@ -34,43 +40,67 @@ function baseDeps(overrides: Partial<Parameters<typeof startReviewServerWithTake
   };
 }
 
-describe("startReviewServerWithTakeover", () => {
-  it("binds immediately and never probes when the port is free", async () => {
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+describe("startOrDeferReviewServer", () => {
+  it("binds and owns the origin when the port is free", async () => {
     const start = vi.fn(async (port: number) => startedServer(port));
     const deps = baseDeps();
 
-    const server = await startReviewServerWithTakeover(start, 8765, deps);
+    const lifecycle = await startOrDeferReviewServer(start, 8765, deps);
 
-    expect(server.port).toBe(8765);
+    expect(lifecycle.deferred).toBe(false);
     expect(start).toHaveBeenCalledTimes(1);
     expect(deps.probeIdentity).not.toHaveBeenCalled();
-    expect(deps.terminate).not.toHaveBeenCalled();
+    await lifecycle.close();
   });
 
-  it("takes over a previous own instance, then rebinds the same port", async () => {
-    let freed = false;
-    const start = vi.fn(async (port: number) => {
-      if (!freed) throw addrInUse();
-      return startedServer(port);
+  it("defers to a healthy peer that owns the port without signalling it", async () => {
+    const start = vi.fn(async () => {
+      throw addrInUse();
     });
+    let releaseDelay: (() => void) | undefined;
     const deps = baseDeps({
       probeIdentity: vi.fn(async () => ownIdentity(4242)),
-      terminate: vi.fn((pid: number): ProcessTerminationResult => {
-        expect(pid).toBe(4242);
-        freed = true;
-        return { ok: true };
+      // Hold the watch loop at its first delay so it does not retry during the test.
+      delay: () => new Promise<void>((resolve) => {
+        releaseDelay = resolve;
       })
     });
 
-    const server = await startReviewServerWithTakeover(start, 8765, deps);
+    const lifecycle = await startOrDeferReviewServer(start, 8765, deps);
 
-    expect(server.port).toBe(8765);
+    expect(lifecycle.deferred).toBe(true);
     expect(deps.probeIdentity).toHaveBeenCalledWith(8765);
-    expect(deps.terminate).toHaveBeenCalledTimes(1);
-    expect(start.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(start).toHaveBeenCalledTimes(1); // only the initial bind attempt; no aggressive retry/signal
+
+    await lifecycle.close();
+    releaseDelay?.(); // let the parked watch loop observe `stopped` and exit cleanly
   });
 
-  it("never signals a process that is not our review server", async () => {
+  it("takes the origin over when the previous owner exits (failover)", async () => {
+    const acquiredServer = startedServer(8765);
+    let calls = 0;
+    const start = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw addrInUse(); // initial bind: a peer owns the port -> defer
+      }
+      return acquiredServer; // owner exited -> the watch loop binds
+    });
+    const deps = baseDeps({ probeIdentity: vi.fn(async () => ownIdentity(4242)) });
+
+    const lifecycle = await startOrDeferReviewServer(start, 8765, deps);
+    expect(lifecycle.deferred).toBe(true);
+
+    await flush(); // let the watch loop run one iteration and acquire the freed port
+
+    await lifecycle.close();
+    expect(start.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(acquiredServer.closed).toBe(true); // close() closes the acquired server
+  });
+
+  it("errors when the port is held by a foreign process", async () => {
     const start = vi.fn(async () => {
       throw addrInUse();
     });
@@ -78,25 +108,23 @@ describe("startReviewServerWithTakeover", () => {
       probeIdentity: vi.fn(async () => ({ service: "some-other-app", role: "x", pid: 1 }))
     });
 
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(
-      /not a say-ur-intent review server/
+    await expect(startOrDeferReviewServer(start, 8765, deps)).rejects.toThrow(
+      /not a separate say-ur-intent review server/
     );
-    expect(deps.terminate).not.toHaveBeenCalled();
   });
 
-  it("never signals when the holder does not answer the identity probe", async () => {
+  it("errors when the holder does not answer the identity probe", async () => {
     const start = vi.fn(async () => {
       throw addrInUse();
     });
     const deps = baseDeps({ probeIdentity: vi.fn(async () => null) });
 
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(
-      /not a say-ur-intent review server/
+    await expect(startOrDeferReviewServer(start, 8765, deps)).rejects.toThrow(
+      /not a separate say-ur-intent review server/
     );
-    expect(deps.terminate).not.toHaveBeenCalled();
   });
 
-  it("does not signal its own process if it appears to hold the port", async () => {
+  it("does not defer to its own process", async () => {
     const start = vi.fn(async () => {
       throw addrInUse();
     });
@@ -105,76 +133,20 @@ describe("startReviewServerWithTakeover", () => {
       probeIdentity: vi.fn(async () => ownIdentity(777))
     });
 
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(/EADDRINUSE/);
-    expect(deps.terminate).not.toHaveBeenCalled();
+    await expect(startOrDeferReviewServer(start, 8765, deps)).rejects.toThrow(
+      /not a separate say-ur-intent review server/
+    );
   });
 
-  it("surfaces a clear error when the holder is owned by another OS user", async () => {
-    const start = vi.fn(async () => {
-      throw addrInUse();
-    });
-    const deps = baseDeps({
-      probeIdentity: vi.fn(async () => ownIdentity(4242)),
-      terminate: vi.fn((): ProcessTerminationResult => ({ ok: false, reason: "no_permission" }))
-    });
-
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(/another OS user/);
-  });
-
-  it("surfaces the underlying message when terminating the holder fails", async () => {
-    const start = vi.fn(async () => {
-      throw addrInUse();
-    });
-    const deps = baseDeps({
-      probeIdentity: vi.fn(async () => ownIdentity(4242)),
-      terminate: vi.fn((): ProcessTerminationResult => ({ ok: false, reason: "error", message: "kill blew up" }))
-    });
-
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(/kill blew up/);
-  });
-
-  it("treats an already-exited holder as freed and rebinds", async () => {
-    let freed = false;
-    const start = vi.fn(async (port: number) => {
-      if (!freed) throw addrInUse();
-      return startedServer(port);
-    });
-    const deps = baseDeps({
-      probeIdentity: vi.fn(async () => ownIdentity(4242)),
-      terminate: vi.fn((): ProcessTerminationResult => {
-        freed = true;
-        return { ok: false, reason: "not_found" };
-      })
-    });
-
-    const server = await startReviewServerWithTakeover(start, 8765, deps);
-
-    expect(server.port).toBe(8765);
-  });
-
-  it("gives up with a clear error if the port never frees after takeover", async () => {
-    const start = vi.fn(async () => {
-      throw addrInUse();
-    });
-    const deps = baseDeps({
-      probeIdentity: vi.fn(async () => ownIdentity(4242)),
-      waitForReleaseMs: 30,
-      pollIntervalMs: 10
-    });
-
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(/did not become free/);
-  });
-
-  it("rethrows non-EADDRINUSE bind errors without probing or signalling", async () => {
+  it("rethrows non-EADDRINUSE bind errors without probing", async () => {
     const start = vi.fn(async () => {
       throw new Error("verify mainnet endpoint failed");
     });
     const deps = baseDeps();
 
-    await expect(startReviewServerWithTakeover(start, 8765, deps)).rejects.toThrow(
+    await expect(startOrDeferReviewServer(start, 8765, deps)).rejects.toThrow(
       /verify mainnet endpoint failed/
     );
     expect(deps.probeIdentity).not.toHaveBeenCalled();
-    expect(deps.terminate).not.toHaveBeenCalled();
   });
 });

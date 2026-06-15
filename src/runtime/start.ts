@@ -28,8 +28,8 @@ import { createReviewHttpServer } from "../review-server/server.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL, composeRuntimeConfig, loadBootConfig } from "./config.js";
 import {
   probeReviewServerIdentity,
-  startReviewServerWithTakeover,
-  terminateProcessByPid
+  startOrDeferReviewServer,
+  type ReviewServerLifecycle
 } from "./reviewServerAcquire.js";
 import { RuntimeLocalSettingsService } from "./localSettingsService.js";
 import { createStderrLogger } from "./logger.js";
@@ -39,7 +39,7 @@ import { GraphqlSuiTransactionActivitySource } from "./suiTransactionGraphqlSour
 async function main(): Promise<void> {
   const logger = createStderrLogger("runtime");
   let activityStore: SqliteActivityStore | undefined;
-  let reviewServerForCleanup: Awaited<ReturnType<ReturnType<typeof createReviewHttpServer>["start"]>> | undefined;
+  let reviewServerForCleanup: ReviewServerLifecycle | undefined;
   let mcp: ReturnType<typeof createMcpServer> | undefined;
   try {
     const bootConfig = loadBootConfig();
@@ -185,15 +185,15 @@ async function main(): Promise<void> {
         network: SERVER_NETWORK
       }
     });
-    // The review origin is a single-port singleton: the newest instance takes
-    // the fixed port over from a previous instance of our own review server so
-    // the most recently started client owns the one wallet-autoconnect origin.
-    const reviewServer = await startReviewServerWithTakeover(
+    // The review origin is a single-port singleton shared through the local database:
+    // whichever process owns the fixed port serves every client. A second instance
+    // defers to a healthy peer (no signals, no port war) and takes the origin over
+    // only if that peer exits.
+    const reviewServer = await startOrDeferReviewServer(
       (port) => reviewServerFactory.start(port),
       config.reviewPort,
       {
         probeIdentity: (probePort) => probeReviewServerIdentity(probePort, config.reviewHost),
-        terminate: terminateProcessByPid,
         delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
         currentPid: process.pid,
         serviceName: SERVER_NAME,
@@ -202,10 +202,10 @@ async function main(): Promise<void> {
     );
     reviewServerForCleanup = reviewServer;
 
-    logger.info("review server started", {
-      host: reviewServer.host,
-      port: reviewServer.port
-    });
+    logger.info(
+      reviewServer.deferred ? "review server deferring to a healthy peer on the shared origin" : "review server started",
+      { host: config.reviewHost, port: config.reviewPort, deferred: reviewServer.deferred }
+    );
     let shuttingDown = false;
     const shutdown = async (signal: NodeJS.Signals) => {
       logger.info("shutdown requested", { signal });
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
       promptSurfaces: ADAPTER_PROMPT_SURFACES,
       sessions,
       activityStore: store,
-      reviewBaseUrl: `http://${reviewServer.host}:${reviewServer.port}`,
+      reviewBaseUrl: `http://${config.reviewHost}:${config.reviewPort}`,
       readService,
       transactionActivityService: new TransactionActivityService({
         activityStore: store,

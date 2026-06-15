@@ -1,13 +1,15 @@
 import type { Logger } from "./logger.js";
 
-// The review server is a single-origin singleton per machine: the loopback
-// origin (scheme://127.0.0.1:port) must stay constant so the browser wallet
-// autoconnect can silently restore the signer instead of prompting again. We
-// therefore never fall back to a random port. Instead, when a newer instance
-// finds the fixed port already held by a *previous instance of our own review
-// server*, it stops that previous instance and takes the port over, so the most
-// recently started client owns the one review origin. A port held by anything
-// else is never touched.
+// The review server is a single-origin singleton per machine: the loopback origin
+// (scheme://127.0.0.1:port) stays constant so the browser wallet autoconnect can
+// silently restore the signer. All live session state lives in the shared local
+// database, so whichever single process owns the fixed port serves every client.
+// When the port is already held by a healthy peer of our own review server, a new
+// instance therefore DEFERS (runs no local HTTP server, relying on the peer) instead
+// of taking the port over — no process is ever signalled. A deferring instance
+// watches the port and takes the origin over only if the owner exits (failover). A
+// port held by anything that is not a separate instance of our review server is never
+// touched, and is never silently reassigned.
 
 export type StartedReviewServerLike = {
   host: "127.0.0.1";
@@ -22,25 +24,27 @@ export type ReviewServerIdentity = {
   version?: string;
 };
 
-export type ProcessTerminationResult =
-  | { ok: true }
-  | { ok: false; reason: "not_found" | "no_permission" | "error"; message?: string };
+export type ReviewServerLifecycle = {
+  // true when a healthy peer owns the port and this instance is deferring to it.
+  deferred: boolean;
+  // Stop serving (owner) or stop watching for takeover (deferring), closing the
+  // server if a deferring instance acquired the port in the meantime.
+  close(): Promise<void>;
+};
 
-export type StartReviewServerWithTakeoverDeps = {
-  // Confirm who holds the port before we ever signal it. Returns null when the
-  // holder does not answer as our own review server (a foreign process, or no
-  // response at all) — in that case we never send a signal.
+export type StartOrDeferReviewServerDeps = {
+  // Identify the current port holder over loopback. Returns null for a foreign
+  // process or no answer, in which case we never defer to it.
   probeIdentity: (port: number) => Promise<ReviewServerIdentity | null>;
-  // Signal a same-user process. Cross-user pids fail with no_permission and we
-  // never escalate privileges.
-  terminate: (pid: number) => ProcessTerminationResult;
   delay: (ms: number) => Promise<void>;
   currentPid: number;
   serviceName: string;
   logger: Pick<Logger, "info" | "warn">;
-  waitForReleaseMs?: number;
-  pollIntervalMs?: number;
+  // How often a deferring instance retries binding to detect that the owner exited.
+  reacquireIntervalMs?: number;
 };
+
+const DEFAULT_REACQUIRE_INTERVAL_MS = 3000;
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null
@@ -48,89 +52,99 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
-/**
- * Bind the review server to its fixed port, taking the port over from a previous
- * instance of our own review server if necessary.
- *
- * Safety: the holder is positively identified over loopback before any signal is
- * sent. A process that is not our review server is never signalled; a same-name
- * instance owned by another OS user surfaces a clear error rather than a kill.
- * The port is never silently reassigned, so the wallet autoconnect origin stays
- * stable.
- */
-export async function startReviewServerWithTakeover<T extends StartedReviewServerLike>(
+// Bind the port: returns the server on success, undefined when the port is already
+// in use, and rethrows any other (non-EADDRINUSE) startup error.
+async function tryStart<T extends StartedReviewServerLike>(
   start: (port: number) => Promise<T>,
-  port: number,
-  deps: StartReviewServerWithTakeoverDeps
-): Promise<T> {
+  port: number
+): Promise<T | undefined> {
   try {
     return await start(port);
   } catch (error) {
-    if (errorCode(error) !== "EADDRINUSE") {
-      throw error;
+    if (errorCode(error) === "EADDRINUSE") {
+      return undefined;
     }
-
-    const holder = await deps.probeIdentity(port);
-    if (!holder || holder.service !== deps.serviceName) {
-      throw new Error(
-        `Review server port ${port} is already in use by a process that is not a ${deps.serviceName} review server. ` +
-          `Set SAY_UR_INTENT_REVIEW_PORT to a free port. The port is not reassigned automatically so the wallet autoconnect origin stays stable.`
-      );
-    }
-    if (holder.pid === deps.currentPid) {
-      // We appear to hold the port ourselves yet cannot bind it. Never signal
-      // our own process; surface the original bind error.
-      throw error;
-    }
-
-    deps.logger.info("review port held by a previous say-ur-intent instance; taking it over", {
-      port,
-      previousPid: holder.pid
-    });
-
-    const terminated = deps.terminate(holder.pid);
-    if (!terminated.ok) {
-      if (terminated.reason === "no_permission") {
-        throw new Error(
-          `Review server port ${port} is held by a ${deps.serviceName} instance owned by another OS user; cannot take it over. ` +
-            `Set SAY_UR_INTENT_REVIEW_PORT to a free port for this client.`
-        );
-      }
-      if (terminated.reason === "error") {
-        throw new Error(
-          `Failed to stop the ${deps.serviceName} instance holding review port ${port}: ${terminated.message ?? "unknown error"}.`
-        );
-      }
-      // not_found: the holder already exited between probe and signal; fall
-      // through and rebind.
-    }
-
-    const waitForReleaseMs = deps.waitForReleaseMs ?? 3000;
-    const pollIntervalMs = deps.pollIntervalMs ?? 100;
-    const attempts = Math.max(1, Math.ceil(waitForReleaseMs / pollIntervalMs));
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      await deps.delay(pollIntervalMs);
-      try {
-        return await start(port);
-      } catch (retryError) {
-        if (errorCode(retryError) !== "EADDRINUSE") {
-          throw retryError;
-        }
-      }
-    }
-
-    throw new Error(
-      `Review server port ${port} did not become free after stopping the previous ${deps.serviceName} instance (pid ${holder.pid}). ` +
-        `Set SAY_UR_INTENT_REVIEW_PORT to a free port.`
-    );
+    throw error;
   }
 }
 
 /**
- * Ask whatever is listening on the loopback review port to identify itself. Only
- * our own review server answers `/__identity`; any other process either returns
- * something else or does not answer, and we report it as "not ours" so the
- * caller never signals it.
+ * Bind the review server to its fixed port, or defer to a healthy peer already
+ * serving it.
+ *
+ * - Port free → bind and own the single review origin.
+ * - Port held by a separate healthy instance of our review server → defer (run no
+ *   local server; the peer serves the shared database for every client) and watch for
+ *   the owner to exit, then take the origin over. No process is ever signalled.
+ * - Port held by anything else (foreign, no identity answer, or our own pid) → clear
+ *   error; the origin is never silently reassigned.
+ */
+export async function startOrDeferReviewServer<T extends StartedReviewServerLike>(
+  start: (port: number) => Promise<T>,
+  port: number,
+  deps: StartOrDeferReviewServerDeps
+): Promise<ReviewServerLifecycle> {
+  const owned = await tryStart(start, port);
+  if (owned) {
+    deps.logger.info("review server bound; owning the review origin", { port });
+    return { deferred: false, close: () => owned.close() };
+  }
+
+  const holder = await deps.probeIdentity(port);
+  if (!holder || holder.service !== deps.serviceName || holder.pid === deps.currentPid) {
+    throw new Error(
+      `Review server port ${port} is already in use by a process that is not a separate ${deps.serviceName} review server. ` +
+        `Set SAY_UR_INTENT_REVIEW_PORT to a free port. The port is not reassigned automatically so the wallet autoconnect origin stays stable.`
+    );
+  }
+
+  deps.logger.info("review port owned by a healthy peer; deferring and watching for takeover", {
+    port,
+    ownerPid: holder.pid,
+    ...(holder.version ? { ownerVersion: holder.version } : {})
+  });
+
+  const reacquireIntervalMs = deps.reacquireIntervalMs ?? DEFAULT_REACQUIRE_INTERVAL_MS;
+  let stopped = false;
+  let acquired: T | undefined;
+  const watch = (async () => {
+    while (!stopped && !acquired) {
+      await deps.delay(reacquireIntervalMs);
+      if (stopped || acquired) {
+        break;
+      }
+      const next = await tryStart(start, port);
+      if (!next) {
+        continue; // a peer still owns the port; keep deferring
+      }
+      if (stopped) {
+        await next.close();
+        break;
+      }
+      acquired = next;
+      deps.logger.info("acquired review port after the previous owner exited", { port });
+    }
+  })();
+  watch.catch(() => undefined);
+
+  return {
+    deferred: true,
+    close: async () => {
+      // Stop watching; the loop's stopped-check closes any bind that lands in-flight,
+      // so we never await the (possibly mid-delay) watch loop here.
+      stopped = true;
+      if (acquired) {
+        await acquired.close();
+      }
+    }
+  };
+}
+
+/**
+ * Ask whatever is listening on the loopback review port to identify itself. Only our
+ * own review server answers `/__identity`; any other process either returns something
+ * else or does not answer, and we report it as "not ours" so the caller never defers
+ * to it.
  */
 export async function probeReviewServerIdentity(
   port: number,
@@ -164,31 +178,5 @@ export async function probeReviewServerIdentity(
     return null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Gracefully signal a same-user process. SIGTERM lets the previous instance run
- * its own shutdown handler (close the review server and database, then exit).
- * Killing another OS user's process fails with EPERM, which we report instead of
- * escalating.
- */
-export function terminateProcessByPid(pid: number): ProcessTerminationResult {
-  try {
-    process.kill(pid, "SIGTERM");
-    return { ok: true };
-  } catch (error) {
-    const code = errorCode(error);
-    if (code === "ESRCH") {
-      return { ok: false, reason: "not_found" };
-    }
-    if (code === "EPERM") {
-      return { ok: false, reason: "no_permission" };
-    }
-    return {
-      ok: false,
-      reason: "error",
-      message: error instanceof Error ? error.message : String(error)
-    };
   }
 }
