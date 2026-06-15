@@ -8,7 +8,7 @@ This document records the pinned SDK APIs used by the current runtime. The sourc
 - `@mysten/deepbook-v3`: `1.3.6`
 - `@mysten/dapp-kit-core`: `1.3.2`
 - `@flowx-finance/sdk`: `2.1.0`
-- `@stelis/agent-q-provider-sui`: `0.0.5`
+- `@stelis/agent-q-provider-sui`: `0.0.7`
 - `@zktx.io/ptb-model`: `0.5.0`
 - `mermaid`: `11.12.0`
 

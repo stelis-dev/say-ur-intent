@@ -54,7 +54,7 @@
     "@mysten/deepbook-v3": "1.3.6",
     "@mysten/sui": "2.17.0",
     "@scure/bip39": "2.2.0",
-    "@stelis/agent-q-provider-sui": "0.0.5",
+    "@stelis/agent-q-provider-sui": "0.0.7",
     "@zktx.io/ptb-model": "0.5.0",
     "better-sqlite3": "12.9.0",
     "mermaid": "11.12.0",
