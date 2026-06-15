@@ -139,7 +139,12 @@ wallet review contract, a connected wallet whose account equals the reviewed
 account, and a successful digest-gated handoff. The signing step shows no wallet picker:
 dapp-kit autoconnect restores the wallet recorded for the active account on the
 fixed-port origin, and the sign action stays gated on the connected account
-matching the reviewed account. While a handoff is outstanding the server locks the session
+matching the reviewed account. When autoconnect cannot establish a connection -
+for example after a reload or in a new tab, or for a hardware signer whose
+device session is not restored automatically - the signing step may offer a
+targeted reconnect for the one recorded wallet. That reconnect is not a wallet
+picker: it resumes the recorded wallet's signer session, and the sign action
+stays gated on the connected account matching the reviewed account. While a handoff is outstanding the server locks the session
 (state recomputes are refused) and the page shows a signing-in-progress state
 whose only action is cancel. Other states render:
 

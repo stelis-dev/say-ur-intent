@@ -1,6 +1,7 @@
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
 import "./review.css";
 import { Transaction } from "@mysten/sui/transactions";
+import { getWalletUniqueIdentifier, type UiWallet } from "@mysten/dapp-kit-core";
 import mermaid from "mermaid";
 import { createLocalDAppKit, hasStoredWalletSelection, suiMainnetClient } from "./dappKitClient.js";
 import { isWalletStandardUserRejected } from "./walletStatus.js";
@@ -232,6 +233,7 @@ const dAppKit = createLocalDAppKit();
 dAppKit.stores.$wallets.subscribe(() => render());
 dAppKit.stores.$connection.subscribe(() => render());
 let isSigning = false;
+let isConnecting = false;
 let signNotice: { kind: "error" | "info"; text: string } | undefined;
 let sessionGone = false;
 
@@ -356,8 +358,9 @@ function shortAddress(address: string): string {
  * session payload (the DB active account), which is the single source of
  * truth. The page never derives "who is connected" from the browser wallet
  * here; the small dot only reflects whether the browser signer is ready for
- * the signing step. Wallet connect/disconnect lives solely on the connection
- * page, so there are no connect controls in this header.
+ * the signing step. This header has no connect controls; wallet
+ * connect/disconnect lives on the connection page, and the signing section may
+ * offer a targeted reconnect for the one recorded wallet (not a picker).
  */
 function renderHeaderWallet(): HTMLElement {
   const slot = element("div", "header-wallet");
@@ -1346,13 +1349,41 @@ function renderSigningSection(state: ReviewState): HTMLElement {
         "Your wallet signer is not connected, so this transaction cannot be signed yet."
       )
     );
-    wrapper.append(
-      element(
-        "p",
-        "boundary-note",
-        "If your wallet is locked, unlock it and it reconnects automatically. If it was never connected on this server, connect it from your AI client (session.create_wallet_identity), then reopen this review."
-      )
+    const boundWallet = findBoundWallet(
+      wallets,
+      sessionPayload?.activeAccount?.walletId,
+      sessionPayload?.activeAccount?.walletName
     );
+    if (boundWallet) {
+      // Reconnect resumes the recorded wallet's signer session for this review.
+      // A new tab or reload drops the in-page connection (and, for a hardware
+      // signer, its device session), so dapp-kit autoconnect cannot always
+      // restore a signable session on its own. This targets the one recorded
+      // wallet for the active account - it is not a wallet picker.
+      wrapper.append(
+        element(
+          "p",
+          "boundary-note",
+          "Reconnect resumes the signer session for this review's wallet. Your wallet (or hardware device) asks you to approve the connection; nothing is signed until you press Sign."
+        )
+      );
+      const walletLabel = sessionPayload?.activeAccount?.walletName ?? "wallet";
+      const reconnect = button(
+        isConnecting ? "Reconnecting…" : `Reconnect ${walletLabel} to sign`,
+        () => void reconnectBoundWallet(boundWallet),
+        "primary"
+      );
+      reconnect.disabled = isConnecting;
+      wrapper.append(reconnect);
+    } else {
+      wrapper.append(
+        element(
+          "p",
+          "boundary-note",
+          "This review's wallet was not detected in this browser. Open the review where that wallet (or hardware device) is available, or connect it from your AI client (session.create_wallet_identity) and reopen this review."
+        )
+      );
+    }
   }
   wrapper.append(
     element(
@@ -1445,6 +1476,47 @@ async function signInWallet(state: ReviewState): Promise<void> {
   } finally {
     isSigning = false;
     await loadReview();
+  }
+}
+
+function findBoundWallet(
+  wallets: readonly UiWallet[],
+  walletId: string | undefined,
+  walletName: string | undefined
+): UiWallet | undefined {
+  if (walletId) {
+    const byId = wallets.find((wallet) => getWalletUniqueIdentifier(wallet) === walletId);
+    if (byId) {
+      return byId;
+    }
+  }
+  if (walletName) {
+    return wallets.find((wallet) => wallet.name === walletName);
+  }
+  return undefined;
+}
+
+// Resume the recorded wallet's signer session so the gated sign action can
+// appear again after a reload or new tab dropped the in-page connection. The
+// page only kicks off connectWallet; the browser, the wallet provider, and any
+// hardware device handle the rest (port reuse or selection, then the
+// device-local approval). When the connection settles, the $connection
+// subscription re-renders and the sign action re-gates on the matching account.
+async function reconnectBoundWallet(wallet: UiWallet): Promise<void> {
+  if (isConnecting || isSigning) return;
+  isConnecting = true;
+  signNotice = undefined;
+  render();
+  try {
+    await dAppKit.connectWallet({ wallet });
+  } catch (error) {
+    const fallback = isWalletStandardUserRejected(error)
+      ? "Wallet connection was cancelled."
+      : "The wallet could not be connected. Try again.";
+    signNotice = { kind: "error", text: messageForHttpError(error, fallback) };
+  } finally {
+    isConnecting = false;
+    render();
   }
 }
 
