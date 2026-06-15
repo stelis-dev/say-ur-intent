@@ -63,15 +63,32 @@ const NAME_BY_ADDRESS: ReadonlyMap<string, string> = new Map(
  * Replace every registered package address in PTB Mermaid label text with its
  * registered name. Only exact normalized-address matches are replaced; unknown
  * addresses are left unchanged. Mermaid node ids are synthetic (`command0`,
- * `input0`, ...) and the package address only appears inside quoted label text,
- * so the substitution cannot break the graph syntax.
+ * `input0`, ...) and the address only appears inside quoted label text.
+ *
+ * Registered names are Move Registry names like `@deepbook/core`. Mermaid v11
+ * reads a literal `@` as node/edge metadata syntax even inside a quoted label
+ * and crashes the renderer, so the inserted name's `@` is written as the Mermaid
+ * decimal entity `#64;`, which renders as `@` without a literal `@` in the
+ * source. The copyable Mermaid source keeps raw addresses (it is built from the
+ * unmodified text), so this only affects the named, rendered graph.
  */
 export function applyContractNamesToMermaid(mermaidText: string): string {
   let text = mermaidText;
   for (const [address, name] of NAME_BY_ADDRESS) {
     if (text.includes(address)) {
-      text = text.split(address).join(name);
+      text = text.split(address).join(mermaidSafeName(name));
     }
   }
   return text;
+}
+
+/**
+ * Escape characters that break Mermaid label parsing. A literal `@` triggers
+ * Mermaid v11 node/edge metadata syntax (even inside quotes) and throws, so it
+ * is written as the `#64;` decimal entity, which renders as `@`. Other Move
+ * Registry name characters (letters, `/`, `-`, `_`, `.`, `:`) are valid in
+ * Mermaid label text.
+ */
+function mermaidSafeName(name: string): string {
+  return name.replace(/@/g, "#64;");
 }

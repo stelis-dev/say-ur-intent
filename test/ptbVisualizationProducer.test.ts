@@ -76,7 +76,9 @@ describe("producePtbVisualizationArtifact", () => {
     }
     // namedText (default graph) shows the registered name; text (raw, used for
     // the copyable source/audit and the toggle target) keeps the package address.
-    expect(outcome.artifact.mermaid.namedText).toContain("@deepbook/core::pool::swap_exact_base_for_quote");
+    expect(outcome.artifact.mermaid.namedText).toContain("#64;deepbook/core::pool::swap_exact_base_for_quote");
+    // The literal "@deepbook/core" form crashes Mermaid v11; the named graph must avoid it.
+    expect(outcome.artifact.mermaid.namedText).not.toContain("@deepbook/core");
     expect(outcome.artifact.mermaid.namedText).not.toContain(deepbookPackage);
     expect(outcome.artifact.mermaid.text).toContain(deepbookPackage);
     expect(outcome.artifact.mermaid.text).not.toContain("@deepbook/core");

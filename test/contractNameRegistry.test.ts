@@ -15,8 +15,11 @@ describe("applyContractNamesToMermaid", () => {
 
     const out = applyContractNamesToMermaid(text);
 
-    // The registered package address is replaced by its name.
-    expect(out).toContain("@deepbook/core::pool::swap_exact_base_for_quote");
+    // The registered package address is replaced by its name; the name's "@" is
+    // written as the Mermaid "#64;" entity so it renders as "@" without a literal
+    // "@", which Mermaid v11 reads as node metadata and crashes on.
+    expect(out).toContain("#64;deepbook/core::pool::swap_exact_base_for_quote");
+    expect(out).not.toContain("@");
     expect(out).not.toContain(registered);
     // Unregistered packages keep their raw address.
     expect(out).toContain(`${unregistered}::other::call`);
