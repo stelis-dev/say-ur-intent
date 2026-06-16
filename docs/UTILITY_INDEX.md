@@ -44,6 +44,31 @@ Source-checkout scripts are not packaged product commands, MCP tools, review-tim
 | Sui GraphQL function filter probe | `npm exec -- tsx scripts/sui-graphql-function-filter-probe.ts [--endpoint <mainnet-graphql-url>] [--sample-size <1-50>] [--timeout-ms <ms>]` | Manual, source evidence only | Runs a read-only Sui mainnet GraphQL source-shape probe for function-filter diagnostics; see notes below. |
 | Sui CLI transaction diagnostics | `npm exec -- tsx scripts/sui-cli-transaction-diagnostics.ts -- --help` | Manual, source checkout only | Allowlisted local `sui` CLI debug evidence. See notes below. |
 
+## Mainnet Read Smoke
+
+This is a manual maintainer check for a specific mainnet provider. Normal quickstart use does not require Sui endpoint setup. Run it for people operating releases or debugging mainnet read shape.
+
+```bash
+export SUI_GRPC_URL="https://fullnode.mainnet.sui.io:443"
+export SUI_GRAPHQL_URL="https://graphql.mainnet.sui.io/graphql" # optional override; default is the built-in mainnet GraphQL endpoint
+export SMOKE_SUI_ADDRESS="0x..."
+export SMOKE_DEEPBOOK_POOL_KEY="DEEP_SUI"
+export SMOKE_QUOTE_AMOUNT="1000000000" # raw integer units; for SUI, 1000000000 = 1 SUI
+# Optional: export SMOKE_INSPECT_DIGEST="..."
+# Optional: export SMOKE_INSPECT_RANDOM_LATEST="true"
+npm run build
+npm run smoke:mainnet
+```
+
+`SUI_GRPC_URL` must be only scheme, host, and explicit port. Do not include credentials, a path, query string, or fragment.
+`SMOKE_SUI_ADDRESS` must be a 32-byte hex Sui address, for example `0x` followed by 64 hex characters.
+`SMOKE_INSPECT_DIGEST` is optional. Use a digest whose sender or returned balance-change owner is `SMOKE_SUI_ADDRESS` to exercise the stored digest-lookup path; otherwise the lookup can still return `ok` with `persistence.stored: false`.
+`SMOKE_INSPECT_RANDOM_LATEST=true` is optional and only used when `SMOKE_INSPECT_DIGEST` is unset. It samples one digest from the latest GraphQL transaction page and calls `read.inspect_sui_transaction` without passing the smoke address. This checks current transaction-read shape without pinning a specific user address or exercising the stored relation path.
+
+DeepBook orderbook and raw-quantity quote reads use an internal mainnet SDK simulation sender placeholder, not a user's wallet. The display-amount quote path is covered by automated tests, not by this smoke script. This smoke script does not exercise account-bound DeepBook transaction-material build or digest binding; that path needs a separate funded-account material-build smoke before smoke results are treated as product-grade proof for that review stage.
+
+Wallet asset summaries and active-account activity summaries use the smoke address through a wallet identity session created by the smoke script. Browser wallet behavior is checked separately. This smoke script does not record raw GraphQL payloads, transaction bytes, signatures, raw transaction details, or compact transaction aggregates.
+
 ## Mainnet Read Smoke Notes
 
 Run `npm run build` first because `npm run smoke:mainnet` executes `dist/runtime/smokeMainnetRead.js`.

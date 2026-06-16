@@ -4,6 +4,39 @@ Say Ur Intent uses a local SQLite database for durable product state that must s
 
 This document is for maintainers and contributors who change local state, import/export behavior, activity queries, or review evidence storage. Product users normally need only the README and `docs/MCP_SETUP.md`.
 
+## Runtime Boundary
+
+The runtime starts these local components:
+
+- a local SQLite store;
+- a mainnet guard for the configured Sui gRPC endpoint;
+- the local review HTTP server on `127.0.0.1`;
+- the stdio MCP transport.
+
+The GraphQL endpoint is also mainnet-guarded when it is saved through settings, imported from a local-data backup, or first used by Sui activity tools.
+
+Stdout is reserved for MCP JSON-RPC messages. Logs go to stderr.
+
+## Local Data
+
+The runtime creates a local SQLite file for account read context and Say Ur Intent review activity evidence. Users do not install a database server separately.
+
+Override the app data directory only when needed:
+
+```bash
+export SAY_UR_INTENT_DATA_DIR="/path/to/local/app-data"
+```
+
+The stored active account is for reading wallet state only. It does not let the toolkit sign transactions on your behalf.
+
+User-requested bounded transaction scans can store normalized facts only when a transaction is related to a known local wallet. This product does not run a background or complete wallet history indexer.
+
+The default Sui mainnet gRPC and GraphQL endpoints are stored in the local SQLite settings table on first run.
+
+To inspect settings or change local data, ask your AI client to create a Say Ur Intent local settings session and open the returned settings URL in the same machine's system browser.
+
+Endpoint changes apply after the MCP server restarts.
+
 ## Engine
 
 The runtime uses the `better-sqlite3` npm package for normal SQLite file semantics and incremental writes. Users do not install a separate database server.

@@ -88,17 +88,6 @@ It can also create a read-only, non-signable local review session from a
 structured external payment or Sui action proposal. External proposal ingestion
 does not trust external transaction material or send anything for wallet signing.
 
-Key terms used below:
-
-- Sui: the mainnet blockchain whose DeFi state this project reads.
-- MCP: Model Context Protocol, the tool-calling interface used by AI clients.
-- DeepBook: Sui's onchain order book protocol.
-- SDK: Software Development Kit, a version-pinned library dependency used by this repository.
-- gRPC and GraphQL: Sui SDK transports used by this runtime for mainnet reads.
-- dApp Kit: Sui's wallet connection library for web apps.
-- stdio: standard input/output, the local transport used by MCP clients to talk to this server.
-- Stelis: the GitHub and npm namespace for this package. Say Ur Intent is the product and runtime name.
-
 For setup, see [docs/MCP_SETUP.md](docs/MCP_SETUP.md).
 For the MCP API reference, see [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
 For the AI-client answer playbook, see [docs/AGENT_BEHAVIOR.md](docs/AGENT_BEHAVIOR.md).
@@ -215,38 +204,9 @@ For quote responses alone, these conclusions are unsupported:
 - cost basis is not available;
 - actionable signing data is not available.
 
-## Developer Checkout Quickstart
+## Install
 
-This package targets Node.js 22+. Node 22 or 24 LTS is recommended.
-
-Use this path when you download the repository from GitHub and want to test the local build in an MCP client:
-
-```bash
-git clone https://github.com/stelis-dev/say-ur-intent.git
-cd say-ur-intent
-npm install
-npm run build
-```
-
-No Sui endpoint setup is required for the default path. For MCP stdio configuration from a local checkout, point the client at the built runtime:
-
-```json
-{
-  "command": "node",
-  "args": ["/absolute/path/to/say-ur-intent/dist/runtime/start.js"]
-}
-```
-
-Do not wrap the stdio server in a shell command that writes ordinary text to stdout. Stdout is reserved for MCP JSON-RPC messages; logs go to stderr.
-
-Client-specific setup for Claude Code, Claude Desktop, Codex, and Cursor lives in [docs/MCP_SETUP.md](docs/MCP_SETUP.md). That file is the canonical setup guide; this README keeps only the short path.
-
-To delegate local setup to an AI coding agent, tell it:
-
-```text
-Register this repository as a local stdio MCP server using the built /absolute/path/to/say-ur-intent/dist/runtime/start.js file.
-Use the default Sui mainnet endpoint unless I explicitly ask for a custom provider.
-```
+Install from the MCP registry (server `io.github.stelis-dev/say-ur-intent`) or with `npx -y @stelis/say-ur-intent`. For per-client configuration (Claude Code, Claude Desktop, Codex, Cursor) and running from a local checkout, see [docs/MCP_SETUP.md](docs/MCP_SETUP.md).
 
 After the MCP server is connected, use [docs/MCP_SETUP.md](docs/MCP_SETUP.md#first-use-flow) for first-use setup, [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) for API fields and statuses, and [docs/AGENT_BEHAVIOR.md](docs/AGENT_BEHAVIOR.md) for user-question flow and response wording.
 
@@ -255,20 +215,6 @@ After the MCP server is connected, use [docs/MCP_SETUP.md](docs/MCP_SETUP.md#fir
 Product docs, registry, AI responses, UX copy, and signable actions are mainnet-only.
 
 Unsupported protocol experiments are not product functionality and are not included in the package docs, MCP resources, registry support lists, UX copy, or signable-action lists.
-
-## Commands
-
-```bash
-npm install
-npm run typecheck
-npm run build
-npm test
-npm run release:check
-npm run generate:deepbook-registry
-npm run smoke:mainnet
-```
-
-`npm run generate:deepbook-registry` writes `registry/generated/deepbook-mainnet.json`, which is ignored by Git because generated registry data must include provenance and should be regenerated from the pinned SDK.
 
 ## MCP Tools
 
@@ -341,87 +287,3 @@ If you maintain a Sui DeFi protocol that has a registered MVR name and want its
 package to display that name in the review graph, open a pull request adding your
 mainnet package address and MVR name to the package registry. Every unregistered
 address keeps its raw form.
-
-## For Maintainers
-
-This section is for people operating releases, running smoke checks, changing runtime storage, or debugging startup. Normal users and MCP client users can stop at the documentation map above.
-
-### Mainnet Read Smoke
-
-Normal quickstart use does not require Sui endpoint setup. The smoke script is a manual maintainer check for a specific mainnet provider:
-
-```bash
-export SUI_GRPC_URL="https://fullnode.mainnet.sui.io:443"
-export SUI_GRAPHQL_URL="https://graphql.mainnet.sui.io/graphql" # optional override; default is the built-in mainnet GraphQL endpoint
-export SMOKE_SUI_ADDRESS="0x..."
-export SMOKE_DEEPBOOK_POOL_KEY="DEEP_SUI"
-export SMOKE_QUOTE_AMOUNT="1000000000" # raw integer units; for SUI, 1000000000 = 1 SUI
-# Optional: export SMOKE_INSPECT_DIGEST="..."
-# Optional: export SMOKE_INSPECT_RANDOM_LATEST="true"
-npm run build
-npm run smoke:mainnet
-```
-
-`SUI_GRPC_URL` must be only scheme, host, and explicit port. Do not include credentials, a path, query string, or fragment.
-`SMOKE_SUI_ADDRESS` must be a 32-byte hex Sui address, for example `0x` followed by 64 hex characters.
-`SMOKE_INSPECT_DIGEST` is optional. Use a digest whose sender or returned balance-change owner is `SMOKE_SUI_ADDRESS` to exercise the stored digest-lookup path; otherwise the lookup can still return `ok` with `persistence.stored: false`.
-`SMOKE_INSPECT_RANDOM_LATEST=true` is optional and only used when `SMOKE_INSPECT_DIGEST` is unset.
-
-It samples one digest from the latest GraphQL transaction page and calls `read.inspect_sui_transaction` without passing the smoke address.
-
-This checks current transaction-read shape without pinning a specific user address or exercising the stored relation path.
-
-The smoke script currently calls:
-
-- wallet assets;
-- DeepBook orderbook;
-- raw-quantity quote;
-- `read.scan_sui_account_activity` for `SMOKE_SUI_ADDRESS` with limit 5;
-- `read.summarize_sui_activity_scan` through active account context with limit 5.
-
-If `SMOKE_FUNCTION_TARGET` is set to a full `package::module::function`, it also calls `read.scan_sui_function_activity` and `read.summarize_sui_function_activity_scan` with limit 5.
-
-If unset, function activity smoke is recorded as not run with `notRunReason: "missing_env"`.
-
-Empty activity pages are valid smoke outcomes. They are recorded with `rowCount: 0` and `emptyAccepted: true`.
-
-If `SMOKE_INSPECT_DIGEST` is set, the script also calls `read.inspect_sui_transaction` for that digest and the smoke address.
-
-DeepBook orderbook and raw-quantity quote reads use an internal mainnet SDK simulation sender placeholder, not a user's wallet. The display-amount quote path is covered by automated tests, not by this smoke script. This smoke script does not exercise account-bound DeepBook transaction-material build or digest binding; that path needs a separate funded-account material-build smoke before smoke results are treated as product-grade proof for that review stage.
-
-Wallet asset summaries and active-account activity summaries use the smoke address through a wallet identity session created by the smoke script. Browser wallet behavior is checked separately.
-
-Smoke result files record activity status, row count, source, window/order flags, persistence, and evidence summary only. They do not record raw GraphQL payloads, transaction bytes, signatures, raw transaction details, or compact transaction aggregates.
-
-### Runtime Boundary
-
-The runtime starts these local components:
-
-- a local SQLite store;
-- a mainnet guard for the configured Sui gRPC endpoint;
-- the local review HTTP server on `127.0.0.1`;
-- the stdio MCP transport.
-
-The GraphQL endpoint is also mainnet-guarded when it is saved through settings, imported from a local-data backup, or first used by Sui activity tools.
-
-Stdout is reserved for MCP JSON-RPC messages. Logs go to stderr.
-
-### Local Data
-
-The runtime creates a local SQLite file for account read context and Say Ur Intent review activity evidence. Users do not install a database server separately.
-
-Override the app data directory only when needed:
-
-```bash
-export SAY_UR_INTENT_DATA_DIR="/path/to/local/app-data"
-```
-
-The stored active account is for reading wallet state only. It does not let the toolkit sign transactions on your behalf.
-
-User-requested bounded transaction scans can store normalized facts only when a transaction is related to a known local wallet. This product does not run a background or complete wallet history indexer.
-
-The default Sui mainnet gRPC and GraphQL endpoints are stored in the local SQLite settings table on first run.
-
-To inspect settings or change local data, ask your AI client to create a Say Ur Intent local settings session and open the returned settings URL in the same machine's system browser.
-
-Endpoint changes apply after the MCP server restarts.

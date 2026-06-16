@@ -8,6 +8,17 @@ The README keeps only the short entry path; client-specific setup, restart behav
 
 Say Ur Intent is tested from a local checkout in this repository state.
 
+## Key terms
+
+- Sui: the mainnet blockchain whose DeFi state this project reads.
+- MCP: Model Context Protocol, the tool-calling interface used by AI clients.
+- DeepBook: Sui's onchain order book protocol.
+- SDK: Software Development Kit, a version-pinned library dependency used by this repository.
+- gRPC and GraphQL: Sui SDK transports used by this runtime for mainnet reads.
+- dApp Kit: Sui's wallet connection library for web apps.
+- stdio: standard input/output, the local transport used by MCP clients to talk to this server.
+- Stelis: the GitHub and npm namespace for this package. Say Ur Intent is the product and runtime name.
+
 ## Requirements
 
 - Node.js 22+. Node 22 or 24 LTS is recommended.
@@ -64,9 +75,46 @@ On native Windows clients that need `cmd`, use the same command through `cmd /c`
 }
 ```
 
+To delegate local setup to an AI coding agent, tell it:
+
+```text
+Register this repository as a local stdio MCP server using the built /absolute/path/to/say-ur-intent/dist/runtime/start.js file.
+Use the default Sui mainnet endpoint unless I explicitly ask for a custom provider.
+```
+
+## Commands
+
+These `npm run` scripts run from a local checkout. They are developer and maintainer scripts, not MCP tools or packaged product commands:
+
+```bash
+npm install
+npm run typecheck
+npm run build
+npm test
+npm run release:check
+npm run generate:deepbook-registry
+npm run smoke:mainnet
+```
+
+`npm run generate:deepbook-registry` writes `registry/generated/deepbook-mainnet.json`, which is ignored by Git because generated registry data must include provenance and should be regenerated from the pinned SDK.
+
+## Install from the MCP Registry
+
+If your MCP client can install servers from the
+[MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=say-ur-intent),
+find the `io.github.stelis-dev/say-ur-intent` entry and install it through your
+client. The resulting stdio server command is equivalent to:
+
+```sh
+npx -y @stelis/say-ur-intent
+```
+
+Clients that do not install from the registry use the published-package and
+per-client configuration below, which give the exact `command` and `args`.
+
 ## Published Package Setup
 
-Once `@stelis/say-ur-intent` is on npm there are two ways to run it. Both start
+`@stelis/say-ur-intent` is on npm; there are two ways to run it. Both start
 the same `say-ur-intent` stdio MCP server; pick based on whether you want
 automatic updates or the fastest, most reliable startup.
 
