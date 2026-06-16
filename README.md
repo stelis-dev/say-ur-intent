@@ -23,6 +23,10 @@ never sign, execute, or return transaction bytes; the only transaction-byte path
 is the same-machine, digest-gated wallet handoff initiated from the local review
 page.
 
+That guarantee is byte-level: the bytes you approve are the bytes your wallet
+signs — not a claim that the human-readable review captures every detail of the
+transaction, so the raw PTB structure and addresses stay inspectable beside it.
+
 Users can ask ordinary questions:
 
 - "Can I cover a 1000 dollar payment with my assets?"
