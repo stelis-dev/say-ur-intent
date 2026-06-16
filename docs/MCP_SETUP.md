@@ -542,7 +542,13 @@ If the user supplied a specific Sui address for `read.summarize_wallet_assets` o
 
 ### NPM command returns 404
 
-The package is not published yet in this repository state. Use Developer Checkout Setup or `npm run release:check` for packed-package testing until publication.
+`@stelis/say-ur-intent` is published to npm, so a 404 is not a "package does not
+exist" state. Treat it as a transient registry/network reachability issue, a
+mistyped package name, or a request for a version that does not exist: confirm
+the spelling, check `npm view @stelis/say-ur-intent version`, retry after any
+registry/proxy outage clears, and ensure no private/alternate npm registry is
+configured. Developer Checkout Setup or `npm run release:check` remains an
+option for testing local changes, not a substitute for an unpublished package.
 
 ## Client Snippets
 

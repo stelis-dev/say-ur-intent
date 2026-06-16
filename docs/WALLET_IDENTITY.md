@@ -50,10 +50,11 @@ truth, shows it in the header, and never connects a wallet itself. For the
 signing step it relies on dapp-kit autoconnect restoring the signer on the
 same fixed-port origin where the wallet was connected. That review origin is a
 single per-machine port (default 8765, overridable per registration with
-SAY_UR_INTENT_REVIEW_PORT): when a newer server instance finds the port already
-held by a previous Say Ur Intent review server, it stops that previous instance
-and takes the port over so the most recently started client owns the one
-origin, and a port held by any other process is never taken over. The record is
+SAY_UR_INTENT_REVIEW_PORT): when a second Say Ur Intent instance finds the port
+already held by a healthy Say Ur Intent review peer, it does not stop that peer
+and does not start a port war; it defers to the peer on the shared origin and
+takes the origin over only when that owner exits. A port held by any other
+(non-Say-Ur-Intent) process is never taken over. The record is
 read context and wallet preference only; it is not signing authorization.
 
 ## Status Model

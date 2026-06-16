@@ -4,10 +4,10 @@ This document defines the contract boundary for wallet-review adapters.
 It is a product and implementation contract, not a current feature announcement.
 
 The current release can build local unsigned transaction material for the
-account-bound DeepBook swap review stage and internally bind a Sui transaction
-digest to that stored material. The byte handoff to the same-machine browser
-is gated on recomputed-digest equality, and the review page offers
-user-controlled wallet signing with execution receipts recorded on the
+account-bound DeepBook swap and FlowX swap review stages and internally bind a
+Sui transaction digest to that stored material. The byte handoff to the
+same-machine browser is gated on recomputed-digest equality, and the review page
+offers user-controlled wallet signing with execution receipts recorded on the
 session. No MCP tool returns
 transaction bytes, signing data, signing readiness, executable transaction
 material, or payment execution readiness.
@@ -18,7 +18,7 @@ The source-level schema for this contract lives in
 ## Current Status
 
 The contract schema is implemented in TypeScript and Zod, and the runtime
-DeepBook account-bound swap review emits it. When the account-bound review
+DeepBook and FlowX account-bound swap reviews emit it. When an account-bound review
 completes every evidence stage (local unsigned transaction material, internal
 digest commitment, object ownership, quote/policy provenance, human-readable
 review facts, and review-time simulation), the review layer assembles those
@@ -118,11 +118,12 @@ and it serves the same-machine browser only. After the gate passes, the
 review page requests the wallet signature; the signature, execution, and
 receipt stay user-controlled and never flow through the MCP layer.
 
-The current release builds local unsigned DeepBook swap transaction material
-inside account-bound review, binds a Sui transaction digest to the stored
-material, hands the digest-verified bytes to the same-machine browser, and
-lets the user sign and execute in their wallet with the receipt recorded on
-the review session. The MCP layer never requests signatures or executes.
+The current release builds local unsigned DeepBook swap and FlowX swap
+transaction material inside account-bound review, binds a Sui transaction digest
+to the stored material, hands the digest-verified bytes to the same-machine
+browser, and lets the user sign and execute in their wallet with the receipt
+recorded on the review session. The MCP layer never requests signatures or
+executes.
 
 ## Adapter Contract
 
@@ -274,6 +275,17 @@ a mismatch declines the artifact. The artifact passes
 emitted wallet review contract as `reviewState.ptbVisualization`. PTB
 visualization stays visualization-only evidence: it is not a runtime
 transaction builder, not wallet handoff, and not a signing-readiness surface.
+
+The producer emits the Mermaid flowchart as two parallel streams. `mermaid.text`
+keeps raw package addresses for audit and copy. `mermaid.namedText` is a second
+relabeled stream produced by `applyContractNamesToMermaid`
+(`src/core/action/ptbVisualizationProducer.ts`,
+`src/core/action/contractNameRegistry.ts`): it labels registered packages
+(`@deepbook/core`; the Sui framework `std`/`sui`/`sui_system`) and well-known
+objects (`SuiSystemState`, `Clock`, `Random`, `DenyList`, `CoinRegistry`,
+`AccumulatorRoot`) while keeping the raw addresses available. These names are a
+display label, not a safety, ownership, or trust signal, and the on-chain Move
+Registry name is not yet verified on chain.
 
 ## Adapter Registration And Stage Vocabulary
 

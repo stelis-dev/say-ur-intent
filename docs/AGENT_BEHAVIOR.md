@@ -10,7 +10,7 @@ It is not the contributor rulebook and it is not enforcement. Development rules 
 
 | Surface | Status | Behavior |
 | --- | --- | --- |
-| Sui mainnet state reads | Current | Use read tools for supported balances, DeepBook pools, token registry metadata, mid-price snapshots, orderbook context, raw-quantity quotes, and DeepBook account inventory. |
+| Sui mainnet state reads | Current | Use read tools for supported balances, DeepBook pools, FlowX pools, token registry metadata, mid-price snapshots, orderbook context, raw-quantity quotes, and DeepBook account inventory. |
 | DeepBook and FlowX swap review sessions | Digest-gated handoff; user-controlled signing on the review page | A review URL can be created. The review URL displays the proposal and local review evidence. The account-bound review can build local unsigned DeepBook or FlowX swap transaction material inside the review server, internally bind a Sui transaction digest to that stored material, and derive object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts. This release does not provide a sign action, signing data, MCP-visible transaction bytes, or signing readiness. The local review page requests a digest-gated byte handoff for a `ready_for_wallet_review` state, then the user signs in their own wallet and the page records the execution receipt. |
 | External proposal review sessions | Non-signable review in the current release | `action.prepare_external_proposal_review` can create a review URL from a structured external payment or Sui action proposal. Treat the proposal as untrusted display and review context only. It does not build, verify, simulate, sign, or execute transaction material. |
 | Wallet signing | User-controlled on the local review page | MCP tools do not return signing readiness, signing data, or executable transaction bytes. Signing and execution happen only in the user's wallet from the local review page after the digest-gated handoff; results are recorded as execution receipts keyed by the review session. |
@@ -154,13 +154,13 @@ transaction material. Do not treat it as route selection. Do not treat it as
 settlement-token selection. Do not treat it as payment execution readiness. Do
 not treat it as signing data or signing readiness.
 
-After a DeepBook review session is wallet-account bound, `session.get_review_status` can include review-state checks, `reviewState.adapterLifecycle`, `reviewState.humanReadableReview`, and `reviewState.simulation`. The review page renders those fields as local review evidence.
+After a DeepBook or FlowX review session is wallet-account bound, `session.get_review_status` can include review-state checks, `reviewState.adapterLifecycle`, `reviewState.humanReadableReview`, and `reviewState.simulation`. The review page renders those fields as local review evidence.
 
-Use `reviewState.adapterLifecycle.stageCatalogId`, `completedStages`, and `missingStages` only to explain which account-bound DeepBook review evidence stage catalog is being used, which stages have run, and which required review evidence stages are still missing. If `transaction_material_build_or_verify` is completed, say only that the review server built local unsigned transaction material and kept bytes internal. If `digest_commitment` is completed, say only that the review server internally bound a Sui transaction digest to that stored local material. If `object_ownership` is completed, say only that the review server derived object ownership evidence from the stored local material and Sui owner/type reads. If `review_time_simulation` is completed, say only that the review server simulated the stored local unsigned material with checks enabled and exposed a redacted simulation summary. `reviewState.humanReadableReview` is valid only after `human_readable_review` is completed and not missing; `reviewState.simulation` is valid only after `review_time_simulation` is completed and not missing. Do not provide or infer transaction bytes, signing data, signing readiness, or execution readiness from those stages. This lifecycle stops at review-time simulation; the digest-gated byte handoff follows an emitted contract, while wallet signing and execution receipt happen on the local review page under the user's control. Use those checks to explain what the local review layer verified before signing. Do not describe them as wallet readiness, signing readiness, route quality, execution safety, or public transaction bytes. The MCP layer never signs, executes, or returns transaction bytes.
+Use `reviewState.adapterLifecycle.stageCatalogId`, `completedStages`, and `missingStages` only to explain which account-bound DeepBook or FlowX review evidence stage catalog is being used, which stages have run, and which required review evidence stages are still missing. If `transaction_material_build_or_verify` is completed, say only that the review server built local unsigned transaction material and kept bytes internal. If `digest_commitment` is completed, say only that the review server internally bound a Sui transaction digest to that stored local material. If `object_ownership` is completed, say only that the review server derived object ownership evidence from the stored local material and Sui owner/type reads. If `review_time_simulation` is completed, say only that the review server simulated the stored local unsigned material with checks enabled and exposed a redacted simulation summary. `reviewState.humanReadableReview` is valid only after `human_readable_review` is completed and not missing; `reviewState.simulation` is valid only after `review_time_simulation` is completed and not missing. Do not provide or infer transaction bytes, signing data, signing readiness, or execution readiness from those stages. This lifecycle stops at review-time simulation; the digest-gated byte handoff follows an emitted contract, while wallet signing and execution receipt happen on the local review page under the user's control. Use those checks to explain what the local review layer verified before signing. Do not describe them as wallet readiness, signing readiness, route quality, execution safety, or public transaction bytes. The MCP layer never signs, executes, or returns transaction bytes.
 
 Use `reviewState.humanReadableReview` only as displayable review facts projected
-from verified local review evidence. Its `kind` currently identifies the first
-swap review projection. Its `assetFlow` raw amounts, coin types, decimals,
+from verified local review evidence. Its `kind` currently identifies the shared
+DeepBook and FlowX swap review projection. Its `assetFlow` raw amounts, coin types, decimals,
 minimum output, fee facts, target pool, and direction are derived from the
 material-bound quote policy evidence, while object ownership is cited only as
 review evidence from stored transaction material and Sui owner/type reads.
@@ -185,9 +185,10 @@ review-time simulation to one transaction commitment hash. It is not
 transaction bytes, not signing data, not signing readiness, not wallet
 handoff, not execution readiness, and not a route recommendation. If the
 review is blocked on `wallet_review_contract_emit_missing`, say that contract
-assembly declined and use the failed
-`deepbook_wallet_review_contract_emit_missing` check message for the concrete
-reason.
+assembly declined and use the failed adapter-prefixed emit-missing check message
+for the concrete reason: `deepbook_wallet_review_contract_emit_missing` for a
+DeepBook review and `flowx_wallet_review_contract_emit_missing` for a FlowX
+review.
 
 If a response includes a `PtbVisualizationArtifact`, answer from its Mermaid
 text, diagnostics, `generatedAt`, `source`, and `unsupportedUse` fields only

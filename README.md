@@ -1,14 +1,27 @@
 # Say Ur Intent
 
-Say Ur Intent is a local-first, evidence-first Sui intent toolkit for AI clients.
+Say Ur Intent is a local-first Sui review and evidence layer for AI clients.
 
-For natural-language Sui DeFi questions, the current release returns verified,
-AI-readable evidence before transaction creation. That answer path remains
-separate from account-bound DeepBook review, where the review server builds
+It turns a supported AI-requested Sui action into a local review page where the
+user reads the transaction summary, inspects the transaction (PTB) as a graph,
+and signs in their own wallet. The AI client never receives signing authority or
+executable transaction bytes.
+
+![Say Ur Intent local review page](https://raw.githubusercontent.com/stelis-dev/say-ur-intent/main/assets/review-page.png)
+
+*The local review page: deterministic review checks, review-time simulation
+evidence, and the transaction shown as a labeled PTB graph — what the user
+reviews before signing in their own wallet.*
+
+For natural-language Sui DeFi questions, the current release also returns
+verified, AI-readable evidence before any transaction is built. That answer path
+stays separate from account-bound swap review, where the review server builds
 local unsigned transaction material internally and, once every review evidence
-stage completes, the local review page offers a digest-gated handoff,
-user-controlled wallet signing, and execution-receipt recording. The MCP layer
-and review API never sign, execute, or return transaction bytes.
+stage completes, the local review page offers a digest-gated byte handoff,
+user-controlled wallet signing, and execution-receipt recording. MCP responses
+never sign, execute, or return transaction bytes; the only transaction-byte path
+is the same-machine, digest-gated wallet handoff initiated from the local review
+page.
 
 Users can ask ordinary questions:
 
@@ -36,17 +49,19 @@ Say Ur Intent is one product, but it must be read at three distinct layers. Do n
 
 In one sentence: Say Ur Intent is a local-first Sui intent evidence and review layer that progresses from verified evidence to user-controlled wallet signing only after Say Ur Intent independently builds or verifies the transaction material and shows a human-readable local review.
 
-DeepBook is the current Sui source for liquidity and price facts in this release.
-Wallet and Sui balance reads describe held assets. DeepBook provides scoped
-conversion and price evidence. DeepBook does not define the whole product.
+DeepBook and FlowX are the current Sui liquidity and price sources in this
+release: DeepBook provides scoped conversion, price, and orderbook evidence, and
+FlowX provides indicative CLMM route quotes. Wallet and Sui balance reads
+describe held assets. They do not define the whole product.
 
 Say Ur Intent does not custody funds, hold private keys, or autonomously trade
 on behalf of users.
 By current design, it does not rank venues, choose routes, make best-price
 recommendations, or silently choose settlement tokens for users.
 
-The current release can build local unsigned transaction material only inside the
-account-bound DeepBook swap review path. It does not expose transaction bytes.
+The current release can build local unsigned transaction material inside the
+account-bound DeepBook and FlowX swap review paths. It does not expose
+transaction bytes.
 Wallet signing is user-controlled on the local review page after a
 digest-gated handoff; MCP responses never request signatures, provide signing
 readiness, or execute payments.
@@ -64,8 +79,8 @@ The current release flow is:
 The user states an intent in natural language.
 Say Ur Intent resolves the supported Sui mainnet evidence surface.
 The AI answers only from returned evidence and boundaries.
-DeepBook transaction material build is an account-bound review step, not part of
-the natural-language intent evidence answer.
+Supported swap transaction material build is an account-bound review step, not
+part of the natural-language intent evidence answer.
 ```
 
 The current release implements intent evidence for supported Sui mainnet reads.
@@ -104,7 +119,7 @@ The current release can run as a local stdio MCP server and expose mainnet Sui D
 - user-requested bounded Sui transaction digest lookup, account activity scans, sent-function activity scans with known-wallet-only persistence, and stored normalized activity summaries;
 - read-only external proposal review sessions that display proposed action, asset flow, recipient or target, freshness, missing evidence, user choices, unsupported claims, and non-signable reason;
 - local Say Ur Intent review evidence and review-session status reads;
-- account-bound DeepBook and FlowX swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence; when every stage completes the review reaches `ready_for_wallet_review` and the local review page offers a digest-gated byte handoff, user-controlled wallet signing, and execution-receipt recording. The MCP layer and review API never sign, execute, or return transaction bytes.
+- account-bound DeepBook and FlowX swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence; when every stage completes the review reaches `ready_for_wallet_review` and the local review page offers a digest-gated byte handoff, user-controlled wallet signing, and execution-receipt recording. MCP responses never sign, execute, or return transaction bytes; transaction bytes flow only through the same-machine, digest-gated wallet handoff initiated from the local review page.
 
 It also includes:
 
@@ -131,7 +146,7 @@ payloads before storage, and records why the review is non-signable.
 
 Blocked signing is session-scoped: a review session stays blocked while
 required review evidence is missing for that session (for example
-`wallet_review_contract_emit_missing`). When account-bound DeepBook swap
+`wallet_review_contract_emit_missing`). When an account-bound supported swap
 review completes local transaction material, digest binding, object ownership,
 quote/policy provenance, human-readable review evidence, and review-time
 simulation evidence, the review layer emits a schema-validated
@@ -148,11 +163,11 @@ The signable adapter and PTB visualization boundary is documented in
 `WalletReviewAdapterContract` as pre-signing review evidence when every
 required evidence stage is complete; the contract carries the transaction
 commitment hash only.
-The runtime path does not make wallet signing available.
-It does not make wallet handoff available.
-It does not make payment execution available.
-It does not make executable transaction material available.
-It does not make signing readiness available.
+
+Wallet signing and the digest-gated byte handoff happen only on the local
+review page through the user's own wallet, never through MCP responses. MCP
+responses do not return executable transaction material or signing data, and
+do not provide signing readiness.
 
 Fiat cash-out, P&L, tax, and cost-basis support are not part of the current release.
 
@@ -299,24 +314,33 @@ AI client answer behavior must be mirrored in runtime-facing instructions, resou
 - `docs/LOCAL_DB_ARCHITECTURE.md`: local SQLite storage boundaries for maintainers.
 - `docs/SDK_API.md`: pinned SDK API notes and source-verification boundaries.
 - `docs/FRONTEND_POLICY.md`: review-app frontend implementation policy for coding agents.
-- `docs/SIGNABLE_ADAPTER_CONTRACT.md`: wallet-review adapter and PTB visualization contract. The review layer emits the contract and a PTB visualization as pre-signing review evidence; not signing support.
+- `docs/SIGNABLE_ADAPTER_CONTRACT.md`: wallet-review adapter and PTB visualization contract. It defines the pre-signing review evidence and commitment boundary; wallet signing still happens only through the local review page, not through MCP.
 - `AGENTS.md`: root repository development contract and non-negotiable product boundaries for coding agents working on this codebase.
 - `docs/AGENT_DEVELOPMENT_POLICY.md`: detailed binding development, review, documentation, source-of-truth, and completion policies for coding agents.
 
 ## Contract Name Registry
 
-The PTB visualization on the review page can show a registered Move Registry
-(MVR) package name in place of a raw package address (for example
-`@deepbook/core`), with a toggle back to the raw address and a copyable Mermaid
-source that keeps raw addresses. The name is a package identity label only, not a
-safety, trust, route-quality, or signing-readiness signal.
+The PTB visualization on the review page can show human-readable labels in place
+of raw addresses, with a toggle back to raw addresses and a copyable Mermaid
+source that always keeps raw addresses. A label is identity display only, not a
+safety, trust, route-quality, or signing-readiness signal, and only registered
+addresses are relabeled.
+
+Two pinned, context-aware registries in
+[`src/core/action/contractNameRegistry.ts`](src/core/action/contractNameRegistry.ts)
+drive this:
+
+- packages, relabeled only in `<address>::` path position — the DeepBook swap
+  package by its Move Registry (MVR) name `@deepbook/core`, and the Sui framework
+  packages by their Move aliases (`std`, `sui`, `sui_system`);
+- well-known Sui system objects, relabeled only as a bare object id — `Clock`,
+  `SuiSystemState`, `Random`, `DenyList`, `CoinRegistry`, and the address-based
+  balance `AccumulatorRoot`.
 
 If you maintain a Sui DeFi protocol that has a registered MVR name and want its
 package to display that name in the review graph, open a pull request adding your
-mainnet package address and MVR name to
-[`src/core/action/contractNameRegistry.ts`](src/core/action/contractNameRegistry.ts).
-Only packages listed in this registry are relabeled; every other package keeps
-its raw address.
+mainnet package address and MVR name to the package registry. Every unregistered
+address keeps its raw form.
 
 ## For Maintainers
 
