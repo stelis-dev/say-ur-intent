@@ -23,6 +23,13 @@ never sign, execute, or return transaction bytes; the only transaction-byte path
 is the same-machine, digest-gated wallet handoff initiated from the local review
 page.
 
+Because the AI never holds keys, never signs, and never builds the transaction —
+the tool builds it against pinned, known protocol packages, and you review the
+decoded bytes and sign in your own wallet — the failure modes that make AI and
+DeFi dangerous together (an agent acting on its own, signing on your behalf, or
+slipping in an opaque or substituted transaction) are closed by design, not
+patched by asking you to trust the model.
+
 That guarantee is byte-level: the bytes you approve are the bytes your wallet
 signs — not a claim that the human-readable review captures every detail of the
 transaction, so the raw PTB structure and addresses stay inspectable beside it.

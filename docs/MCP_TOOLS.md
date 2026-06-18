@@ -738,6 +738,11 @@ authority or wallet authorization. It is not signing data, not signing
 readiness, not payment execution readiness, not route recommendation, and not a
 replacement for review-time simulation.
 
+The graph is decoded from the stored transaction bytes by the pinned
+deterministic renderer with no AI or model input, and only after those bytes
+recompute to the bound commitment; the Mermaid source keeps raw package
+addresses for independent cross-check.
+
 The review layer renders the artifact when an account-bound review emits the
 wallet review contract and the pinned renderer succeeds. The artifact is
 returned as `reviewState.ptbVisualization` next to

@@ -270,7 +270,7 @@ The pinned renderer dependency is `@zktx.io/ptb-model@0.5.0`. The review layer
 converts the stored local transaction material into a Mermaid `flowchart`
 artifact with `rawTransactionToIR` and `transactionIRToMermaid`, only after the
 stored bytes are recomputed to match the bound transaction material commitment;
-a mismatch declines the artifact. The artifact passes
+a mismatch declines the artifact. The graph is decoded from the stored transaction bytes with no AI or model input in the rendering path, so it reflects the decoded transaction the wallet will receive, not an AI description of it. The artifact passes
 `ptbVisualizationArtifactSchema` screening before exposure and accompanies the
 emitted wallet review contract as `reviewState.ptbVisualization`. PTB
 visualization stays visualization-only evidence: it is not a runtime
