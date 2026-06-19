@@ -228,6 +228,9 @@ let loading = false;
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { useMaxWidth: true } });
 let ptbRenderSequence = 0;
+const ptbSvgCache = new Map<string, string>();
+let lastPtbSvg: string | undefined;
+const QUOTE_AUTOREFRESH_LEAD_S = 3;
 
 const dAppKit = createLocalDAppKit();
 dAppKit.stores.$wallets.subscribe(() => scheduleSignerRefresh());
@@ -319,6 +322,55 @@ function fadeReplace(oldEl: Element, newEl: HTMLElement): void {
     .catch(() => {
       // A newer refresh canceled this fade-out; that refresh owns the swap.
     });
+}
+
+// After a quote refresh that stays on the ready view, update only the value
+// regions in place (fade-on-change) instead of rebuilding the whole page, which
+// would re-flash the PTB graph and reset transient state. Any stage change (or a
+// non-ready view) falls back to a full render.
+function smartRender(): void {
+  const canScope =
+    !!sessionPayload &&
+    pageStage(sessionPayload) === "ready" &&
+    !!rootElement.querySelector(".transaction-card") &&
+    !!rootElement.querySelector(".signing-section");
+  if (canScope) {
+    refreshReadyContent();
+  } else {
+    render();
+  }
+}
+
+function refreshReadyContent(): void {
+  if (!sessionPayload || !sessionPayload.reviewState || pageStage(sessionPayload) !== "ready") {
+    return;
+  }
+  const txCard = rootElement.querySelector(".transaction-card");
+  if (txCard) {
+    fadeReplace(txCard, renderTransactionCard(sessionPayload));
+  }
+  const findings = rootElement.querySelector(".ready-key-findings");
+  if (findings) {
+    fadeReplace(findings, renderReadyKeyFindings(sessionPayload.reviewState));
+  }
+  const signing = rootElement.querySelector(".signing-section");
+  if (signing) {
+    fadeReplace(signing, renderSigningSection(sessionPayload.reviewState));
+  }
+  // Restart the countdown against the refreshed freshness window.
+  manageQuoteCountdown(pageStage(sessionPayload));
+}
+
+// The sign step is one self-maintaining state: run the review automatically on
+// arrival so the user never presses "Start review" (or "Refresh"). Called after a
+// render completes (not from within one) to avoid re-entrant rendering.
+function maybeAutoStartReview(): void {
+  if (loading || isSigning || !sessionPayload) {
+    return;
+  }
+  if (pageStage(sessionPayload) === "pre_review") {
+    void runAccountBoundReview();
+  }
 }
 
 if (reviewSessionId && token) {
@@ -637,8 +689,7 @@ function renderInner(): void {
       }
       const actions = element("div", "actions");
       const run = button("Start review", () => void runAccountBoundReview(), "primary");
-      run.disabled = loading;
-      actions.append(run);
+      actions.append(loading ? element("p", "status", "Preparing the live review…") : run);
       shell.append(actions);
       shell.append(collapsedEvidence(sessionPayload, stage));
       break;
@@ -662,9 +713,17 @@ function manageQuoteCountdown(stage: PageStage): void {
       return;
     }
     const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
-    label.textContent = `Quote valid for ${secondsLeft}s - if it expires, just refresh; your funds stay safe.`;
-    if (secondsLeft === 0) {
-      render();
+    label.textContent = `Quote valid for ${secondsLeft}s - it refreshes automatically; your funds stay safe.`;
+    // Refresh shortly before expiry so a fresh quote replaces the values in place
+    // (no expired screen). Never while signing or a request is already in flight.
+    if (
+      secondsLeft <= QUOTE_AUTOREFRESH_LEAD_S &&
+      !loading &&
+      !isSigning &&
+      sessionPayload &&
+      pageStage(sessionPayload) === "ready"
+    ) {
+      void runAccountBoundReview();
     }
   };
   // Paint immediately so a rebuilt countdown label is never blank for ~1s.
@@ -712,6 +771,7 @@ function rawToDisplay(raw: string, decimals: number): string {
 
 function renderTransactionCard(payload: ReviewSessionPayload): HTMLElement {
   const panel = card("Transaction");
+  panel.classList.add("transaction-card");
   const plan = selectedPlan(payload);
   const review = payload.reviewState?.humanReadableReview;
   const swap = review && review.kind === "swap_human_readable_review" ? review : undefined;
@@ -804,6 +864,7 @@ function formatBalanceChangeDisplay(
 
 function renderReadyKeyFindings(state: ReviewState): HTMLElement {
   const wrapper = card("Review result");
+  wrapper.classList.add("ready-key-findings");
   const passCount = state.checks.filter((check) => check.status === "pass").length;
   wrapper.append(
     element("p", "key-findings-line", `All review checks passed (${passCount}/${state.checks.length}).`)
@@ -1180,12 +1241,27 @@ function renderPtbVisualization(artifact: PtbVisualizationArtifact): HTMLElement
   graph.textContent = "Rendering PTB graph...";
 
   const renderGraph = (text: string): void => {
-    graph.textContent = "Rendering PTB graph...";
     graph.classList.remove("error");
+    const cached = ptbSvgCache.get(text);
+    if (cached) {
+      // Already rendered this exact graph: inject synchronously, no flash.
+      graph.innerHTML = cached;
+      lastPtbSvg = cached;
+      return;
+    }
+    // Keep the previous graph visible while the new one renders so a refresh
+    // never blanks to a "Rendering..." placeholder.
+    if (lastPtbSvg) {
+      graph.innerHTML = lastPtbSvg;
+    } else {
+      graph.textContent = "Rendering PTB graph...";
+    }
     ptbRenderSequence += 1;
     void mermaid
       .render(`ptb-graph-${ptbRenderSequence}`, text)
       .then((rendered) => {
+        ptbSvgCache.set(text, rendered.svg);
+        lastPtbSvg = rendered.svg;
         graph.innerHTML = rendered.svg;
       })
       .catch((error: unknown) => {
@@ -1409,6 +1485,7 @@ async function loadReview(): Promise<void> {
   } finally {
     loading = false;
     render();
+    maybeAutoStartReview();
   }
 }
 
@@ -1417,7 +1494,7 @@ async function runAccountBoundReview(): Promise<void> {
   const plan = sessionPayload ? selectedPlan(sessionPayload) : undefined;
   if (!account || !plan) return;
   loading = true;
-  render();
+  smartRender();
   try {
     const stateRequest = () =>
       requestJson<{ reviewState: ReviewState }>(`/api/review/${encodeURIComponent(reviewSessionId)}/state`, {
@@ -1453,7 +1530,7 @@ async function runAccountBoundReview(): Promise<void> {
     errorMessage = messageForHttpError(error, "Could not run account-bound review.");
   } finally {
     loading = false;
-    render();
+    smartRender();
   }
 }
 

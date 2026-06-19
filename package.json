@@ -1,6 +1,6 @@
 {
   "name": "@stelis/say-ur-intent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "mcpName": "io.github.stelis-dev/say-ur-intent",
   "description": "Say Ur Intent is a local-first toolkit for helping AI applications and users inspect Sui DeFi actions before execution.",
   "license": "MIT",
