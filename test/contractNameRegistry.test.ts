@@ -28,8 +28,10 @@ describe("applyContractNamesToMermaid", () => {
     expect(out).toContain("#64;deepbook/core::pool::swap_exact_base_for_quote");
     expect(out).not.toContain("@");
     expect(out).not.toContain(registered);
-    // Unregistered packages keep their raw address.
-    expect(out).toContain(`${unregistered}::other::call`);
+    // Unregistered packages are shortened for the display graph (the full raw
+    // address stays in the copyable source); the path suffix is preserved.
+    expect(out).toContain("0xaaaaaa...aaaa::other::call");
+    expect(out).not.toContain(unregistered);
     // Synthetic node ids are untouched, so the graph syntax stays valid.
     expect(out).toContain('command0["');
     expect(out).toContain('command1["');
@@ -63,13 +65,40 @@ describe("applyContractNamesToMermaid", () => {
 
   it("anchors matching by context: a package only in a path, an object only as a bare id", () => {
     // A package address that is not a "::" path prefix (here a bare object slot)
-    // is left raw, so a package label never leaks into a bare-id position.
+    // is never relabeled with the package name; it is shortened like any other
+    // unregistered address (0x...0002 -> 0x2), so a package label never leaks into
+    // a bare-id position.
     const barePackage = `input0["Input 0: Object (Owned)<br/>${SUI_FRAMEWORK_ADDRESS}"]`;
-    expect(applyContractNamesToMermaid(barePackage)).toContain(SUI_FRAMEWORK_ADDRESS);
+    const bareOut = applyContractNamesToMermaid(barePackage);
+    expect(bareOut).toContain("0x2");
+    expect(bareOut).not.toContain("sui");
 
-    // An object id that appears as a "::" path prefix is left raw, so an object
-    // label never leaks into a package path.
+    // An object id that appears as a "::" path prefix is never relabeled with the
+    // object name; it is shortened (0x...0006 -> 0x6), so an object label never
+    // leaks into a package path.
     const objectInPath = `command0["0: MoveCall ${SUI_CLOCK_OBJECT_ID}::weird::call"]`;
-    expect(applyContractNamesToMermaid(objectInPath)).toContain(`${SUI_CLOCK_OBJECT_ID}::weird::call`);
+    const pathOut = applyContractNamesToMermaid(objectInPath);
+    expect(pathOut).toContain("0x6::weird::call");
+    expect(pathOut).not.toContain("Clock");
+  });
+
+  it("shortens unregistered full-length addresses for display, collapsing leading zeros", () => {
+    const long = `0x${"c".repeat(64)}`;
+    const padded = `0x${"0".repeat(62)}ab`;
+    const text = [
+      "flowchart LR",
+      `  command0["0: MoveCall ${long}::pool::go"]`,
+      `  input1["Input 1: Object (Shared)<br/>${padded}"]`,
+      ""
+    ].join("\n");
+
+    const out = applyContractNamesToMermaid(text);
+
+    // A genuinely long unregistered id is middle-elided; its path suffix stays.
+    expect(out).toContain("0xcccccc...cccc::pool::go");
+    expect(out).not.toContain(long);
+    // A zero-padded low id collapses its leading zeros instead of eliding.
+    expect(out).toContain("0xab");
+    expect(out).not.toContain(padded);
   });
 });

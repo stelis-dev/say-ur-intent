@@ -230,8 +230,8 @@ mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "defaul
 let ptbRenderSequence = 0;
 
 const dAppKit = createLocalDAppKit();
-dAppKit.stores.$wallets.subscribe(() => render());
-dAppKit.stores.$connection.subscribe(() => render());
+dAppKit.stores.$wallets.subscribe(() => scheduleSignerRefresh());
+dAppKit.stores.$connection.subscribe(() => scheduleSignerRefresh());
 let isSigning = false;
 let isConnecting = false;
 let signNotice: { kind: "error" | "info"; text: string } | undefined;
@@ -244,8 +244,81 @@ let autoConnectSettling = hasStoredWalletSelection();
 if (autoConnectSettling) {
   window.setTimeout(() => {
     autoConnectSettling = false;
-    render();
+    scheduleSignerRefresh();
   }, 2000);
+}
+
+// Wallet/connection store ticks only change the header wallet chip and the
+// signing section. A full render() clears rootElement.innerHTML and rebuilds the
+// whole page, which during signing resets the quote-countdown label, scroll
+// position, expanded evidence, and focus. Batch these ticks into one scoped
+// update of just those two regions and leave the rest of the page (and the
+// countdown interval) intact. Stage/payload changes still drive full render()
+// from their own call sites.
+let signerRefreshHandle: number | undefined;
+function scheduleSignerRefresh(): void {
+  if (signerRefreshHandle !== undefined) {
+    return;
+  }
+  signerRefreshHandle = window.requestAnimationFrame(() => {
+    signerRefreshHandle = undefined;
+    refreshSignerSurfaces();
+  });
+}
+
+function refreshSignerSurfaces(): void {
+  if (!sessionPayload) {
+    return;
+  }
+  const signingEl = rootElement.querySelector(".signing-section");
+  if (signingEl && sessionPayload.reviewState && pageStage(sessionPayload) === "ready") {
+    fadeReplace(signingEl, renderSigningSection(sessionPayload.reviewState));
+  }
+  const walletEl = rootElement.querySelector(".header-wallet");
+  if (walletEl) {
+    fadeReplace(walletEl, renderHeaderWallet());
+  }
+}
+
+// Swap a scoped region smoothly, but only when its content actually changed:
+// short fade-out of the old node, then fade-in of the new one. Uses the Web
+// Animations API so no inline opacity styles linger. Unchanged content is left
+// untouched (isEqualNode), prefers-reduced-motion falls back to an instant swap,
+// and an in-flight fade is canceled if a newer refresh arrives (the newer one
+// owns the swap), so overlapping wallet ticks never double-swap.
+const REGION_FADE_MS = 110;
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function fadeReplace(oldEl: Element, newEl: HTMLElement): void {
+  if (oldEl.isEqualNode(newEl)) {
+    return;
+  }
+  if (prefersReducedMotion() || typeof oldEl.animate !== "function") {
+    oldEl.replaceWith(newEl);
+    return;
+  }
+  for (const animation of oldEl.getAnimations()) {
+    animation.cancel();
+  }
+  const fadeOut = oldEl.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration: REGION_FADE_MS,
+    easing: "ease",
+    fill: "forwards"
+  });
+  void fadeOut.finished
+    .then(() => {
+      oldEl.replaceWith(newEl);
+      newEl.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: REGION_FADE_MS,
+        easing: "ease"
+      });
+    })
+    .catch(() => {
+      // A newer refresh canceled this fade-out; that refresh owns the swap.
+    });
 }
 
 if (reviewSessionId && token) {
@@ -390,6 +463,52 @@ function renderHeaderWallet(): HTMLElement {
 }
 
 function render(): void {
+  const restore = captureTransientState();
+  renderInner();
+  restore();
+}
+
+// Make a full rebuild non-destructive: capture scroll position, which <details>
+// sections are open, and the focused control before innerHTML is cleared, then
+// restore them after the shell is rebuilt. Keyed by summary text / control label
+// so it survives the rebuild without stable ids. Applies to every render()
+// (reload, run-review, quote expiry, sign flow), not just wallet ticks.
+function captureTransientState(): () => void {
+  const scrollY = window.scrollY;
+  const openDetails = new Set<string>();
+  rootElement.querySelectorAll("details[open]").forEach((d) => {
+    const key = d.querySelector("summary")?.textContent?.trim();
+    if (key) {
+      openDetails.add(key);
+    }
+  });
+  const active = document.activeElement;
+  const focusKey =
+    active instanceof HTMLElement && rootElement.contains(active) && active.textContent?.trim()
+      ? `${active.tagName}:${active.textContent.trim()}`
+      : undefined;
+  return () => {
+    rootElement.querySelectorAll("details").forEach((d) => {
+      const key = d.querySelector("summary")?.textContent?.trim();
+      if (key && openDetails.has(key)) {
+        d.open = true;
+      }
+    });
+    if (scrollY > 0) {
+      window.scrollTo({ top: scrollY });
+    }
+    if (focusKey) {
+      const matches = Array.from(
+        rootElement.querySelectorAll<HTMLElement>("button, summary, a[href], [tabindex]")
+      ).filter((el) => `${el.tagName}:${el.textContent?.trim()}` === focusKey);
+      if (matches.length === 1) {
+        matches[0]?.focus({ preventScroll: true });
+      }
+    }
+  };
+}
+
+function renderInner(): void {
   rootElement.innerHTML = "";
   const shell = element("section", "review-shell");
   const header = element("div", "page-header");
@@ -536,7 +655,7 @@ function manageQuoteCountdown(stage: PageStage): void {
   if (stage !== "ready") {
     return;
   }
-  quoteCountdownTimer = setInterval(() => {
+  const paint = (): void => {
     const expiresAtMs = sessionPayload ? reviewExpiresAtMs(sessionPayload) : undefined;
     const label = document.querySelector(".quote-countdown");
     if (expiresAtMs === undefined || !label) {
@@ -547,7 +666,10 @@ function manageQuoteCountdown(stage: PageStage): void {
     if (secondsLeft === 0) {
       render();
     }
-  }, 1000);
+  };
+  // Paint immediately so a rebuilt countdown label is never blank for ~1s.
+  paint();
+  quoteCountdownTimer = setInterval(paint, 1000);
 }
 
 function renderStoppedPanel(payload: ReviewSessionPayload): HTMLElement {

@@ -29,10 +29,10 @@ import {
  *    root for address-based balances).
  *
  * The label is display only: only registered addresses are relabeled, anything
- * unregistered keeps its raw address, and the raw address stays available in the
- * artifact (the review page toggles back to addresses and the copyable Mermaid
- * source keeps raw addresses). A label is address identity, not a safety, trust,
- * or signing-readiness signal.
+ * unregistered is shortened for the display graph, and the full raw address stays
+ * available in the artifact (the review page toggles back to addresses and the
+ * copyable Mermaid source keeps full raw addresses). A label is address identity,
+ * not a safety, trust, or signing-readiness signal.
  *
  * Every address comes from a pinned SDK constant rather than a hard-coded literal:
  * DeepBook from `@mysten/deepbook-v3` `mainnetPackageIds.DEEPBOOK_PACKAGE_ID` (the
@@ -151,9 +151,11 @@ const OBJECT_NAME_BY_ADDRESS = buildNameMap(OBJECT_NAME_REGISTRY);
  *  - A well-known object is relabeled only where it is a bare id (not followed by
  *    `::`), the form an object input takes — never a package path.
  *
- * Unknown addresses are left unchanged. Matching uses the full `0x` + 64-hex
- * address form the PTB renderer (`@zktx.io/ptb-model`) emits; the registry keys
- * are normalized to that same form.
+ * Unknown addresses (no registered name) are shortened for the display graph
+ * (leading zeros collapsed, long ids middle-elided); the full address stays in
+ * the artifact's raw `text` stream for audit and copy. Matching uses the full
+ * `0x` + 64-hex address form the PTB renderer (`@zktx.io/ptb-model`) emits; the
+ * registry keys are normalized to that same form.
  *
  * Registered package names may be Move Registry names like `@deepbook/core`;
  * Mermaid v11 reads a literal `@` as node/edge metadata syntax even inside a
@@ -173,6 +175,10 @@ export function applyContractNamesToMermaid(mermaidText: string): string {
     const safe = mermaidSafeName(name);
     text = text.replace(new RegExp(`${address}(?!::)`, "g"), () => safe);
   }
+  // Any address still present (no registered name) is shortened for the display
+  // graph; its `::module::name` suffix, if any, is left intact. The full address
+  // is untouched in the raw `text` stream the artifact keeps for audit and copy.
+  text = text.replace(/0x[0-9a-f]{40,64}(?![0-9a-f])/gi, (address) => shortenAddressForDisplay(address));
   return text;
 }
 
@@ -185,4 +191,22 @@ export function applyContractNamesToMermaid(mermaidText: string): string {
  */
 function mermaidSafeName(name: string): string {
   return name.replace(/@/g, "#64;");
+}
+
+/**
+ * Shorten an unregistered full-length address for the display graph: collapse
+ * leading zeros so low ids read compactly (`0x...0002` -> `0x2`), and middle-elide
+ * a genuinely long id (`0x123456...cdef`). Display only — the raw `text` stream
+ * keeps the full address for audit and copy. Uses ASCII `...` (a Mermaid-valid
+ * label character) rather than a unicode ellipsis.
+ */
+function shortenAddressForDisplay(address: string): string {
+  const body = address.slice(2).replace(/^0+/, "");
+  if (body.length === 0) {
+    return "0x0";
+  }
+  if (body.length <= 12) {
+    return `0x${body}`;
+  }
+  return `0x${body.slice(0, 6)}...${body.slice(-4)}`;
 }
