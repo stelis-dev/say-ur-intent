@@ -200,6 +200,15 @@ and adjacent invariants that must hold for the work to be complete.
 ## Implementation Rules
 
 - Inspect `package.json` before running project commands. Do not invent scripts.
+- When changing the published package or MCP server release version, keep all
+  release metadata synchronized in the same change: `package.json`,
+  root/package entries in `package-lock.json`, and `server.json` top-level and
+  package versions. Before completion, search committed repository surfaces
+  excluding `node_modules/`, `dist/`, `.git/`, and `.WORK/` for the old release
+  version and classify any remaining matches.
+- When changing an SDK or wallet-related dependency version, update pinned
+  version documentation such as `docs/SDK_API.md` when that dependency is listed
+  there.
 - Reuse existing source-of-truth modules, pinned SDK/source APIs, verified
   mainnet data, local registries, and established infrastructure when they own
   the boundary.

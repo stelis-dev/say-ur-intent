@@ -713,6 +713,16 @@ For API review work, block or fix the change when:
   during active development.
 - Commit the lockfile.
 - Do not upgrade SDKs casually.
+- When changing the published package or MCP server release version, update all
+  release metadata in the same change: `package.json`, root/package entries in
+  `package-lock.json`, and `server.json` top-level and package versions.
+- Before completing a release-version change, search committed repository
+  surfaces excluding `node_modules/`, `dist/`, `.git/`, and `.WORK/` for the old
+  release version and classify any remaining matches as dependency versions,
+  fixture data, or stale release metadata.
+- When changing an SDK or wallet-related dependency version, update pinned
+  version documentation such as `docs/SDK_API.md` when that dependency is listed
+  there.
 - If an SDK is upgraded, re-run adapter, review, signing, and
   registry-generation checks.
 
