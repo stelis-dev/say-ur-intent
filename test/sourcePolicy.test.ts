@@ -1362,7 +1362,7 @@ describe("source policy", () => {
     expect(docs).not.toMatch(/deferred renderer candidate/i);
     expect(docs).not.toMatch(/@zktx\.io\/ptb-cli/i);
     expect(docs).toMatch(/not transaction-building[\s\S]{0,180}signing readiness/i);
-    expect(docs).toMatch(/never contain signing data, a wallet signature request, or signing readiness/i);
+    expect(docs).toMatch(/never contain signing data, a wallet signature request,[\s\S]{0,80}or signing readiness/i);
     expect(docs).toMatch(/A PTB graph is not signing data, not signing readiness/i);
     expect(docs).not.toMatch(/PTB graph[\s\S]{0,180}(provides|proves|indicates|establishes).{0,80}(signing readiness|execution safety|wallet authorization)/i);
   });

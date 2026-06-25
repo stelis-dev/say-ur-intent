@@ -532,7 +532,7 @@ If stored or summary details are missing or capped, use the digest metadata with
 
 | Tool | Status | Purpose |
 | --- | --- | --- |
-| `action.prepare_sui_action_review` | Blocked signing | Creates a local review session and review URL for a supported action proposal. Account-bound DeepBook review may build local unsigned transaction material inside the review server, internally bind a Sui transaction digest to it, and derive object ownership, quote/policy, human-readable review, and review-time simulation evidence. The tool does not return transaction bytes. |
+| `action.prepare_sui_action_review` | Signable local review page | Creates a local review session and review URL for a supported swap action proposal. Account-bound DeepBook and FlowX reviews may build local unsigned transaction material inside the review server, internally bind a Sui transaction digest to it, and derive object ownership, quote/policy, human-readable review, review-time simulation, and PTB visualization evidence. When every required evidence stage completes, the local review page can request the digest-gated byte handoff for user-controlled wallet signing. The MCP tool does not return transaction bytes, signing data, or signing readiness. |
 | `action.prepare_external_proposal_review` | Non-signable review | Creates a local review session and review URL from an untrusted structured external proposal. It does not return transaction bytes. |
 
 `action.prepare_sui_action_review` is account-bound: a swap review computes
@@ -607,22 +607,25 @@ Account-bound review computation for external proposals returns `blocked` with
 recorded the proposal facts but did not build, regenerate, simulate, or verify
 transaction material.
 
-When every review evidence stage completes, the account-bound DeepBook swap
-review reaches `ready_for_wallet_review` and the local review page offers a
-digest-gated byte handoff, user-controlled wallet signing, and execution-receipt
-recording.
+When every review evidence stage completes, a supported account-bound DeepBook
+or FlowX swap review reaches `ready_for_wallet_review` and the local review
+page offers a digest-gated byte handoff, user-controlled wallet signing, and
+execution-receipt recording.
 
 The MCP layer never signs, executes, or returns transaction bytes; the
 digest-verified bytes stay in the local review-server session and reach the
 user's wallet only on the page.
 
-After the wallet account is bound to a review session, the review page and `session.get_review_status` may show scoped DeepBook display-amount quote evidence and review-state checks for:
+After the wallet account is bound to a supported swap review session, the
+review page and `session.get_review_status` may show protocol-specific quote
+evidence and review-state checks for:
 
-- resolved direct pool;
+- resolved DeepBook direct pool or FlowX pinned pair;
 - raw quote evidence;
 - quote freshness;
 - derived raw min-out policy;
-- DEEP fee raw evidence;
+- protocol fee evidence, such as DeepBook DEEP fee evidence or FlowX pool-fee
+  evidence reflected in the quoted output;
 - local unsigned transaction material build when that stage completes;
 - an internal Sui transaction digest commitment bound to the stored local material when that stage completes;
 - object ownership evidence derived from stored local material and Sui owner/type reads when that stage completes.
@@ -634,9 +637,10 @@ After the wallet account is bound to a review session, the review page and `sess
   completes.
 
 When those account-bound review stages run, `reviewState.adapterLifecycle` may
-list `stageCatalogId`, `completedStages`, and `missingStages` for the DeepBook
-adapter lifecycle. `stageCatalogId` identifies the adapter-owned stage catalog;
-it is not a core lifecycle enum shared by every protocol adapter.
+list `stageCatalogId`, `completedStages`, and `missingStages` for the
+adapter-owned DeepBook or FlowX lifecycle. `stageCatalogId` identifies the
+adapter-owned stage catalog; it is not a core lifecycle enum shared by every
+protocol adapter.
 Completed stages are review progress only. If
 `transaction_material_build_or_verify` is completed, it means the local review
 server built unsigned transaction material and kept the bytes internal. If
@@ -680,14 +684,15 @@ transaction bytes, not signing data, not signing readiness, and not
 execution readiness.
 If contract assembly declines, the review returns `blocked` with
 `blockedReason: "wallet_review_contract_emit_missing"` and a failed
-`deepbook_wallet_review_contract_emit_missing` check naming the concrete
-reason. In both states, `reviewState.adapterLifecycle.missingStages` is empty
-and the human-readable review plus simulation public summaries are present as
-pre-signing review evidence. The contract-carrying state is
-`ready_for_wallet_review`; the local review page can request the byte handoff,
-which is refused unless the recomputed digest of the stored bytes equals the
-reviewed commitment. Wallet signature requests and execution remain
-unavailable in both states. The
+adapter-prefixed check such as `deepbook_wallet_review_contract_emit_missing`
+or `flowx_wallet_review_contract_emit_missing` naming the concrete reason. In
+the contract-missing blocked state, wallet signature requests and execution
+remain unavailable. In the `ready_for_wallet_review` state,
+`reviewState.adapterLifecycle.missingStages` is empty and the human-readable
+review plus simulation public summaries are present as pre-signing review
+evidence. The local review page can request the byte handoff, which is refused
+unless the recomputed digest of the stored bytes equals the reviewed
+commitment. The
 `producer_stage_missing` reason applies only when
 `reviewState.adapterLifecycle.missingStages` lists at least one missing review
 evidence producer stage, and public projections for missing stages must not be
@@ -697,7 +702,12 @@ blocked or refresh reason. The fallback
 `adapter_not_implemented` state still applies when no review evidence source is
 available.
 
-Those checks and lifecycle stages are pre-signing review evidence only. They do not expose transaction bytes, signing data, signing readiness, route recommendations, funding readiness, or a wallet-review-ready state.
+Those checks and lifecycle stages are pre-signing review evidence only. They do
+not expose transaction bytes, signing data, signing readiness, route
+recommendations, funding readiness, or execution readiness. Only a
+`ready_for_wallet_review` state with an emitted wallet review contract lets the
+local review page request the digest-gated byte handoff, and that handoff is
+not an MCP response.
 
 Do not describe those checks as wallet readiness, signing readiness, route quality, or execution safety. Mention local transaction material only when `transaction_material_build_or_verify` is completed, and state that bytes remain internal. Mention digest commitment only when `digest_commitment` is completed, and state that it is an internal binding to stored material, not a public signing artifact.
 

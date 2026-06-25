@@ -28,7 +28,7 @@ export function registerExecutionResultTools(server: McpServer, deps: McpServerD
     TOOL_NAMES.sessionGetExecutionResult,
     {
       title: "Get execution polling result",
-      description: "Return execution polling status and any recorded result. No result exists until a signable adapter exists.",
+      description: "Return execution polling status and any recorded result for a local review session.",
       inputSchema: { reviewSessionId: z.string().min(1) },
       outputSchema: successOutputSchema({
         reviewSessionId: z.string(),

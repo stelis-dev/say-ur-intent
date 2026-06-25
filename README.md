@@ -54,7 +54,7 @@ choices remain with the user, and what claims are unsupported.
 
 Say Ur Intent is one product, but it must be read at three distinct layers. Do not collapse them:
 
-- **Implemented today:** Sui mainnet evidence, local review, and signable review adapters for the DeepBook and FlowX swap routes. The account-bound DeepBook swap review builds unsigned transaction material into a local in-process material store, internally binds a Sui transaction digest to that stored material, derives object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts, emits a schema-validated wallet review contract with a PTB visualization on a `ready_for_wallet_review` state, and serves a digest-gated byte handoff to the same-machine review page for user-controlled wallet signing with execution receipts recorded on the session. MCP responses do not contain transaction bytes, signing data, or signing readiness.
+- **Implemented today:** Sui mainnet evidence, local review, and signable review adapters for the DeepBook and FlowX swap routes. The account-bound DeepBook and FlowX swap reviews build unsigned transaction material into a local in-process material store, internally bind a Sui transaction digest to that stored material, derive object ownership, quote/policy provenance, human-readable review facts, review-time simulation evidence, and PTB visualization evidence from the same private review artifacts, emit a schema-validated wallet review contract on a `ready_for_wallet_review` state, and serve a digest-gated byte handoff to the same-machine review page for user-controlled wallet signing with execution receipts recorded on the session. MCP responses do not contain transaction bytes, signing data, or signing readiness.
 - **Deliberately sequenced next (planned order, ships only after verified review):** server-side receipt verification against chain state, further protocol adapters beyond DeepBook and FlowX registered through the descriptor contract (protocol names appear only after a concrete support decision), and richer local analysis views. Each step ships only from independently built or verified transaction material with a human-readable local review.
 - **Never (permanently unsupported at every layer):** no private-key custody, no MCP or AI autonomous execution, no forwarding of opaque external transaction bytes to a wallet, no silent settlement-token or route choice, no fiat cash-out, no P&L, no peg guarantee.
 
@@ -77,12 +77,14 @@ Wallet signing is user-controlled on the local review page after a
 digest-gated handoff; MCP responses never request signatures, provide signing
 readiness, or execute payments.
 
-Current review sessions are local evidence-review records only. DeepBook review
-state may show that local transaction material was built, internally bound to a
-Sui transaction digest, and used to derive object ownership, quote/policy
-provenance, human-readable review facts, and review-time simulation evidence.
-Review sessions do not contain
-public transaction bytes, signing requests, or executable wallet actions.
+Current review sessions are local evidence-review records only. DeepBook and
+FlowX review state may show that local transaction material was built,
+internally bound to a Sui transaction digest, and used to derive object
+ownership, quote/policy provenance, human-readable review facts,
+review-time simulation evidence, and PTB visualization evidence. Review
+sessions do not contain public transaction bytes, signing requests, or
+executable wallet actions; the dedicated same-machine handoff endpoint is the
+only transaction-byte path and is gated by recomputed digest equality.
 
 The current release flow is:
 
@@ -144,7 +146,7 @@ signing fields, recognized Sui private-key strings, valid English BIP39
 mnemonic phrases, obvious sensitive markers, and suspicious raw secret-like
 payloads before storage, and records why the review is non-signable.
 
-Blocked signing is session-scoped: a review session stays blocked while
+Blocked review state is session-scoped: a review session stays blocked while
 required review evidence is missing for that session (for example
 `wallet_review_contract_emit_missing`). When an account-bound supported swap
 review completes local transaction material, digest binding, object ownership,

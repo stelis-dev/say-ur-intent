@@ -214,8 +214,12 @@ Do not set a target source for an agent-inferred target. Do not count non-group 
 
 `Prepare selling 10 SUI.`
 Use `action.prepare_sui_action_review`.
-Return the review URL and blocked signing boundary.
-Do not return transaction bytes, signing readiness, or execution claims.
+Return the review URL and explain that the MCP response contains no transaction
+bytes, signing data, or signing readiness. If the account-bound review reaches
+`ready_for_wallet_review`, the local review page can request the digest-gated
+handoff and the user signs in their own wallet.
+Do not return transaction bytes, signing readiness, or execution claims from
+the MCP answer.
 
 `Tell me this review session status.`
 Use `session.get_review_status` or `read.get_review_session_detail`.
@@ -229,8 +233,12 @@ Do not call it login, permanent authorization, or transaction permission.
 
 `Can I sign now?`
 Use review status only.
-Explain that wallet signing remains blocked in the current release and is deliberately sequenced later.
-Do not use safe-to-sign language or transaction material.
+If the returned review status is `ready_for_wallet_review` with an emitted
+wallet review contract, say that the local review page can request the
+digest-gated handoff and the user must approve in their own wallet. If the
+review is blocked, explain the returned missing or failed review evidence.
+Do not use safe-to-sign language, do not return transaction material, and do
+not describe MCP output as signing data.
 
 `Cancel the transaction I just sent.`
 Unsupported.

@@ -677,7 +677,7 @@ describe("fresh-client answer regression", () => {
     // pollingHint) or live in sayurintent://docs/agent-behavior. Keep
     // SERVER_INSTRUCTIONS short and non-duplicative.
     const responseSurfaceRulesThatMustNotReturnAsProse: RegExp[] = [
-      /DeepBook signing is blocked in this release/i,
+      /DeepBook signing (?:is|remains) blocked in (?:this|the current) release/i,
       /doNotCombineWithPaymentAnswer: true as the rule for the conclusion/i,
       /Wallet asset reads are current coin-balance snapshots only/i,
       /Sui activity gas raw fields use MIST\. Prefer/i,

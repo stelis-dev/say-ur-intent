@@ -16,10 +16,10 @@ Target repository structure:
   evidence-boundary primitives.
 - `src/adapters/`: protocol-specific adapter implementations. Shared review,
   material, ownership, simulation, acceptance, and handoff contracts should stay
-  protocol-agnostic unless a concrete implementation proves otherwise. The
-  first signable implementation is expected to be DeepBook-related, but it must
-  be built as the first protocol adapter rather than as a custom-only product
-  path.
+  protocol-agnostic unless a concrete implementation proves otherwise. DeepBook
+  and FlowX are the current signable swap adapter implementations; additional
+  protocol support must be added through adapter contracts rather than a
+  custom-only product path.
 - `src/mcp/`: MCP server and tool definitions.
 - `src/review-server/`: local review HTTP server and session APIs.
 - `review-app/`: static review and signing web app.
