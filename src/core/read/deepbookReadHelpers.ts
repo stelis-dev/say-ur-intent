@@ -10,11 +10,13 @@ import {
   DEEPBOOK_ACCOUNT_QUANTITY_KIND,
   DEEPBOOK_MID_PRICE_SEMANTICS_KIND,
   DEEPBOOK_QUOTE_QUANTITY_KIND,
+  DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND,
   MAX_DEEPBOOK_ACCOUNT_OPEN_ORDER_IDS,
   ReadServiceInputError,
   type DeepbookAccountInventorySummary,
   type DeepbookAccountSummary,
   type DeepbookDisplayQuantitySemantics,
+  type DeepbookUsdcPriceHistoryQuantitySemantics,
   type DeepbookMidPriceSemantics,
   type DeepbookDisplayQuote,
   type DeepbookRawQuoteReturnValues,
@@ -131,6 +133,43 @@ export function deepbookQuoteQuantitySemantics(
       "external_market_lookup",
       "usd_peg_assumption",
       "bank_cash_out_estimate",
+      "profit_or_pnl",
+      "cost_basis"
+    ]
+  };
+}
+
+export function deepbookUsdcPriceHistoryQuantitySemantics(): DeepbookUsdcPriceHistoryQuantitySemantics {
+  return {
+    kind: DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND,
+    allowedUse: "observed_deepbook_usdc_fill_candle_history",
+    source: "external_precomputed_deepbook_usdc_index",
+    barIntervalMinutes: 10,
+    quoteAsset: "USDC",
+    priceConvention: "USDC_PER_BASE",
+    usdcIsFiatUsd: false,
+    usdPegGuaranteeAvailable: false,
+    chainRecomputedBySayUrIntent: false,
+    liveQuoteAvailable: false,
+    historicalMidPriceAvailable: false,
+    globalMarketPriceAvailable: false,
+    fiatUsdCashOutAvailable: false,
+    routeRecommendationAvailable: false,
+    transactionBuildingAvailable: false,
+    signingReadinessAvailable: false,
+    profitAndLossAvailable: false,
+    costBasisAvailable: false,
+    notFor: [
+      "fiat_usd_cash_out",
+      "usd_peg_assumption",
+      "global_market_price",
+      "historical_mid_price",
+      "live_quote",
+      "route_recommendation",
+      "best_route",
+      "transaction_building",
+      "signing_data",
+      "signing_readiness",
       "profit_or_pnl",
       "cost_basis"
     ]

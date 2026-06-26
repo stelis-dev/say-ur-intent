@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeCoinType } from "./coinMetadata.js";
 
 export const DEEPBOOK_USDC_INDEX_REPOSITORY_URL = "https://github.com/stelis-dev/deepbook-usdc-index";
 export const DEFAULT_DEEPBOOK_USDC_INDEX_BASE_URL =
@@ -40,7 +41,14 @@ const isoDateStringSchema = z.string().refine((value) => {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }, "expected an ISO timestamp string");
 
-const coinTypeSchema = z.string().min(1);
+const coinTypeSchema = z.string().min(1).refine((value) => {
+  try {
+    normalizeCoinType(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "expected a valid Sui coin type");
 const decimalStringSchema = z.string().regex(DECIMAL_STRING_PATTERN);
 const nonNegativeIntegerStringSchema = z.string().regex(NON_NEGATIVE_INTEGER_STRING_PATTERN);
 

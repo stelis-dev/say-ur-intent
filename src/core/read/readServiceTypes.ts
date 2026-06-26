@@ -13,6 +13,14 @@ import {
   type CoinMetadataCache,
   type WalletBalanceWithUnit
 } from "./coinMetadata.js";
+import type {
+  DeepbookUsdcIndexBar,
+  DeepbookUsdcIndexFetchSource,
+  DeepbookUsdcIndexPair,
+  DeepbookUsdcIndexRegistry,
+  DeepbookUsdcIndexWeeklyBarsResult,
+  UtcIsoWeek
+} from "./deepbookUsdcIndexSource.js";
 import type { UserAnswerUse } from "../evidence/userAnswerUse.js";
 
 export type QuoteDirection = "base_to_quote" | "quote_to_base";
@@ -26,10 +34,12 @@ export const WALLET_BALANCE_QUANTITY_KIND = "sui_wallet_balance_snapshot";
 export const DEEPBOOK_ACCOUNT_QUANTITY_KIND = "deepbook_display_number";
 export const DEEPBOOK_QUOTE_QUANTITY_KIND = "deepbook_quote_display_amount";
 export const DEEPBOOK_RAW_QUOTE_QUANTITY_KIND = "deepbook_quote_raw_u64";
+export const DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND = "deepbook_usdc_indexed_10m_bars";
 export const INTENT_EVIDENCE_QUANTITY_KIND = "sui_intent_evidence_report";
 export const SETTLEMENT_ASSET_GROUP_PARITY_QUANTITY_KIND = "settlement_asset_group_parity_snapshot";
 export const SUI_USD_SETTLEMENT_ASSET_GROUP_ID = "SUI_USD_SETTLEMENT_ASSETS";
 export const MAX_WALLET_BALANCE_SCAN_PAGES = 20;
+export const MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS = 1_008;
 // Internal placeholder for sender-independent DeepBook market reads. The pinned Sui gRPC
 // resolver uses the same dummy sender when no transaction sender is provided.
 export const DEFAULT_DEEPBOOK_SIMULATION_SENDER =
@@ -944,6 +954,224 @@ export type DeepbookAccountInventorySummary = {
   openOrderIdsTruncated?: boolean | undefined;
 };
 
+export type DeepbookUsdcIndexSourceClient = {
+  fetchRegistry(): Promise<{
+    source: DeepbookUsdcIndexFetchSource;
+    registry: DeepbookUsdcIndexRegistry;
+  }>;
+  fetchWeeklyBars(pairId: string, week: UtcIsoWeek): Promise<DeepbookUsdcIndexWeeklyBarsResult>;
+};
+
+export type DeepbookUsdcPriceHistorySelector =
+  | {
+      kind: "pair_id";
+      value: string;
+    }
+  | {
+      kind: "asset_symbol";
+      value: string;
+    }
+  | {
+      kind: "coin_type";
+      value: string;
+    };
+
+export type DeepbookUsdcPriceHistoryInput = {
+  pairId?: string | undefined;
+  assetSymbol?: string | undefined;
+  coinType?: string | undefined;
+  start: string;
+  end: string;
+};
+
+export type DeepbookUsdcPriceHistoryRange = {
+  start: string;
+  end: string;
+  timeZone: "UTC";
+  barIntervalMinutes: 10;
+  maxBars: typeof MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS;
+  requestedBarSlots: number;
+};
+
+export type DeepbookUsdcPriceHistoryQuantitySemantics = {
+  kind: typeof DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND;
+  allowedUse: "observed_deepbook_usdc_fill_candle_history";
+  source: "external_precomputed_deepbook_usdc_index";
+  barIntervalMinutes: 10;
+  quoteAsset: "USDC";
+  priceConvention: "USDC_PER_BASE";
+  usdcIsFiatUsd: false;
+  usdPegGuaranteeAvailable: false;
+  chainRecomputedBySayUrIntent: false;
+  liveQuoteAvailable: false;
+  historicalMidPriceAvailable: false;
+  globalMarketPriceAvailable: false;
+  fiatUsdCashOutAvailable: false;
+  routeRecommendationAvailable: false;
+  transactionBuildingAvailable: false;
+  signingReadinessAvailable: false;
+  profitAndLossAvailable: false;
+  costBasisAvailable: false;
+  notFor: [
+    "fiat_usd_cash_out",
+    "usd_peg_assumption",
+    "global_market_price",
+    "historical_mid_price",
+    "live_quote",
+    "route_recommendation",
+    "best_route",
+    "transaction_building",
+    "signing_data",
+    "signing_readiness",
+    "profit_or_pnl",
+    "cost_basis"
+  ];
+};
+
+export type DeepbookUsdcPriceHistoryUnsupportedClaim =
+  | "fiat_usd_cash_out"
+  | "usd_peg_assumption"
+  | "global_market_price"
+  | "historical_mid_price"
+  | "live_quote"
+  | "route_recommendation"
+  | "best_route"
+  | "transaction_building"
+  | "signing_readiness"
+  | "profit_or_pnl"
+  | "cost_basis"
+  | "independent_chain_recomputation";
+
+export type DeepbookUsdcPriceHistoryPair = {
+  pairId: string;
+  poolId: string;
+  baseAsset: DeepbookUsdcIndexPair["baseAsset"];
+  quoteAsset: {
+    symbol: "USDC";
+    coinType: string;
+    decimals: 6;
+  };
+  priceConvention: "USDC_PER_BASE";
+  barIntervalMinutes: 10;
+};
+
+export type DeepbookUsdcPriceHistoryFileReference = {
+  week: UtcIsoWeek;
+  path: string;
+  url: string;
+};
+
+export type DeepbookUsdcPriceHistoryFoundFileReference = DeepbookUsdcPriceHistoryFileReference & {
+  fetchedAt: string;
+};
+
+export type DeepbookUsdcPriceHistorySource = {
+  kind: "external_precomputed_deepbook_usdc_index";
+  repositoryUrl: string;
+  baseUrl: string;
+  sourceRef: string;
+  registry: {
+    path: string;
+    url: string;
+    fetchedAt: string;
+  };
+  weeklyFiles: {
+    requested: DeepbookUsdcPriceHistoryFileReference[];
+    found: DeepbookUsdcPriceHistoryFoundFileReference[];
+    missing: DeepbookUsdcPriceHistoryFileReference[];
+  };
+  chainRecomputedBySayUrIntent: false;
+};
+
+export type DeepbookUsdcPriceHistoryBar = DeepbookUsdcIndexBar;
+
+export type DeepbookUsdcPriceHistoryResponseSummary = {
+  questionKind: "deepbook_usdc_price_history";
+  evidenceKind: "external_precomputed_deepbook_usdc_index_10m_candles";
+  sourceStatement: "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.";
+  usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.";
+  candleMeaning: "Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket.";
+  excludedFromConclusion: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+};
+
+export type DeepbookUsdcPriceHistoryCoverageStatus =
+  | "complete"
+  | "partial_missing_week_files"
+  | "contains_missing_bars"
+  | "no_bars_in_range";
+
+export type DeepbookUsdcPriceHistoryUnsupportedPairReason =
+  | "selector_not_in_index_registry"
+  | "selector_resolves_to_multiple_enabled_pairs";
+
+export type DeepbookUsdcPriceHistorySourceUnavailableReason =
+  | "index_source_not_configured"
+  | "registry_unavailable"
+  | "weekly_file_fetch_failed"
+  | "weekly_files_missing";
+
+export type DeepbookUsdcPriceHistorySummary =
+  | {
+      status: "ok";
+      fetchedAt: string;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      pair: DeepbookUsdcPriceHistoryPair;
+      coverageStatus: DeepbookUsdcPriceHistoryCoverageStatus;
+      barCount: number;
+      bars: DeepbookUsdcPriceHistoryBar[];
+      source: DeepbookUsdcPriceHistorySource;
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "unsupported_pair";
+      fetchedAt: string;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      reason: DeepbookUsdcPriceHistoryUnsupportedPairReason;
+      matchingPairIds: string[];
+      availablePairIds: string[];
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "unsupported_range";
+      fetchedAt: string;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      reason: "requested_range_exceeds_max_bars";
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "source_unavailable";
+      fetchedAt: string;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      reason: DeepbookUsdcPriceHistorySourceUnavailableReason;
+      pair?: DeepbookUsdcPriceHistoryPair | undefined;
+      source?: Partial<DeepbookUsdcPriceHistorySource> | undefined;
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    };
+
 export type DeepBookFactoryOptions = {
   balanceManagers?: Record<string, BalanceManager>;
 };
@@ -982,6 +1210,7 @@ export type SuiReadServiceOptions = {
   coinMetadataTtlMs?: number;
   deepbookCoins?: DeepBookCoinRegistry;
   flowxQuoteClient?: FlowxQuoteClient;
+  deepbookUsdcIndexSource?: DeepbookUsdcIndexSourceClient | undefined;
 };
 
 export const FLOWX_SWAP_QUOTE_QUANTITY_KIND = "flowx_swap_quote";

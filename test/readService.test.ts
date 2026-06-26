@@ -8,8 +8,15 @@ import {
   listDeepbookTokenRegistry,
   type DeepBookCoinRegistry,
   type DeepBookReadClient,
+  type DeepbookUsdcIndexSourceClient,
   type IntentEvidenceSummary
 } from "../src/core/read/readService.js";
+import {
+  DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
+  type DeepbookUsdcIndexRegistry,
+  type DeepbookUsdcIndexWeeklyBars,
+  type UtcIsoWeek
+} from "../src/core/read/deepbookUsdcIndexSource.js";
 import {
   decimalsFromScalar,
   formatRawAmount,
@@ -47,6 +54,7 @@ function createService(
     coinMetadataCache?: CoinMetadataCache;
     coinMetadataTtlMs?: number;
     deepbookCoins?: DeepBookCoinRegistry;
+    deepbookUsdcIndexSource?: DeepbookUsdcIndexSourceClient;
   } = {}
 ) {
   const deepbook: DeepBookReadClient = {
@@ -106,6 +114,7 @@ function createService(
     coinMetadataCache: options.coinMetadataCache ?? new MemoryCoinMetadataCache(),
     ...(options.coinMetadataTtlMs === undefined ? {} : { coinMetadataTtlMs: options.coinMetadataTtlMs }),
     ...(options.deepbookCoins === undefined ? {} : { deepbookCoins: options.deepbookCoins }),
+    ...(options.deepbookUsdcIndexSource === undefined ? {} : { deepbookUsdcIndexSource: options.deepbookUsdcIndexSource }),
     now,
     deepbookFactory: () => deepbook,
     client: {
@@ -155,6 +164,188 @@ function deepbookCoinsWithInvalidSuiScalar(): DeepBookCoinRegistry {
     ...coins,
     SUI: { ...(sui as Coin), scalar: 12 }
   };
+}
+
+function createDeepbookUsdcIndexSourceFixture(options: {
+  registry?: DeepbookUsdcIndexRegistry | undefined;
+  weeklyResults?: Record<string, Awaited<ReturnType<DeepbookUsdcIndexSourceClient["fetchWeeklyBars"]>>> | undefined;
+} = {}): {
+  source: DeepbookUsdcIndexSourceClient;
+  calls: {
+    registry: number;
+    weekly: Array<{ pairId: string; week: UtcIsoWeek }>;
+  };
+} {
+  const calls: { registry: number; weekly: Array<{ pairId: string; week: UtcIsoWeek }> } = {
+    registry: 0,
+    weekly: []
+  };
+  return {
+    calls,
+    source: {
+      async fetchRegistry() {
+        calls.registry += 1;
+        return {
+          source: indexSource("registry/pairs.json"),
+          registry: options.registry ?? registryWithPairs([indexPairFixture()])
+        };
+      },
+      async fetchWeeklyBars(pairId, week) {
+        calls.weekly.push({ pairId, week });
+        const key = `${pairId}:${week.weekYear}:${week.week}`;
+        return options.weeklyResults?.[key] ?? foundWeeklyResult(pairId, week, weeklyBarsFixtureForIndex(pairId, week));
+      }
+    }
+  };
+}
+
+function registryWithPairs(pairs: DeepbookUsdcIndexRegistry["pairs"]): DeepbookUsdcIndexRegistry {
+  return {
+    schemaVersion: 1,
+    network: "sui:mainnet",
+    quoteAsset: {
+      symbol: "USDC",
+      coinType: DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
+      decimals: 6,
+      disclaimer: "USDC is not fiat USD and this index does not guarantee a USDC/USD peg."
+    },
+    eventSources: {
+      orderInfoPackageIds: ["0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809"],
+      orderFilledEventTypes: [
+        "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809::order_info::OrderFilled"
+      ]
+    },
+    pairs
+  };
+}
+
+function indexPairFixture(
+  id = "SUI_USDC",
+  symbol = "SUI",
+  coinType = "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI"
+): DeepbookUsdcIndexRegistry["pairs"][number] {
+  return {
+    id,
+    enabled: true,
+    poolId: id === "SUI2_USDC"
+      ? "0x1111111111111111111111111111111111111111111111111111111111111111"
+      : "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+    baseAsset: {
+      symbol,
+      coinType,
+      decimals: 9
+    },
+    quoteAsset: "USDC",
+    priceConvention: "USDC_PER_BASE",
+    collection: {
+      barIntervalMinutes: 10,
+      rollingRetentionYears: 2
+    }
+  };
+}
+
+function foundWeeklyResult(pairId: string, week: UtcIsoWeek, weeklyBars: DeepbookUsdcIndexWeeklyBars) {
+  return {
+    status: "found" as const,
+    source: indexSource(weeklyPath(pairId, week)),
+    weeklyBars
+  };
+}
+
+function missingWeeklyResult(pairId: string, week: UtcIsoWeek) {
+  const source = indexSource(weeklyPath(pairId, week));
+  const { fetchedAt: _fetchedAt, ...withoutFetchedAt } = source;
+  return {
+    status: "missing_file" as const,
+    source: withoutFetchedAt,
+    httpStatus: 404 as const
+  };
+}
+
+function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUsdcIndexWeeklyBars {
+  return {
+    schemaVersion: 1,
+    pairId,
+    week: {
+      weekYear: week.weekYear,
+      week: week.week,
+      startsAt: "2026-06-22T00:00:00.000Z",
+      endsAt: "2026-06-29T00:00:00.000Z",
+      timeZone: "UTC"
+    },
+    barIntervalMinutes: 10,
+    priceConvention: "USDC_PER_BASE",
+    disclaimer: "USDC is not fiat USD and this index does not guarantee a USDC/USD peg.",
+    bars: [
+      {
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z",
+        status: "filled",
+        eventCount: 257,
+        open: "0.69507",
+        high: "0.69672",
+        low: "0.69287",
+        close: "0.69316",
+        baseVolumeRaw: "146148100000000",
+        quoteVolumeRaw: "101444802158",
+        raw: `data/${pairId}/raw/2026/W26/2026-06-26T1650Z.jsonl.gz`
+      },
+      {
+        start: "2026-06-26T17:00:00.000Z",
+        end: "2026-06-26T17:10:00.000Z",
+        status: "empty",
+        eventCount: 0,
+        open: null,
+        high: null,
+        low: null,
+        close: null,
+        baseVolumeRaw: "0",
+        quoteVolumeRaw: "0",
+        raw: null
+      },
+      {
+        start: "2026-06-26T17:10:00.000Z",
+        end: "2026-06-26T17:20:00.000Z",
+        status: "missing",
+        eventCount: 0,
+        open: null,
+        high: null,
+        low: null,
+        close: null,
+        baseVolumeRaw: "0",
+        quoteVolumeRaw: "0",
+        raw: null
+      },
+      {
+        start: "2026-06-26T17:20:00.000Z",
+        end: "2026-06-26T17:30:00.000Z",
+        status: "filled",
+        eventCount: 247,
+        open: "0.69604",
+        high: "0.69797",
+        low: "0.69495",
+        close: "0.69734",
+        baseVolumeRaw: "124853000000000",
+        quoteVolumeRaw: "86921414432",
+        raw: `data/${pairId}/raw/2026/W26/2026-06-26T1720Z.jsonl.gz`
+      }
+    ]
+  };
+}
+
+function indexSource(path: string) {
+  return {
+    repositoryUrl: "https://github.com/stelis-dev/deepbook-usdc-index",
+    baseUrl: "https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main",
+    sourceRef: "test-index-ref",
+    path,
+    url: `https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main/${path}`,
+    fetchedAt: "2026-06-27T00:00:00.000Z"
+  };
+}
+
+function weeklyPath(pairId: string, week: UtcIsoWeek): string {
+  return `data/${pairId}/bars/${week.weekYear}/W${week.week.toString().padStart(2, "0")}.json`;
 }
 
 async function expectReadServiceCacheError(promise: Promise<unknown>, operation: "read" | "write") {
@@ -1942,6 +2133,254 @@ describe("SuiReadService", () => {
         ])
       }
     });
+  });
+
+  it("returns indexed DeepBook USDC history while preserving range filtering and bar statuses", async () => {
+    const { source, calls } = createDeepbookUsdcIndexSourceFixture();
+    const result = await createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({
+      assetSymbol: "SUI",
+      start: "2026-06-26T16:50:00.000Z",
+      end: "2026-06-26T17:20:00.000Z"
+    });
+
+    expect(calls.registry).toBe(1);
+    expect(calls.weekly).toEqual([{ pairId: "SUI_USDC", week: { weekYear: 2026, week: 26 } }]);
+    expect(result).toMatchObject({
+      status: "ok",
+      requested: {
+        selector: { kind: "asset_symbol", value: "SUI" },
+        range: {
+          start: "2026-06-26T16:50:00.000Z",
+          end: "2026-06-26T17:20:00.000Z",
+          timeZone: "UTC",
+          barIntervalMinutes: 10,
+          maxBars: 1008,
+          requestedBarSlots: 3
+        }
+      },
+      pair: {
+        pairId: "SUI_USDC",
+        poolId: "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+        quoteAsset: {
+          symbol: "USDC",
+          coinType: DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
+          decimals: 6
+        },
+        priceConvention: "USDC_PER_BASE",
+        barIntervalMinutes: 10
+      },
+      coverageStatus: "contains_missing_bars",
+      barCount: 3,
+      source: {
+        kind: "external_precomputed_deepbook_usdc_index",
+        repositoryUrl: "https://github.com/stelis-dev/deepbook-usdc-index",
+        sourceRef: "test-index-ref",
+        weeklyFiles: {
+          requested: [{ week: { weekYear: 2026, week: 26 }, path: "data/SUI_USDC/bars/2026/W26.json" }],
+          found: [{ week: { weekYear: 2026, week: 26 }, path: "data/SUI_USDC/bars/2026/W26.json" }],
+          missing: []
+        },
+        chainRecomputedBySayUrIntent: false
+      },
+      responseSummary: {
+        sourceStatement:
+          "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.",
+        usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+      },
+      quantitySemantics: {
+        allowedUse: "observed_deepbook_usdc_fill_candle_history",
+        quoteAsset: "USDC",
+        usdcIsFiatUsd: false,
+        usdPegGuaranteeAvailable: false,
+        chainRecomputedBySayUrIntent: false,
+        routeRecommendationAvailable: false,
+        signingReadinessAvailable: false
+      },
+      userAnswerUse: {
+        canAnswer: expect.arrayContaining(["observed_deepbook_usdc_10m_candle_history_from_external_index"]),
+        cannotAnswer: expect.arrayContaining(["fiat_usd_cash_out", "usd_peg_assumption", "signing_data_or_readiness"])
+      },
+      unsupportedClaims: expect.arrayContaining([
+        "fiat_usd_cash_out",
+        "usd_peg_assumption",
+        "route_recommendation",
+        "signing_readiness",
+        "profit_or_pnl",
+        "cost_basis",
+        "independent_chain_recomputation"
+      ])
+    });
+    if (result.status !== "ok") {
+      throw new Error("expected ok history result");
+    }
+    expect(result.bars.map((bar) => bar.status)).toEqual(["filled", "empty", "missing"]);
+    expect(result.bars.map((bar) => bar.start)).toEqual([
+      "2026-06-26T16:50:00.000Z",
+      "2026-06-26T17:00:00.000Z",
+      "2026-06-26T17:10:00.000Z"
+    ]);
+    expect(result.responseSummary.usdcDisclaimer).toContain("not fiat USD");
+    expect(result.responseSummary.usdcDisclaimer).toContain("not a USDC/USD peg guarantee");
+  });
+
+  it("resolves indexed DeepBook USDC history by pair id and coin type", async () => {
+    const byPair = createDeepbookUsdcIndexSourceFixture();
+    await expect(
+      createService({ deepbookUsdcIndexSource: byPair.source }).getDeepbookUsdcPriceHistory({
+        pairId: "sui_usdc",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "ok",
+      requested: { selector: { kind: "pair_id", value: "SUI_USDC" } },
+      pair: { pairId: "SUI_USDC" }
+    });
+
+    const byCoinType = createDeepbookUsdcIndexSourceFixture();
+    await expect(
+      createService({ deepbookUsdcIndexSource: byCoinType.source }).getDeepbookUsdcPriceHistory({
+        coinType: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "ok",
+      requested: { selector: { kind: "coin_type" } },
+      pair: { pairId: "SUI_USDC" }
+    });
+  });
+
+  it("returns explicit unsupported pair statuses without fetching weekly files", async () => {
+    const missing = createDeepbookUsdcIndexSourceFixture();
+    await expect(
+      createService({ deepbookUsdcIndexSource: missing.source }).getDeepbookUsdcPriceHistory({
+        assetSymbol: "UNKNOWN",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "unsupported_pair",
+      reason: "selector_not_in_index_registry",
+      matchingPairIds: [],
+      availablePairIds: ["SUI_USDC"]
+    });
+    expect(missing.calls.weekly).toEqual([]);
+
+    const ambiguous = createDeepbookUsdcIndexSourceFixture({
+      registry: registryWithPairs([
+        indexPairFixture("SUI_USDC", "SUI", "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI"),
+        indexPairFixture("SUI2_USDC", "SUI", "0x9999999999999999999999999999999999999999999999999999999999999999::sui::SUI")
+      ])
+    });
+    await expect(
+      createService({ deepbookUsdcIndexSource: ambiguous.source }).getDeepbookUsdcPriceHistory({
+        assetSymbol: "SUI",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "unsupported_pair",
+      reason: "selector_resolves_to_multiple_enabled_pairs",
+      matchingPairIds: ["SUI_USDC", "SUI2_USDC"]
+    });
+    expect(ambiguous.calls.weekly).toEqual([]);
+  });
+
+  it("fetches every touched UTC ISO week and preserves partially missing week files", async () => {
+    const week26 = { weekYear: 2026, week: 26 };
+    const week27 = { weekYear: 2026, week: 27 };
+    const week26Bars = weeklyBarsFixtureForIndex("SUI_USDC", week26);
+    const { source, calls } = createDeepbookUsdcIndexSourceFixture({
+      weeklyResults: {
+        "SUI_USDC:2026:26": foundWeeklyResult("SUI_USDC", week26, {
+          ...week26Bars,
+          bars: [
+            {
+              ...week26Bars.bars[0]!,
+              start: "2026-06-28T23:50:00.000Z",
+              end: "2026-06-29T00:00:00.000Z",
+              raw: "data/SUI_USDC/raw/2026/W26/2026-06-28T2350Z.jsonl.gz"
+            }
+          ]
+        }),
+        "SUI_USDC:2026:27": missingWeeklyResult("SUI_USDC", week27)
+      }
+    });
+
+    const result = await createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({
+      pairId: "SUI_USDC",
+      start: "2026-06-28T23:50:00.000Z",
+      end: "2026-06-29T00:10:00.000Z"
+    });
+
+    expect(calls.weekly).toEqual([
+      { pairId: "SUI_USDC", week: week26 },
+      { pairId: "SUI_USDC", week: week27 }
+    ]);
+    expect(result).toMatchObject({
+      status: "ok",
+      coverageStatus: "partial_missing_week_files",
+      barCount: 1,
+      source: {
+        weeklyFiles: {
+          requested: [
+            { path: "data/SUI_USDC/bars/2026/W26.json" },
+            { path: "data/SUI_USDC/bars/2026/W27.json" }
+          ],
+          found: [{ path: "data/SUI_USDC/bars/2026/W26.json" }],
+          missing: [{ path: "data/SUI_USDC/bars/2026/W27.json" }]
+        }
+      }
+    });
+    if (result.status !== "ok") {
+      throw new Error("expected ok history result");
+    }
+    expect(result.bars.map((bar) => bar.start)).toEqual(["2026-06-28T23:50:00.000Z"]);
+  });
+
+  it("returns source-unavailable when requested weekly files are missing", async () => {
+    const { source } = createDeepbookUsdcIndexSourceFixture({
+      weeklyResults: {
+        "SUI_USDC:2026:26": missingWeeklyResult("SUI_USDC", { weekYear: 2026, week: 26 })
+      }
+    });
+
+    await expect(
+      createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({
+        pairId: "SUI_USDC",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "source_unavailable",
+      reason: "weekly_files_missing",
+      pair: { pairId: "SUI_USDC" },
+      source: {
+        weeklyFiles: {
+          requested: [{ path: "data/SUI_USDC/bars/2026/W26.json" }],
+          found: [],
+          missing: [{ path: "data/SUI_USDC/bars/2026/W26.json" }]
+        }
+      }
+    });
+  });
+
+  it("returns unsupported-range before reading the index source", async () => {
+    const { source, calls } = createDeepbookUsdcIndexSourceFixture();
+    const result = await createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({
+      pairId: "SUI_USDC",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-06-09T00:00:00.000Z"
+    });
+
+    expect(result).toMatchObject({
+      status: "unsupported_range",
+      reason: "requested_range_exceeds_max_bars",
+      requested: { range: { maxBars: 1008 } }
+    });
+    expect(calls.registry).toBe(0);
+    expect(calls.weekly).toEqual([]);
   });
 
   it("fails closed when DeepBook mid price is unavailable", async () => {

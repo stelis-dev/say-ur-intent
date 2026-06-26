@@ -9,7 +9,7 @@ import {
   deepbookUsdcIndexWeeklyBarsSchema,
   normalizeDeepbookUsdcIndexBaseUrl,
   utcIsoWeekFromDate
-} from "../src/runtime/deepbookUsdcIndexSource.js";
+} from "../src/core/read/deepbookUsdcIndexSource.js";
 
 const fetchedAt = new Date("2026-06-27T00:00:00.000Z");
 
@@ -125,6 +125,18 @@ describe("DeepbookUsdcIndexSource", () => {
       deepbookUsdcIndexRegistrySchema.safeParse({
         ...registryFixture(),
         quoteAsset: { ...registryFixture().quoteAsset, coinType: "0x2::fake::USDC" }
+      }).success
+    ).toBe(false);
+
+    expect(
+      deepbookUsdcIndexRegistrySchema.safeParse({
+        ...registryFixture(),
+        pairs: [
+          {
+            ...registryFixture().pairs[0],
+            baseAsset: { ...registryFixture().pairs[0]!.baseAsset, coinType: "not-a-coin-type" }
+          }
+        ]
       }).success
     ).toBe(false);
 

@@ -301,6 +301,39 @@ export function deepbookMidPriceUserAnswerUse(): UserAnswerUse {
   };
 }
 
+export function deepbookUsdcPriceHistoryUserAnswerUse(): UserAnswerUse {
+  return {
+    canAnswer: [
+      "observed_deepbook_usdc_10m_candle_history_from_external_index",
+      "filled_empty_or_missing_bar_statuses_for_the_requested_utc_range"
+    ],
+    cannotAnswer: [
+      "fiat_usd_cash_out",
+      "usd_peg_assumption",
+      "global_market_price",
+      "historical_mid_price",
+      "live_quote",
+      "route_recommendation",
+      "best_route",
+      "transaction_building",
+      "signing_data_or_readiness",
+      "profit_or_pnl",
+      "cost_basis"
+    ],
+    answerFields: [
+      "pair",
+      "requested.range",
+      "coverageStatus",
+      "bars",
+      "source.weeklyFiles",
+      "responseSummary",
+      "unsupportedClaims"
+    ],
+    conclusionRuleFields: ["responseSummary", "quantitySemantics", "unsupportedClaims"],
+    diagnosticOnlyFields: ["source.registry", "source.repositoryUrl", "source.sourceRef"]
+  };
+}
+
 export function deepbookQuoteUserAnswerUse(summaryKind: "raw" | "display"): UserAnswerUse {
   return {
     canAnswer: [
