@@ -18,6 +18,7 @@ Tool names use dot prefixes and avoid arbitrary shell, arbitrary Move calls, and
 | `read.list_deepbook_tokens` | Implemented | Lists DeepBook mainnet tokens from pinned `@mysten/deepbook-v3` constants. |
 | `read.inspect_deepbook_orderbook` | Implemented | Uses pinned DeepBook SDK read methods over Sui gRPC simulation reads with an internal sender placeholder; `ticks` is capped at 50. |
 | `read.get_deepbook_mid_price` | Implemented | Returns a DeepBook pool mid price snapshot from pinned SDK simulation reads. |
+| `read.get_deepbook_usdc_price_history` | Implemented | Returns external precomputed DeepBook USDC 10-minute UTC candle evidence from `deepbook-usdc-index`. |
 | `read.quote_deepbook_action` | Implemented | Quotes raw integer DeepBook quantities through pinned SDK transaction builders and raw `u64` simulation return values with an internal sender placeholder. |
 | `read.quote_deepbook_display_amount` | Implemented | Converts an explicit display source amount through pinned DeepBook token units, then returns scoped display quote facts plus raw quote evidence. |
 | `read.list_flowx_pools` | Implemented | Lists pinned FlowX CLMM mainnet pools for supported pairs from the chain-verified pinned registry. |
@@ -93,6 +94,33 @@ The price is the pinned SDK `midPrice` result with `source.precision: "deepbook_
 The response includes `priceSemantics` and `userAnswerUse.cannotAnswer` for unsupported conclusions. It is a DeepBook pool snapshot, not a global market price, fiat USD cash-out estimate, external market-price conversion, USDC/USD peg assumption, quote-vs-mid slippage calculation, effective quote price, price-impact calculation, venue comparison, best-route claim, route recommendation, transaction-building input, signing data, signing readiness, P&L, or cost basis.
 
 If the SDK returns a non-positive or non-finite mid price, both `read.get_deepbook_mid_price` and `read.inspect_deepbook_orderbook` fail closed with `quote_unavailable`.
+
+`read.get_deepbook_usdc_price_history` returns observed DeepBook USDC 10-minute UTC candle evidence from the external precomputed `deepbook-usdc-index` repository.
+
+Inputs require `start` and `end` as canonical ISO 8601 UTC timestamps and exactly one selector: `pairId`, `assetSymbol`, or `coinType`.
+
+The requested range is capped at `requested.range.maxBars: 1008` ten-minute bar slots. Larger requests return `status: "unsupported_range"` with `reason: "requested_range_exceeds_max_bars"`.
+
+Supported successful responses return:
+
+- `status: "ok"`;
+- `pair` with the indexed pair id, pool id, base asset, canonical USDC quote asset, `priceConvention: "USDC_PER_BASE"`, and `barIntervalMinutes: 10`;
+- `bars`, where each returned bar has `status: "filled"`, `"empty"`, or `"missing"`;
+- `coverageStatus`, which can be `complete`, `partial_missing_week_files`, `contains_missing_bars`, or `no_bars_in_range`;
+- `source.weeklyFiles.requested`, `source.weeklyFiles.found`, and `source.weeklyFiles.missing`;
+- `quantitySemantics`, `responseSummary`, and `unsupportedClaims`.
+
+`filled` bars summarize observed DeepBook `OrderFilled` events in that UTC ten-minute bucket. `empty` and `missing` bars are not interpolated or carried forward. Missing weekly files are reported through `source.weeklyFiles.missing`; the tool does not use GitHub directory listing and does not fall back to an on-demand chain-history scan.
+
+`status: "unsupported_pair"` means the selector did not resolve to exactly one enabled pair in the index registry. `status: "source_unavailable"` means the external registry or requested weekly files were unavailable or failed validation.
+
+`quantitySemantics.kind: "deepbook_usdc_indexed_10m_bars"` and `quantitySemantics.allowedUse: "observed_deepbook_usdc_fill_candle_history"` mean this output is candle evidence only.
+
+`source.kind: "external_precomputed_deepbook_usdc_index"` and `source.chainRecomputedBySayUrIntent: false` mean Say Ur Intent read precomputed index files and did not independently recompute candle values from chain history for this response.
+
+USDC in this tool is the indexed token-denominated quote asset. It is not fiat USD and not a USDC/USD peg guarantee.
+
+This output is not a live quote, execution price, historical mid price, global market price, fiat USD cash-out estimate, external market-price conversion, USDC/USD peg assumption, route recommendation, best route, transaction-building input, signing data, signing readiness, P&L, tax evidence, cost basis, user-account transaction history, or user-account balance history.
 
 `read.quote_deepbook_action` and `read.quote_deepbook_display_amount` use the pinned DeepBook transaction builder quote functions.
 

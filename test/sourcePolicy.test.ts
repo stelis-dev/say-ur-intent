@@ -684,6 +684,12 @@ describe("source policy", () => {
 
   it("keeps DeepBook USDC price history bounded to external candle evidence", () => {
     const toolSource = readFileSync(join(process.cwd(), "src/mcp/tools/read/deepbookReadTools.ts"), "utf8");
+    const docs = [
+      "docs/AGENT_BEHAVIOR.md",
+      "docs/MCP_TOOLS.md",
+      "docs/UTILITY_INDEX.md",
+      "src/mcp/serverInfo.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
     const source = [
       "src/core/read/readService.ts",
       "src/core/read/readServiceTypes.ts",
@@ -700,6 +706,17 @@ describe("source policy", () => {
 
     expect(description).toContain("DeepBook USDC 10-minute UTC candle evidence");
     expect(description).not.toMatch(/live quote|execution price|route|best price|USD value|P&L|tax|signing readiness/i);
+    expect(docs).toMatch(/read\.get_deepbook_usdc_price_history/);
+    expect(docs).toMatch(/DeepBook USDC 10-minute UTC candle evidence|DeepBook USDC 10-minute UTC candle files|DeepBook USDC 10-minute UTC candle-history/i);
+    expect(docs).toMatch(/deepbook-usdc-index/);
+    expect(docs).toMatch(/source\.chainRecomputedBySayUrIntent:\s*false|does not independently recompute/i);
+    expect(docs).toMatch(/USDC[\s\S]{0,120}not fiat USD[\s\S]{0,120}not a USDC\/USD peg guarantee/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(live quote|historical mid price|global market price)/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(P&L|cost basis|signing readiness)/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(user-account transaction history|user-account balance history)/i);
+    expect(docs).toMatch(/unsupported_pair/);
+    expect(docs).toMatch(/unsupported_range/);
+    expect(docs).toMatch(/source_unavailable/);
     expect(source).toMatch(/read\.get_deepbook_usdc_price_history/);
     expect(source).toMatch(/external_precomputed_deepbook_usdc_index/);
     expect(source).toMatch(/observed_deepbook_usdc_fill_candle_history/);

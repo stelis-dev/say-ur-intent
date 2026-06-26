@@ -11,6 +11,7 @@ It is not the contributor rulebook and it is not enforcement. Development rules 
 | Surface | Status | Behavior |
 | --- | --- | --- |
 | Sui mainnet state reads | Current | Use read tools for supported balances, DeepBook pools, FlowX pools, token registry metadata, mid-price snapshots, orderbook context, raw-quantity quotes, and DeepBook account inventory. |
+| DeepBook USDC candle-history reads | Current external precomputed index evidence | `read.get_deepbook_usdc_price_history` reads observed DeepBook USDC 10-minute UTC candle files from `deepbook-usdc-index`. Treat it as external precomputed candle evidence, not a live quote, chain recomputation by Say Ur Intent, USD value, route choice, P&L, tax, transaction-building input, signing readiness, or user-account history. |
 | DeepBook and FlowX swap review sessions | Digest-gated handoff; user-controlled signing on the review page | A review URL can be created. The review URL displays the proposal and local review evidence. The account-bound review can build local unsigned DeepBook or FlowX swap transaction material inside the review server, internally bind a Sui transaction digest to that stored material, and derive object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts. This release does not provide a sign action, signing data, MCP-visible transaction bytes, or signing readiness. The local review page requests a digest-gated byte handoff for a `ready_for_wallet_review` state, then the user signs in their own wallet. After the page reports the signed transaction digest, the review server re-reads Sui mainnet and records normalized chain receipt evidence. Terminal review sessions can open a read-only review execution analysis page that shows the reviewed request, local review evidence, labeled session facts, and server-read chain receipt facts without adding wallet or MCP authority. |
 | External proposal review sessions | Non-signable review in the current release | `action.prepare_external_proposal_review` can create a review URL from a structured external payment or Sui action proposal. Treat the proposal as untrusted display and review context only. It does not build, verify, simulate, sign, or execute transaction material. |
 | Wallet signing | User-controlled on the local review page | MCP tools do not return signing readiness, signing data, or executable transaction bytes. Signing and submission happen only from the local review page after the digest-gated handoff; after the page reports the signed transaction digest, the review server records server-read chain receipt evidence keyed by the review session. |
@@ -59,6 +60,17 @@ For SUI price questions:
 - If the token or pool is not in the pinned DeepBook registry, or the tool returns `quote_unavailable` or `registry_miss`, say DeepBook cannot provide that price from the current registry.
 - Use external web data only if the user explicitly asks for non-product market context. Label it as outside Say Ur Intent verified state.
 - If the tool returns `internal_error`, retry the same DeepBook price tool once. Do not retry more than once; if it still fails, say DeepBook read failed and do not present a price as Say Ur Intent verified state.
+
+For DeepBook USDC candle-history questions:
+
+- Use `read.get_deepbook_usdc_price_history` only when the user asks for observed DeepBook USDC historical candles, OHLCV-like bars, or price history for a supported indexed DeepBook USDC pair.
+- Provide exactly one selector: `pairId`, `assetSymbol`, or `coinType`, plus `start` and `end` as canonical ISO 8601 UTC timestamps.
+- Answer from `bars`, `coverageStatus`, `source.weeklyFiles`, `quantitySemantics`, and `responseSummary`.
+- Describe the result as observed DeepBook USDC 10-minute UTC candle evidence read from the external precomputed `deepbook-usdc-index` repository.
+- Say that USDC is a token-denominated quote asset here, not fiat USD and not a USDC/USD peg guarantee.
+- If the tool returns `unsupported_pair`, `unsupported_range`, or `source_unavailable`, report that status and reason. Do not synthesize candles, interpolate missing bars, carry forward the previous bar, run an on-demand chain-history scan, or web-search a replacement unless the user explicitly asks for outside Say Ur Intent context.
+- Do not use this tool for live price, current mid price, execution price, global market price, USD value, cash-out value, P&L, tax, cost basis, route selection, best-price advice, transaction building, signing readiness, user-account transaction history, or user-account balance history.
+- It is not user-account transaction history and not user-account balance history.
 
 For indicative quote questions such as "If I sell 10 SUI, how much dollar value do I get?":
 
@@ -215,6 +227,7 @@ Interpret common `quantitySemantics.kind` values this way:
 
 - `sui_wallet_balance_snapshot`: current coin-balance snapshot only.
 - `sui_intent_evidence_report`: pre-transaction evidence summary only.
+- `deepbook_usdc_indexed_10m_bars`: observed DeepBook USDC 10-minute UTC candle evidence from the external precomputed index only.
 - `deepbook_display_number`: display-like account inventory only.
 
 Use quote tools only for explicit source inputs:
