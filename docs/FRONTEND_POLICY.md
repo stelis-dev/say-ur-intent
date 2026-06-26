@@ -4,19 +4,21 @@ Say Ur Intent frontend pages are local review and wallet-context surfaces. They
 exist to show server-validated facts, capture explicit wallet gestures, and
 keep AI reasoning separate from wallet authority.
 
-The current release ships the wallet identity page, local settings page, and a
-blocked or non-signable review page that can display server-computed review state.
-The review server may build local unsigned DeepBook swap transaction material
-during account-bound review, but the frontend does not receive transaction
-bytes outside the digest-gated handoff. The review page offers a sign action
-only on a `ready_for_wallet_review` state whose wallet account matches the
-reviewed account; it never builds transactions in the frontend.
+The current release ships the wallet identity page, local settings page, a
+review page that can display server-computed review state, and the read-only
+review execution analysis page. The review server may build local unsigned
+DeepBook or FlowX swap transaction material during account-bound review, but the
+frontend does not receive transaction bytes outside the digest-gated handoff.
+The review page offers a sign action only on a
+`ready_for_wallet_review` state whose wallet account matches the reviewed
+account; it never builds transactions in the frontend.
 
 ## Role
 
 Current release frontend surfaces may capture wallet identity, display review
-state, and request refresh when allowed. They do not submit wallet signatures or
-execution results.
+state, request refresh when allowed, and report page-local signed-digest or
+failure events for server-owned receipt handling. They do not submit wallet
+signatures or decide final chain receipt truth.
 
 It is not a trading dashboard, AI chat, portfolio app, alert surface, analytics screen, or safety oracle.
 
@@ -37,9 +39,11 @@ Primary UI may render only server-validated structured data. AI-generated interp
 
 The frontend must not compute quote truth, readiness, blocked status, safety, or
 final execution truth. In the current release, it may render state, connect a
-wallet, ask the server to refresh, and revoke wallet identity when that action
-exists. Wallet or signing result submission is not a current-release frontend
-capability.
+wallet, ask the server to refresh, revoke wallet identity when that action
+exists, and report the signed digest or local failure event that starts
+server-owned receipt handling. The review execution analysis page must render
+only the server-owned analysis payload and must not call Sui RPC, dapp-kit, or
+wallet APIs.
 
 ## Wallet Identity
 
@@ -159,12 +163,35 @@ whose only action is cancel. Other states render:
   retry action.
 - recorded execution result: show the receipt card (status, digest, failure
   reason, and server-read chain receipt facts when present) with no review or
-  sign actions; the session is finished.
+  sign actions; the session is finished. The compact result card may link to
+  the read-only review execution analysis page for the same review session.
 - `expired`: show expiration and a concrete restart path. The default restart path is to return to the AI client and request a new wallet identity or review session.
 
 External proposal review sessions are non-signable. Their primary action is to
 inspect the review facts and return to the AI client with any remaining user
 choices.
+
+## Review Execution Analysis Page
+
+The review execution analysis page is served from a review-session route such
+as `/review/:id/analysis` with the review token in the fragment. It is separate
+from the wallet asset analysis page at `/analysis/:id`.
+
+The page is read-only. It renders the server-owned
+`review_execution_analysis_v1` payload for reviewed request facts, reviewed
+account, pre-signing review evidence, PTB visualization, review-time simulation
+summary, signed digest, server-read chain receipt facts, labeled session facts,
+and unsupported-use boundaries.
+
+It must not import dapp-kit, Sui clients, wallet connection code, transaction
+builders, or signing controls. It must not call chain RPC from the browser,
+recompute digest/sender/effects consistency, or present the page as approval. It
+is not wallet readiness, not signing readiness, and not a new verification
+authority. Digest, sender, and effects truth is owned by the server receipt
+verifier and the stored `executionResult`.
+
+The existing collapsed `Raw evidence` card remains a compact audit and copy
+surface on the review page. It must not grow into a second full analysis view.
 
 ## Actions
 
@@ -239,8 +266,10 @@ The frontend must not add:
 - arbitrary strategy controls
 
 The exclusions above target automatic, background-indexed, or
-recommendation-style surfaces. A user-requested local record view — the
-analysis page that shows a wallet asset snapshot at a fetched timestamp and
-summaries of locally stored review and activity records — is a deliberately
-sequenced roadmap surface, not part of these exclusions. That planned view must
-still avoid P&L, valuation, performance, and tax claims, and must not add background indexing.
+recommendation-style surfaces. User-requested local record views are allowed
+only inside their narrow surfaces: the wallet asset analysis page shows a wallet
+asset snapshot at a fetched timestamp plus summaries of locally stored review
+and activity records, and the review execution analysis page shows one review
+session's reviewed evidence beside server-read execution facts. These views
+must not add P&L, valuation, performance, tax claims, or route ranking. They
+must not add background indexing.

@@ -117,6 +117,23 @@ button:disabled {
   margin-top: 16px;
 }
 
+.analysis-link {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #c9d3cc;
+  border-radius: 8px;
+  background: #fff;
+  color: #244f3a;
+  font-weight: 600;
+  padding: 9px 12px;
+  text-decoration: none;
+}
+
+.analysis-link:hover {
+  border-color: #6f8f7d;
+}
+
 .amount-list,
 .checks,
 .proposal-review,

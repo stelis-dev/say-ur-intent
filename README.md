@@ -23,6 +23,10 @@ digest, the review server re-reads Sui mainnet and records normalized chain
 receipt evidence. MCP responses never sign, execute, or return transaction
 bytes; the only transaction-byte path is the same-machine, digest-gated wallet
 handoff initiated from the local review page.
+Terminal review sessions can also open a read-only review execution analysis
+page that shows the reviewed request, local review evidence, labeled session
+facts, and server-read chain receipt facts without adding wallet, signing, or
+execution authority.
 
 Because the AI never holds keys, never signs, and never builds the transaction —
 the tool builds it against pinned, known protocol packages, and you review the
@@ -55,8 +59,8 @@ choices remain with the user, and what claims are unsupported.
 
 Say Ur Intent is one product, but it must be read at three distinct layers. Do not collapse them:
 
-- **Implemented today:** Sui mainnet evidence, local review, and signable review adapters for the DeepBook and FlowX swap routes. The account-bound DeepBook and FlowX swap reviews build unsigned transaction material into a local in-process material store, internally bind a Sui transaction digest to that stored material, derive object ownership, quote/policy provenance, human-readable review facts, review-time simulation evidence, and PTB visualization evidence from the same private review artifacts, emit a schema-validated wallet review contract on a `ready_for_wallet_review` state, and serve a digest-gated byte handoff to the same-machine review page for user-controlled wallet signing. After the page reports a signed transaction digest, the review server re-reads Sui mainnet and records normalized chain receipt evidence on the session. MCP responses do not contain transaction bytes, signing data, or signing readiness.
-- **Deliberately sequenced next (planned order, ships only after verified review):** further protocol adapters beyond DeepBook and FlowX registered through the descriptor contract (protocol names appear only after a concrete support decision), richer local analysis views, and external proposal execution. Each step ships only from independently built or verified transaction material with a human-readable local review.
+- **Implemented today:** Sui mainnet evidence, local review, and signable review adapters for the DeepBook and FlowX swap routes. The account-bound DeepBook and FlowX swap reviews build unsigned transaction material into a local in-process material store, internally bind a Sui transaction digest to that stored material, derive object ownership, quote/policy provenance, human-readable review facts, review-time simulation evidence, and PTB visualization evidence from the same private review artifacts, emit a schema-validated wallet review contract on a `ready_for_wallet_review` state, and serve a digest-gated byte handoff to the same-machine review page for user-controlled wallet signing. After the page reports a signed transaction digest, the review server re-reads Sui mainnet and records normalized chain receipt evidence on the session. Terminal review sessions can open a read-only review execution analysis page for the reviewed request, local review evidence, labeled session facts, and server-read chain receipt facts. MCP responses do not contain transaction bytes, signing data, or signing readiness.
+- **Deliberately sequenced next (planned order, ships only after verified review):** further protocol adapters beyond DeepBook and FlowX registered through the descriptor contract (protocol names appear only after a concrete support decision), further local analysis views beyond the current review execution analysis page, and external proposal execution. Each step ships only from independently built or verified transaction material with a human-readable local review.
 - **Never (permanently unsupported at every layer):** no private-key custody, no MCP or AI autonomous execution, no forwarding of opaque external transaction bytes to a wallet, no silent settlement-token or route choice, no fiat cash-out, no P&L, no peg guarantee.
 
 In one sentence: Say Ur Intent is a local-first Sui intent evidence and review layer that progresses from verified evidence to user-controlled wallet signing only after Say Ur Intent independently builds or verifies the transaction material and shows a human-readable local review.
@@ -123,6 +127,10 @@ The current release can run as a local stdio MCP server and expose mainnet Sui D
 - read-only external proposal review sessions that display proposed action, asset flow, recipient or target, freshness, missing evidence, user choices, unsupported claims, and non-signable reason;
 - local Say Ur Intent review evidence and review-session status reads;
 - account-bound DeepBook and FlowX swap review progress through local unsigned transaction material build, internal Sui transaction digest binding, object ownership evidence, quote/policy provenance binding, human-readable review facts, and review-time simulation evidence; when every stage completes the review reaches `ready_for_wallet_review` and the local review page offers a digest-gated byte handoff and user-controlled wallet signing. After the page reports the signed transaction digest, the review server re-reads Sui mainnet and records normalized chain receipt evidence. MCP responses never sign, execute, or return transaction bytes; transaction bytes flow only through the same-machine, digest-gated wallet handoff initiated from the local review page.
+- a read-only review execution analysis page for terminal review sessions that
+  shows the reviewed request, local review evidence, PTB visualization,
+  review-time simulation summary, signed digest, server-read chain receipt
+  facts, labeled session facts, and unsupported-use boundaries.
 
 It also includes:
 
@@ -135,11 +143,12 @@ It also includes:
 
 ### Not Implemented
 
-The full analysis page is not implemented. External proposal execution is not
-implemented. Transaction material build, contract emit, digest-gated wallet
-handoff, user-controlled signing, signed-digest reporting, and server-read
-chain receipt recording are implemented for the account-bound DeepBook and
-FlowX swap review through a plan-factory registry.
+External proposal execution is not implemented. Further local analysis views
+beyond the current review execution analysis page are not implemented.
+Transaction material build, contract emit, digest-gated wallet handoff,
+user-controlled signing, signed-digest reporting, server-read chain receipt
+recording, and read-only review execution analysis are implemented for the
+account-bound DeepBook and FlowX swap review through a plan-factory registry.
 
 External proposal ingestion is implemented only for read-only local review
 sessions. It accepts structured proposal facts, rejects forbidden executable or

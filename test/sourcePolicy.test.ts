@@ -153,6 +153,27 @@ describe("source policy", () => {
     expect(source).not.toContain("execution_result_unavailable");
   });
 
+  it("keeps the review execution analysis page display-only and server-payload owned", () => {
+    const pageSource = readFileSync(join(process.cwd(), "review-app/src/reviewExecutionAnalysis.ts"), "utf8");
+    const builderSource = readFileSync(join(process.cwd(), "src/core/session/reviewExecutionAnalysis.ts"), "utf8");
+
+    expect(pageSource).toContain("/api/review/${encodeURIComponent(reviewSessionId)}/analysis");
+    expect(pageSource).toContain("import type { ReviewExecutionAnalysisPayload }");
+    expect(pageSource).toContain("renderSimulationBalanceChanges");
+    expect(pageSource).toContain("renderSimulationObjectChanges");
+    expect(pageSource).toContain("TransactionSimulationBalanceChange");
+    expect(pageSource).toContain("TransactionSimulationObjectChange");
+    expect(pageSource).not.toMatch(/@mysten\/sui|dappKit|createLocalDAppKit|suiMainnetClient|executeTransactionBlock/i);
+    expect(pageSource).not.toMatch(/all matched|safe to sign|ready to sign/i);
+    expect(pageSource).not.toMatch(/JSON\.stringify\(record\)|renderRecordList/);
+    expect(pageSource).not.toMatch(/Record<string, unknown>\[\]|stringField\(record/);
+    expect(builderSource).toContain("assertNoForbiddenMcpFields(parsed)");
+    expect(builderSource).toContain("buildReviewedRequest(plan)");
+    expect(builderSource).not.toMatch(/\badapterData\b/);
+    expect(builderSource).not.toMatch(/not_available/);
+    expect(builderSource).not.toMatch(/all matched|safe to sign|ready to sign/i);
+  });
+
   it("documents chain receipts as server-read execution evidence without expanding authority", () => {
     const publicAndRuntimeSurface = [
       "AGENTS.md",
@@ -175,6 +196,29 @@ describe("source policy", () => {
     expect(publicAndRuntimeSurface).not.toMatch(/execution receipts happen on the local review page/i);
     expect(publicAndRuntimeSurface).not.toMatch(/page records the execution receipt/i);
     expect(publicAndRuntimeSurface).not.toMatch(/Execution result transitions are owned by the local review-server browser flow/i);
+  });
+
+  it("documents review execution analysis as a read-only current surface", () => {
+    const publicAndRuntimeSurface = [
+      "AGENTS.md",
+      "README.md",
+      "docs/AGENT_BEHAVIOR.md",
+      "docs/FRONTEND_POLICY.md",
+      "docs/MCP_TOOLS.md",
+      "src/mcp/serverInfo.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+
+    expect(publicAndRuntimeSurface).toMatch(/read-only review execution analysis page/i);
+    expect(publicAndRuntimeSurface).toMatch(/stored review evidence[\s\S]{0,160}server-read (chain )?receipt facts/i);
+    expect(publicAndRuntimeSurface).toMatch(/wallet asset analysis page/i);
+    expect(publicAndRuntimeSurface).toMatch(/review execution analysis page/i);
+    expect(publicAndRuntimeSurface).toMatch(/separate\s+from the wallet asset analysis page/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/full analysis page is not implemented/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/review execution analysis page is not implemented/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/browser-owned chain truth/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/all matched/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/safe to sign/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/ready to sign/i);
   });
 
   it("keeps the initial MCP tool registration wrapper migration narrow", () => {

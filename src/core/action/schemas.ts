@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { proposalReviewModelSchema } from "../proposal/schemas.js";
 import { suiAddressStringSchema } from "../suiAddress.js";
-import { makeRawU64StringSchema } from "../numeric/rawU64.js";
+import { makeRawU64StringSchema, makeSignedRawIntegerStringSchema } from "../numeric/rawU64.js";
 import { normalizeCoinType } from "../read/coinMetadata.js";
 import { BLOCKED_REASONS, FAILURE_REASONS, REFRESH_REASONS } from "./types.js";
 import { ptbVisualizationArtifactSchema, walletReviewAdapterContractSchema } from "./signableAdapterContract.js";
@@ -142,13 +142,33 @@ export const transactionSimulationGasCostSummarySchema = z.object({
   nonRefundableStorageFeeRaw: makeRawU64StringSchema("nonRefundableStorageFeeRaw")
 }).strict();
 
+export const transactionSimulationBalanceChangeSchema = z.object({
+  address: suiAddressStringSchema,
+  coinType: z.string().min(1).max(512).refine((value) => {
+    try {
+      return normalizeCoinType(value) === value;
+    } catch {
+      return false;
+    }
+  }, "Expected a normalized Sui struct tag coin type"),
+  amount: makeSignedRawIntegerStringSchema("balanceChanges[].amount")
+}).strict();
+
+export const transactionSimulationObjectChangeSchema = z.object({
+  objectId: suiAddressStringSchema,
+  objectType: z.string().min(1).max(512).optional(),
+  inputState: z.string().min(1).max(80),
+  outputState: z.string().min(1).max(80),
+  idOperation: z.string().min(1).max(80)
+}).strict();
+
 const transactionSimulationSummaryBaseSchema = z.object({
   provider: z.literal("client.core.simulateTransaction"),
   checksEnabled: z.boolean(),
   success: z.boolean(),
   gasCostSummary: transactionSimulationGasCostSummarySchema.optional(),
-  balanceChanges: z.array(unknownRecordSchema).optional(),
-  objectChanges: z.array(unknownRecordSchema).optional(),
+  balanceChanges: z.array(transactionSimulationBalanceChangeSchema).optional(),
+  objectChanges: z.array(transactionSimulationObjectChangeSchema).optional(),
   error: z.string().optional()
 });
 
@@ -158,8 +178,8 @@ export const successfulTransactionSimulationSummarySchema = transactionSimulatio
   checksEnabled: z.literal(true),
   success: z.literal(true),
   gasCostSummary: transactionSimulationGasCostSummarySchema,
-  balanceChanges: z.array(unknownRecordSchema),
-  objectChanges: z.array(unknownRecordSchema),
+  balanceChanges: z.array(transactionSimulationBalanceChangeSchema),
+  objectChanges: z.array(transactionSimulationObjectChangeSchema),
   error: z.never().optional()
 }).strict();
 

@@ -1147,6 +1147,14 @@ function renderExecutionResultPanel(result: NonNullable<ReviewSessionPayload["ex
       )
     ));
   }
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const analysisLink = document.createElement("a");
+  analysisLink.className = "analysis-link";
+  analysisLink.href = `/review/${encodeURIComponent(reviewSessionId)}/analysis#${encodeURIComponent(token)}`;
+  analysisLink.textContent = "Open execution analysis";
+  actions.append(analysisLink);
+  panel.append(actions);
   panel.append(
     element(
       "p",

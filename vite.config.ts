@@ -13,6 +13,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         review: resolve("review-app/src/review.ts"),
+        reviewExecutionAnalysis: resolve("review-app/src/reviewExecutionAnalysis.ts"),
         analysis: resolve("review-app/src/analysis.ts"),
         settings: resolve("review-app/src/settings.ts")
       },
@@ -20,7 +21,10 @@ export default defineConfig({
         entryFileNames: "[name].js",
         chunkFileNames: "[name]-[hash].js",
         assetFileNames: (assetInfo) =>
-          assetInfo.name === "review.css" || assetInfo.name === "analysis.css" || assetInfo.name === "settings.css"
+          assetInfo.name === "review.css" ||
+          assetInfo.name === "reviewExecutionAnalysis.css" ||
+          assetInfo.name === "analysis.css" ||
+          assetInfo.name === "settings.css"
             ? "[name][extname]"
             : "[name]-[hash][extname]"
       }

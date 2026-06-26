@@ -592,6 +592,42 @@ describe("review HTTP server", () => {
     }
   });
 
+  it("serves review execution analysis HTML as a separate bundled app shell", async () => {
+    const store = createSessionStore();
+    const { session } = await store.createReviewSession([plan]);
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const badOrigin = await fetch(`${base}/review/${session.id}/analysis`, {
+        headers: { origin: "http://evil.example" }
+      });
+      expect(badOrigin.status).toBe(403);
+
+      const queryToken = await fetch(`${base}/review/${session.id}/analysis?token=secret`);
+      expect(queryToken.status).toBe(400);
+      expect(await queryToken.json()).toEqual({ error: "token_query_not_supported" });
+
+      const response = await fetch(`${base}/review/${session.id}/analysis`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
+      expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
+      const html = await response.text();
+      expect(html).toContain("/review-assets/reviewExecutionAnalysis.js");
+      expect(html).toContain("/review-assets/reviewExecutionAnalysis.css");
+      expect(html).toContain(`data-review-session-id="${session.id}"`);
+      expect(html).not.toContain("/review-assets/analysis.js");
+      expect(html).not.toContain("data-wallet-session-id");
+      expect(html).not.toContain("x-say-ur-intent-token");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("creates wallet identity sessions from token-authorized review sessions", async () => {
     const activityStore = new InMemoryActivityStore();
     const store = createSessionStore({ activityStore });
@@ -1115,6 +1151,8 @@ describe("review HTTP server", () => {
     const assetsDir = mkdtempSync(join(tmpdir(), "say-ur-intent-assets-"));
     writeFileSync(join(assetsDir, "review.js"), "export const review = true;\n", "utf8");
     writeFileSync(join(assetsDir, "review.css"), ".review-shell { color: #15201b; }\n", "utf8");
+    writeFileSync(join(assetsDir, "reviewExecutionAnalysis.js"), "export const reviewAnalysis = true;\n", "utf8");
+    writeFileSync(join(assetsDir, "reviewExecutionAnalysis.css"), ".analysis-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "analysis.js"), "export const wallet = true;\n", "utf8");
     writeFileSync(join(assetsDir, "analysis.css"), ".wallet-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "settings.js"), "export const settings = true;\n", "utf8");
@@ -1148,6 +1186,16 @@ describe("review HTTP server", () => {
       expect(reviewCss.status).toBe(200);
       expect(reviewCss.headers.get("content-type")).toBe("text/css; charset=utf-8");
       expect(await reviewCss.text()).toContain(".review-shell");
+
+      const reviewAnalysisAsset = await fetch(`${base}/review-assets/reviewExecutionAnalysis.js`);
+      expect(reviewAnalysisAsset.status).toBe(200);
+      expect(reviewAnalysisAsset.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+      expect(await reviewAnalysisAsset.text()).toContain("reviewAnalysis = true");
+
+      const reviewAnalysisCss = await fetch(`${base}/review-assets/reviewExecutionAnalysis.css`);
+      expect(reviewAnalysisCss.status).toBe(200);
+      expect(reviewAnalysisCss.headers.get("content-type")).toBe("text/css; charset=utf-8");
+      expect(await reviewAnalysisCss.text()).toContain(".analysis-shell");
 
       const settingsAsset = await fetch(`${base}/review-assets/settings.js`);
       expect(settingsAsset.status).toBe(200);
@@ -1288,6 +1336,87 @@ describe("review HTTP server", () => {
       expect(result.status).toBe(200);
       const json = (await result.json()) as { status: string };
       expect(json.status).toBe("expired");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves review execution analysis payload through token-authorized lazy finalization", async () => {
+    const store = createSessionStore();
+    const now = new Date();
+    const { session, token } = await store.createReviewSession([plan], now);
+    await openAndConnectReview(store, session.id, walletAccount, now);
+    await store.recordReviewState(
+      session.id,
+      {
+        planId: plan.id,
+        reviewSessionId: session.id,
+        account: walletAccount,
+        status: "ready_for_wallet_review",
+        checks: [],
+        updatedAt: now.toISOString()
+      },
+      now
+    );
+    attachReviewedCommitment(store, session.id);
+    await store.recordExecutionResult(
+      session.id,
+      {
+        reviewSessionId: session.id,
+        planId: plan.id,
+        status: "signed_pending_result",
+        txDigest: chainReceiptDigest,
+        recordedAt: now.toISOString()
+      },
+      now
+    );
+    const verifierCalls: unknown[] = [];
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      chainReceiptVerifier: async (input) => {
+        verifierCalls.push(input);
+        return { status: "verified_success", receipt: chainReceiptFixture() };
+      }
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const unauthenticated = await fetch(`${base}/api/review/${session.id}/analysis`);
+      expect(unauthenticated.status).toBe(401);
+
+      const response = await fetch(`${base}/api/review/${session.id}/analysis`, {
+        headers: { "x-say-ur-intent-token": token, origin: base }
+      });
+      expect(response.status).toBe(200);
+      const json = (await response.json()) as {
+        kind: string;
+        reviewedRequest?: { planId: string; adapterData?: unknown };
+        execution: { state: string; chainReceipt?: { sender?: string } };
+        labeledSessionFacts: Array<{ id: string; value: string; source: string }>;
+      };
+      expect(json.kind).toBe("review_execution_analysis_v1");
+      expect(json.reviewedRequest).toEqual(expect.objectContaining({ planId: plan.id }));
+      expect(json.reviewedRequest).not.toHaveProperty("adapterData");
+      expect(json.execution).toEqual(expect.objectContaining({
+        state: "success",
+        chainReceipt: expect.objectContaining({ sender: walletAccount })
+      }));
+      expect(json.labeledSessionFacts).toContainEqual(
+        expect.objectContaining({
+          id: "chain-effects-status",
+          value: "success",
+          source: "chain_receipt"
+        })
+      );
+      expect(verifierCalls).toEqual([
+        expect.objectContaining({
+          txDigest: chainReceiptDigest,
+          reviewedTransactionDigest: chainReceiptDigest,
+          account: walletAccount
+        })
+      ]);
     } finally {
       await server.close();
     }

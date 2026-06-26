@@ -146,13 +146,27 @@ export type TransactionSimulationGasCostSummary = {
   nonRefundableStorageFeeRaw: string;
 };
 
+export type TransactionSimulationBalanceChange = {
+  address: string;
+  coinType: string;
+  amount: string;
+};
+
+export type TransactionSimulationObjectChange = {
+  objectId: string;
+  objectType?: string | undefined;
+  inputState: string;
+  outputState: string;
+  idOperation: string;
+};
+
 export type TransactionSimulationSummary = {
   provider: "client.core.simulateTransaction";
   checksEnabled: boolean;
   success: boolean;
   gasCostSummary?: TransactionSimulationGasCostSummary;
-  balanceChanges?: UnknownRecord[];
-  objectChanges?: UnknownRecord[];
+  balanceChanges?: TransactionSimulationBalanceChange[];
+  objectChanges?: TransactionSimulationObjectChange[];
   error?: string;
 };
 
@@ -160,8 +174,8 @@ export type SuccessfulTransactionSimulationSummary = TransactionSimulationSummar
   checksEnabled: true;
   success: true;
   gasCostSummary: TransactionSimulationGasCostSummary;
-  balanceChanges: UnknownRecord[];
-  objectChanges: UnknownRecord[];
+  balanceChanges: TransactionSimulationBalanceChange[];
+  objectChanges: TransactionSimulationObjectChange[];
   error?: never;
 };
 

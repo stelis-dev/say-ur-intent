@@ -4,7 +4,8 @@ import {
   FAILURE_REASONS,
   type ExecutionResult,
   type FailureReason,
-  type InternalSessionStatus
+  type InternalSessionStatus,
+  type ReviewSession
 } from "../core/action/types.js";
 import {
   finalizePendingExecutionResultFromChain,
@@ -19,6 +20,7 @@ import {
   type ReviewComputationDeps
 } from "../core/review/reviewComputation.js";
 import { SessionStoreError, type SessionStore } from "../core/session/sessionStore.js";
+import { buildReviewExecutionAnalysisPayload } from "../core/session/reviewExecutionAnalysis.js";
 import { getExecutionPollingStatus } from "../core/session/status.js";
 import {
   walletIdentityResultInputSchema,
@@ -30,7 +32,7 @@ import type { Logger } from "../runtime/logger.js";
 import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
-import { analysisHtml, reviewHtml, settingsHtml } from "./html.js";
+import { analysisHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
 import { routeSettingsApi } from "./settingsApi.js";
@@ -163,7 +165,9 @@ async function routeRequest(
   }
 
   const reviewMatch = /^\/review\/([^/]+)$/.exec(url.pathname);
+  const reviewExecutionAnalysisMatch = /^\/review\/([^/]+)\/analysis$/.exec(url.pathname);
   const apiReviewMatch = /^\/api\/review\/([^/]+)$/.exec(url.pathname);
+  const apiReviewExecutionAnalysisMatch = /^\/api\/review\/([^/]+)\/analysis$/.exec(url.pathname);
   const apiReviewWalletIdentityMatch = /^\/api\/review\/([^/]+)\/wallet-identity$/.exec(url.pathname);
   const apiReviewOpenedMatch = /^\/api\/review\/([^/]+)\/opened$/.exec(url.pathname);
   const apiReviewStateMatch = /^\/api\/review\/([^/]+)\/state$/.exec(url.pathname);
@@ -199,6 +203,26 @@ async function routeRequest(
         // 'self' for review-server APIs; the Sui fullnode origin for the
         // browser-side signed-transaction submission (see reviewServerPolicy).
         `connect-src 'self' ${SUI_BROWSER_EXECUTION_ORIGIN}`,
+        "script-src 'self'",
+        // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "form-action 'none'"
+      ].join("; ")
+    });
+    return;
+  }
+
+  if (request.method === "GET" && reviewExecutionAnalysisMatch?.[1]) {
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
+      return;
+    }
+    sendHtml(response, reviewExecutionAnalysisHtml(reviewExecutionAnalysisMatch[1]), {
+      "content-security-policy": [
+        "default-src 'none'",
+        "base-uri 'none'",
+        "connect-src 'self'",
         "script-src 'self'",
         // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
         "style-src 'self' 'unsafe-inline'",
@@ -369,16 +393,8 @@ async function routeRequest(
 
   if (request.method === "GET" && apiReviewMatch?.[1]) {
     const sessionId = apiReviewMatch[1];
-    const token = await requireReviewSessionToken(options.store, sessionId, request, response);
-    if (!token) {
-      return;
-    }
-    const session = await getReviewSessionWithLazyChainReceiptFinalization({
-      sessions: options.store,
-      chainReceiptVerifier: options.chainReceiptVerifier
-    }, sessionId);
+    const session = await requireLazyFinalizedReviewSession(options, sessionId, request, response);
     if (!session) {
-      sendJson(response, 404, { error: "session_not_found" });
       return;
     }
     const activeAccount = options.activityStore ? await options.activityStore.getActiveAccount() : undefined;
@@ -401,6 +417,16 @@ async function routeRequest(
       reviewState: session.reviewState,
       plans: session.plans
     });
+    return;
+  }
+
+  if (request.method === "GET" && apiReviewExecutionAnalysisMatch?.[1]) {
+    const sessionId = apiReviewExecutionAnalysisMatch[1];
+    const session = await requireLazyFinalizedReviewSession(options, sessionId, request, response);
+    if (!session) {
+      return;
+    }
+    sendJson(response, 200, buildReviewExecutionAnalysisPayload(session));
     return;
   }
 
@@ -599,16 +625,8 @@ async function routeRequest(
 
   if (request.method === "GET" && apiResultMatch?.[1]) {
     const sessionId = apiResultMatch[1];
-    const token = await requireReviewSessionToken(options.store, sessionId, request, response);
-    if (!token) {
-      return;
-    }
-    const session = await getReviewSessionWithLazyChainReceiptFinalization({
-      sessions: options.store,
-      chainReceiptVerifier: options.chainReceiptVerifier
-    }, sessionId);
+    const session = await requireLazyFinalizedReviewSession(options, sessionId, request, response);
     if (!session) {
-      sendJson(response, 404, { error: "session_not_found" });
       return;
     }
     sendJson(response, 200, {
@@ -621,6 +639,42 @@ async function routeRequest(
   }
 
   sendJson(response, 404, { error: "not_found" });
+}
+
+async function requireLazyFinalizedReviewSession(
+  options: ReviewHttpServerOptions,
+  sessionId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<ReviewSession | undefined> {
+  const token = await requireReviewSessionToken(options.store, sessionId, request, response);
+  if (!token) {
+    return undefined;
+  }
+  const session = await readReviewSessionForHttp(options, sessionId, response);
+  if (!session) {
+    return undefined;
+  }
+  return session;
+}
+
+async function readReviewSessionForHttp(
+  options: ReviewHttpServerOptions,
+  sessionId: string,
+  response: ServerResponse
+): Promise<ReviewSession | undefined> {
+  const session = await getReviewSessionWithLazyChainReceiptFinalization(
+    {
+      sessions: options.store,
+      chainReceiptVerifier: options.chainReceiptVerifier
+    },
+    sessionId
+  );
+  if (!session) {
+    sendJson(response, 404, { error: "session_not_found" });
+    return undefined;
+  }
+  return session;
 }
 
 async function mapStoreError<T>(operation: () => Promise<T>): Promise<T> {

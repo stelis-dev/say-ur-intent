@@ -75,7 +75,7 @@ function simulationSummary() {
     balanceChanges: [
       {
         address: account,
-        coinType: "0x2::sui::SUI",
+        coinType: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
         amount: "-1000"
       }
     ],
