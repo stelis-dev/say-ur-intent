@@ -6,6 +6,11 @@ import {
   type FailureReason,
   type InternalSessionStatus
 } from "../core/action/types.js";
+import {
+  finalizePendingExecutionResultFromChain,
+  getReviewSessionWithLazyChainReceiptFinalization,
+  type ChainReceiptVerifier
+} from "../core/session/chainReceiptFinalization.js";
 import type { ActivityStore } from "../core/activity/activityStore.js";
 import type { LocalDataService } from "../core/activity/localDataService.js";
 import type { LocalSettingsService } from "../core/preferences/preferencesStore.js";
@@ -40,6 +45,7 @@ type ReviewHttpServerOptions = {
   readService?: { summarizeWalletAssets(input: { account?: string }): Promise<unknown> } | undefined;
   localSettings?: LocalSettingsService | undefined;
   localData?: LocalDataService | undefined;
+  chainReceiptVerifier?: ChainReceiptVerifier | undefined;
   reviewComputationDeps?: ReviewComputationDeps | undefined;
   serverInfo?: {
     name: string;
@@ -367,7 +373,10 @@ async function routeRequest(
     if (!token) {
       return;
     }
-    const session = await options.store.getReviewSession(sessionId);
+    const session = await getReviewSessionWithLazyChainReceiptFinalization({
+      sessions: options.store,
+      chainReceiptVerifier: options.chainReceiptVerifier
+    }, sessionId);
     if (!session) {
       sendJson(response, 404, { error: "session_not_found" });
       return;
@@ -534,9 +543,12 @@ async function routeRequest(
 
     const body = await readJsonBody(request);
     const planId = typeof body.planId === "string" ? body.planId : undefined;
+    if (body.status === "success") {
+      sendJson(response, 400, { error: "input_invalid" });
+      return;
+    }
     const status =
       body.status === "signed_pending_result" ||
-      body.status === "success" ||
       body.status === "failure"
         ? body.status
         : undefined;
@@ -554,7 +566,7 @@ async function routeRequest(
     };
     let result: ExecutionResult;
     if (status === "failure") {
-      if (!isFailureReason(failureReason)) {
+      if (!isFailureReason(failureReason) || txDigest !== undefined) {
         sendJson(response, 400, { error: "input_invalid" });
         return;
       }
@@ -570,13 +582,18 @@ async function routeRequest(
       }
       result = { ...resultBase, status, txDigest };
     }
-    if (status === "failure" && txDigest) {
-      result.txDigest = txDigest;
-    }
     const updatedSession = await mapStoreError(() =>
       options.store.recordExecutionResult(sessionId, result)
     );
-    sendJson(response, 200, { executionResult: updatedSession.executionResult });
+    const finalizedSession = status === "signed_pending_result"
+      ? await mapStoreError(() =>
+          finalizePendingExecutionResultFromChain({
+            sessions: options.store,
+            chainReceiptVerifier: options.chainReceiptVerifier
+          }, updatedSession)
+        )
+      : updatedSession;
+    sendJson(response, 200, { executionResult: finalizedSession.executionResult });
     return;
   }
 
@@ -586,7 +603,10 @@ async function routeRequest(
     if (!token) {
       return;
     }
-    const session = await options.store.getReviewSession(sessionId);
+    const session = await getReviewSessionWithLazyChainReceiptFinalization({
+      sessions: options.store,
+      chainReceiptVerifier: options.chainReceiptVerifier
+    }, sessionId);
     if (!session) {
       sendJson(response, 404, { error: "session_not_found" });
       return;

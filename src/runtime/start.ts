@@ -19,6 +19,7 @@ import { ADAPTER_PROMPT_SURFACES } from "../adapters/adapterPromptSurfaces.js";
 import { TransactionActivityService } from "../core/activity/transactionActivityService.js";
 import { createSuiReadService } from "../core/read/readService.js";
 import { createTransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
+import { verifySuiChainReceipt } from "../core/action/suiChainReceiptVerifier.js";
 import { createReviewTimeSimulationProducer } from "../core/action/reviewTimeSimulationEvidence.js";
 import { producePtbVisualizationArtifact } from "../core/action/ptbVisualizationProducer.js";
 import { LocalSessionStore } from "../core/session/sessionStore.js";
@@ -108,6 +109,15 @@ async function main(): Promise<void> {
       chainIdentifier,
       coinMetadataCache: store.createCoinMetadataCache()
     });
+    const chainReceiptVerifier = (input: Parameters<typeof verifySuiChainReceipt>[1]) =>
+      verifySuiChainReceipt(
+        {
+          client: suiClient,
+          network: config.network,
+          expectedChainIdentifier: config.expectedChainIdentifier
+        },
+        input
+      );
     const reviewServerFactory = createReviewHttpServer({
       host: config.reviewHost,
       store: sessions,
@@ -115,6 +125,7 @@ async function main(): Promise<void> {
       activityStore: store,
       localSettings,
       localData,
+      chainReceiptVerifier,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
         adapters: buildSupportedReviewAdapters((() => {
@@ -266,6 +277,7 @@ async function main(): Promise<void> {
           expectedChainIdentifier: config.expectedChainIdentifier
         })
       }),
+      chainReceiptVerifier,
       localSettings,
       logger
     });

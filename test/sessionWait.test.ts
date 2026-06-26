@@ -10,6 +10,7 @@ import {
   waitForWalletIdentitySession
 } from "../src/core/session/wait.js";
 import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
+import { chainReceiptDigest, chainReceiptFixture } from "./fixtures/chainReceipt.js";
 
 const walletPending: WalletIdentitySession = {
   id: "wallet_1",
@@ -76,7 +77,7 @@ const reviewSignedPending: ReviewSession = {
     reviewSessionId: "review_1",
     planId: "plan_1",
     status: "signed_pending_result",
-    txDigest: "digest_1",
+    txDigest: chainReceiptDigest,
     recordedAt: "2026-05-12T00:00:01.000Z"
   }
 };
@@ -88,7 +89,8 @@ const reviewSuccess: ReviewSession = {
     reviewSessionId: "review_1",
     planId: "plan_1",
     status: "success",
-    txDigest: "digest_1",
+    txDigest: chainReceiptDigest,
+    chainReceipt: chainReceiptFixture(),
     recordedAt: "2026-05-12T00:00:02.000Z"
   }
 };

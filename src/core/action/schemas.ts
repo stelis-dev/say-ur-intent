@@ -611,7 +611,7 @@ export const executionResultSchema = z.discriminatedUnion("status", [
   executionResultBaseSchema.extend({
     status: z.literal("success"),
     txDigest: z.string().min(1),
-    chainReceipt: suiChainReceiptEvidenceSchema.optional(),
+    chainReceipt: suiChainReceiptEvidenceSchema,
     failureReason: z.never().optional()
   }),
   executionResultBaseSchema.extend({

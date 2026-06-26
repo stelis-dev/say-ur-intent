@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -15,7 +16,11 @@ import {
   SqliteSessionRecordStore,
   SqlitePrivateReviewArtifactStore,
   createSqliteWalletIdentityRecordStore,
-  createSqliteSettingsRecordStore
+  createSqliteSettingsRecordStore,
+  sessionFromLiveReviewSessionRow,
+  insertLiveReviewSessionRow,
+  updateLiveReviewSessionRow,
+  type LiveReviewSessionRow
 } from "../session/sqliteSessionStore.js";
 import type { SessionRecordStore } from "../session/sessionRecordStore.js";
 import type { PrivateReviewArtifactStore } from "../session/privateReviewArtifacts.js";
@@ -54,7 +59,8 @@ import type {
   ReviewExecutionInput,
   ReviewExecutionRecord,
   ReviewStateSnapshotInput,
-  ReviewTransitionInput
+  ReviewTransitionInput,
+  LiveReviewSessionMutation
 } from "./activityStore.js";
 import {
   ActivityStoreReadError,
@@ -265,6 +271,42 @@ export class SqliteActivityStore implements ActivityStore {
       })();
   }
 
+  async recordReviewSessionWithLiveSession(
+    input: ReviewSessionEvidenceInput,
+    live: LiveReviewSessionMutation
+  ): Promise<boolean> {
+    const plan = parseActionPlanEvidence(input.plan);
+    const planJson = serializeJson(plan);
+    const intentJson = serializeOptionalJson(extractRequestedIntent(plan));
+    return this.runLiveReviewSessionMutation(live, () => {
+      this.db
+        .prepare(
+          `INSERT INTO review_sessions
+             (id, plan_id, action_kind, adapter_id, protocol, current_status,
+              plan_json, intent_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          input.reviewSessionId,
+          plan.id,
+          plan.actionKind,
+          plan.adapterId,
+          plan.protocol,
+          input.currentStatus,
+          planJson,
+          intentJson,
+          input.createdAt,
+          input.createdAt
+        );
+      this.insertReviewTransition({
+        reviewSessionId: input.reviewSessionId,
+        event: "created",
+        toStatus: input.currentStatus,
+        transitionedAt: input.createdAt
+      });
+    });
+  }
+
   async recordReviewTransition(input: ReviewTransitionInput): Promise<void> {
     this.db
       .transaction(() => {
@@ -283,6 +325,31 @@ export class SqliteActivityStore implements ActivityStore {
           )
           .run(input.toStatus, accountId, input.transitionedAt, input.reviewSessionId);
       })();
+  }
+
+  async recordReviewTransitionWithLiveSession(
+    input: ReviewTransitionInput,
+    live: LiveReviewSessionMutation
+  ): Promise<boolean> {
+    return this.runLiveReviewSessionMutation(live, () => {
+      const accountId = input.account
+        ? this.upsertAccountSync(input.account, "review_execution", input.transitionedAt).id
+        : null;
+      if (accountId !== null) {
+        this.assertReviewSessionAccount(input.reviewSessionId, accountId);
+        if (input.event === "wallet_connected") {
+          this.assertActiveAccountSync(accountId, input.reviewSessionId);
+        }
+      }
+      this.insertReviewTransition({ ...input, accountId });
+      this.db
+        .prepare(
+          `UPDATE review_sessions
+           SET current_status = ?, account_id = COALESCE(account_id, ?), updated_at = ?
+           WHERE id = ?`
+        )
+        .run(input.toStatus, accountId, input.transitionedAt, input.reviewSessionId);
+    });
   }
 
   async recordReviewStateSnapshot(input: ReviewStateSnapshotInput): Promise<void> {
@@ -327,6 +394,52 @@ export class SqliteActivityStore implements ActivityStore {
           )
           .run(parsedState.status, account.id, input.recordedAt, input.reviewSessionId);
       })();
+  }
+
+  async recordReviewStateSnapshotWithLiveSession(
+    input: ReviewStateSnapshotInput,
+    live: LiveReviewSessionMutation
+  ): Promise<boolean> {
+    const parsedState = parseLifecycleValidatedReviewState(input.state, this.validateAdapterLifecycle);
+    const stateJson = serializeJson(parsedState);
+    return this.runLiveReviewSessionMutation(live, () => {
+      const account = this.upsertAccountSync(parsedState.account, "review_execution", input.recordedAt);
+      this.assertReviewSessionAccount(input.reviewSessionId, account.id);
+      this.db
+        .prepare(
+          `INSERT INTO review_state_snapshots
+             (review_session_id, plan_id, account_id, status, blocked_reason, refresh_reason,
+              state_json, updated_at, recorded_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          input.reviewSessionId,
+          parsedState.planId,
+          account.id,
+          parsedState.status,
+          "blockedReason" in parsedState ? parsedState.blockedReason : null,
+          "refreshReason" in parsedState ? parsedState.refreshReason : null,
+          stateJson,
+          parsedState.updatedAt,
+          input.recordedAt
+        );
+      this.insertReviewTransition({
+        reviewSessionId: input.reviewSessionId,
+        event: "state_computed",
+        fromStatus: input.fromStatus,
+        toStatus: parsedState.status,
+        accountId: account.id,
+        reason: reasonForReviewState(parsedState),
+        transitionedAt: input.recordedAt
+      });
+      this.db
+        .prepare(
+          `UPDATE review_sessions
+           SET current_status = ?, account_id = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(parsedState.status, account.id, input.recordedAt, input.reviewSessionId);
+    });
   }
 
   async recordReviewExecution(input: ReviewExecutionInput): Promise<ReviewExecutionRecord> {
@@ -389,6 +502,78 @@ export class SqliteActivityStore implements ActivityStore {
           )
           .run(input.status, account.id, input.recordedAt, input.reviewSessionId);
       })();
+    const recorded = await this.getReviewExecution(input.reviewSessionId);
+    if (!recorded) {
+      throw new ActivityStoreError(`Review execution was not recorded: ${input.reviewSessionId}`);
+    }
+    return recorded;
+  }
+
+  async recordReviewExecutionWithLiveSession(
+    input: ReviewExecutionInput,
+    live: LiveReviewSessionMutation
+  ): Promise<ReviewExecutionRecord | undefined> {
+    const resultJson = serializeJson(input.result);
+    const committed = this.runLiveReviewSessionMutation(live, () => {
+      const account = this.upsertAccountSync(input.account, "review_execution", input.recordedAt);
+      this.assertReviewSessionAccount(input.reviewSessionId, account.id);
+      const existing = this.getReviewExecutionStorageRow(input.reviewSessionId);
+      if (existing) {
+        if (isSameReviewExecution(existing, account.id, input)) {
+          return;
+        }
+        if (!canAdvanceReviewExecution(existing, account.id, input)) {
+          throw new ActivityStoreError(`Conflicting review execution evidence: ${input.reviewSessionId}`);
+        }
+      }
+      this.db
+        .prepare(
+          `INSERT INTO review_executions
+             (review_session_id, plan_id, account_id, status, tx_digest, explorer_url,
+              failure_reason, result_json, recorded_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(review_session_id) DO UPDATE SET
+             plan_id = excluded.plan_id,
+             account_id = excluded.account_id,
+             status = excluded.status,
+             tx_digest = excluded.tx_digest,
+             explorer_url = excluded.explorer_url,
+             failure_reason = excluded.failure_reason,
+             result_json = excluded.result_json,
+             updated_at = excluded.updated_at`
+        )
+        .run(
+          input.reviewSessionId,
+          input.planId,
+          account.id,
+          input.status,
+          input.txDigest ?? null,
+          input.explorerUrl ?? null,
+          input.failureReason ?? null,
+          resultJson,
+          input.recordedAt,
+          input.recordedAt
+        );
+      this.insertReviewTransition({
+        reviewSessionId: input.reviewSessionId,
+        event: "result_recorded",
+        fromStatus: input.fromStatus,
+        toStatus: input.status,
+        accountId: account.id,
+        reason: input.failureReason,
+        transitionedAt: input.recordedAt
+      });
+      this.db
+        .prepare(
+          `UPDATE review_sessions
+           SET current_status = ?, account_id = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(input.status, account.id, input.recordedAt, input.reviewSessionId);
+    });
+    if (!committed) {
+      return undefined;
+    }
     const recorded = await this.getReviewExecution(input.reviewSessionId);
     if (!recorded) {
       throw new ActivityStoreError(`Review execution was not recorded: ${input.reviewSessionId}`);
@@ -929,7 +1114,7 @@ export class SqliteActivityStore implements ActivityStore {
   }
 
   createSessionRecordStore(): SessionRecordStore {
-    return new SqliteSessionRecordStore(this.db);
+    return new SqliteSessionRecordStore(this.db, { usesActivityStoreLiveSessionMutations: true });
   }
 
   createPrivateReviewArtifactStore(): PrivateReviewArtifactStore {
@@ -942,6 +1127,73 @@ export class SqliteActivityStore implements ActivityStore {
 
   createSettingsRecordStore(): KeyedRecordStore<SettingsSession> {
     return createSqliteSettingsRecordStore(this.db);
+  }
+
+  private runLiveReviewSessionMutation(
+    live: LiveReviewSessionMutation,
+    writeActivity: () => void
+  ): boolean {
+    const stale = new Error("live review session changed before commit");
+    try {
+      const commit = this.db.transaction(() => {
+        writeActivity();
+        if (!this.applyLiveReviewSessionMutation(live)) {
+          throw stale;
+        }
+      });
+      commit.immediate();
+      return true;
+    } catch (error) {
+      if (error === stale) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private applyLiveReviewSessionMutation(live: LiveReviewSessionMutation): boolean {
+    if (!live.expected) {
+      if (this.liveReviewSessionRow(live.next.id)) {
+        return false;
+      }
+      insertLiveReviewSessionRow(this.db, live.next);
+      this.applyLiveReviewSessionSideEffects(live);
+      return true;
+    }
+
+    const row = this.liveReviewSessionRow(live.next.id);
+    if (!row || !isDeepStrictEqual(sessionFromLiveReviewSessionRow(row), live.expected)) {
+      return false;
+    }
+    if (!updateLiveReviewSessionRow(this.db, row.revision, live.next)) {
+      return false;
+    }
+    this.applyLiveReviewSessionSideEffects(live);
+    return true;
+  }
+
+  private applyLiveReviewSessionSideEffects(live: LiveReviewSessionMutation): void {
+    if (live.deleteTransactionMaterials) {
+      this.db.prepare(`DELETE FROM live_transaction_materials WHERE review_session_id = ?`).run(live.next.id);
+      this.db.prepare(`DELETE FROM live_private_review_artifacts WHERE review_session_id = ?`).run(live.next.id);
+    }
+    if (live.privateArtifactsJson === null) {
+      this.db.prepare(`DELETE FROM live_private_review_artifacts WHERE review_session_id = ?`).run(live.next.id);
+    } else if (live.privateArtifactsJson !== undefined) {
+      this.db
+        .prepare(
+          `INSERT INTO live_private_review_artifacts (review_session_id, artifacts_json)
+           VALUES (?, ?)
+           ON CONFLICT(review_session_id) DO UPDATE SET artifacts_json = excluded.artifacts_json`
+        )
+        .run(live.next.id, live.privateArtifactsJson);
+    }
+  }
+
+  private liveReviewSessionRow(id: string): LiveReviewSessionRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM live_review_sessions WHERE id = ?`)
+      .get(id) as LiveReviewSessionRow | undefined;
   }
 
   private upsertAccountSync(address: string, source: AccountSource, timestamp: string): AccountRecord {
@@ -1117,6 +1369,15 @@ export class SqliteActivityStore implements ActivityStore {
     }
     if (row.account_id !== null && row.account_id !== accountId) {
       throw new ActivityStoreError(`Review session already belongs to a different account: ${reviewSessionId}`);
+    }
+  }
+
+  private assertActiveAccountSync(accountId: number, reviewSessionId: string): void {
+    const row = this.db
+      .prepare("SELECT account_id FROM active_account_context WHERE id = ? AND source = 'wallet_identity'")
+      .get(ACTIVE_ACCOUNT_SINGLETON_ID) as { account_id: number | null } | undefined;
+    if (!row || row.account_id !== accountId) {
+      throw new ActivityStoreError(`Review session active account changed before commit: ${reviewSessionId}`);
     }
   }
 }

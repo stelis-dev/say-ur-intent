@@ -2,11 +2,18 @@ import { isDeepStrictEqual } from "node:util";
 import type {
   ActionPlan,
   ExecutionResult,
+  FailureReason,
   InternalSessionStatus,
   ReviewSession,
   ReviewState
 } from "../action/types.js";
-import type { ActivityStore } from "../activity/activityStore.js";
+import type {
+  ActivityStore,
+  LiveReviewSessionMutation,
+  ReviewExecutionInput,
+  ReviewStateSnapshotInput,
+  ReviewTransitionInput
+} from "../activity/activityStore.js";
 import { executionResultSchema } from "../action/schemas.js";
 import type { AdapterLifecycleValidator } from "../action/adapterLifecycleValidation.js";
 import { parseLifecycleValidatedReviewState } from "../action/reviewStateValidation.js";
@@ -34,6 +41,7 @@ import {
   verifySupportedHumanReadableReviewEvidence
 } from "../action/humanReadableReviewProjectionVerifier.js";
 import {
+  clonePrivateReviewArtifacts,
   InMemoryPrivateReviewArtifactStore,
   type PrivateReviewArtifactStore,
   type PrivateReviewArtifacts
@@ -75,6 +83,21 @@ type PrivateDerivedReviewFieldBinding = {
   getPublicState: (state: ReviewState) => unknown | undefined;
   getPrivateEvidence: (artifacts: PrivateReviewArtifacts) => unknown | undefined;
   projectPrivateEvidence: (evidence: unknown) => unknown;
+};
+
+type LiveReviewSessionSideEffects = Omit<LiveReviewSessionMutation, "expected" | "next">;
+
+type LiveReviewSessionProcess = {
+  sessionId: string;
+  expectedSession?: ReviewSession | undefined;
+  nextSession: ReviewSession;
+  liveSideEffects?: LiveReviewSessionSideEffects | undefined;
+  commitWithLiveSession?: ((live: LiveReviewSessionMutation) => Promise<boolean>) | undefined;
+  commitActivityOnly: () => Promise<void>;
+  commitLiveSessionOnly: () => void;
+  applyActivityOnlySideEffects?: (() => void) | undefined;
+  applyActivityOnlySideEffectsOnFailure?: boolean | undefined;
+  failureMessage?: string | undefined;
 };
 
 const PRIVATE_DERIVED_REVIEW_FIELD_BINDINGS: readonly PrivateDerivedReviewFieldBinding[] = [
@@ -137,6 +160,7 @@ export interface SessionStore {
     now?: Date
   ): Promise<PrivateReviewArtifacts | undefined>;
   recordExecutionResult(id: string, result: ExecutionResult, now?: Date): Promise<ReviewSession>;
+  recordChainExecutionResult(id: string, result: ExecutionResult, now?: Date): Promise<ReviewSession>;
   createWalletIdentitySession(now?: Date): Promise<CreatedWalletIdentitySession>;
   getWalletIdentitySession(id: string, now?: Date): Promise<WalletIdentitySession | undefined>;
   listWalletIdentitySessions(now?: Date): Promise<WalletIdentitySession[]>;
@@ -260,13 +284,22 @@ export class LocalSessionStore implements SessionStore {
       plans
     };
 
-    await this.activityStore.recordReviewSession({
+    const reviewSessionInput = {
       reviewSessionId: session.id,
       plan: plans[0]!,
       currentStatus: session.status,
       createdAt: session.createdAt
+    };
+    await this.commitLiveReviewSessionProcess({
+      sessionId: session.id,
+      nextSession: session,
+      commitWithLiveSession: this.activityStore.recordReviewSessionWithLiveSession
+        ? (live) => this.activityStore.recordReviewSessionWithLiveSession!(reviewSessionInput, live)
+        : undefined,
+      commitActivityOnly: () => this.activityStore.recordReviewSession(reviewSessionInput),
+      commitLiveSessionOnly: () => this.sessions.create(session.id, session),
+      failureMessage: `Review session already exists: ${session.id}`
     });
-    this.sessions.set(session.id, session);
     await this.appendEventLog({
       type: "session.created",
       sessionId: session.id,
@@ -330,14 +363,13 @@ export class LocalSessionStore implements SessionStore {
       transition(nextSession, "awaiting_wallet");
     }
     nextSession.lastActivityAt = now.toISOString();
-    await this.activityStore.recordReviewTransition({
+    await this.recordReviewTransitionWithLiveSession({
       reviewSessionId: id,
       event: "opened",
       fromStatus: session.status,
       toStatus: nextSession.status,
       transitionedAt: now.toISOString()
-    });
-    this.sessions.set(id, nextSession);
+    }, session, nextSession);
     await this.appendEventLog({
       type: "review.opened",
       sessionId: id,
@@ -391,15 +423,14 @@ export class LocalSessionStore implements SessionStore {
     }
     nextSession.account = normalizedAccount;
     nextSession.lastActivityAt = now.toISOString();
-    await this.activityStore.recordReviewTransition({
+    await this.recordReviewTransitionWithLiveSession({
       reviewSessionId: id,
       event: "wallet_connected",
       fromStatus: session.status,
       toStatus: nextSession.status,
       account: normalizedAccount,
       transitionedAt: now.toISOString()
-    });
-    this.sessions.set(id, nextSession);
+    }, session, nextSession);
     await this.appendEventLog({
       type: "wallet.connected",
       sessionId: id,
@@ -495,13 +526,14 @@ export class LocalSessionStore implements SessionStore {
     nextSession.reviewState = parsedState;
     nextSession.lastActivityAt = now.toISOString();
     try {
-      await this.activityStore.recordReviewStateSnapshot({
+      await this.recordReviewStateSnapshotWithLiveSession({
         reviewSessionId: id,
         fromStatus: session.status,
         state: parsedState,
         recordedAt: now.toISOString()
-      });
-      this.sessions.set(id, nextSession);
+      }, session, nextSession, {
+        privateArtifactsJson: this.privateArtifactsJsonForLiveMutation(privateArtifacts)
+      }, () => this.replaceReviewSessionPrivateArtifacts(id, privateArtifacts));
       await this.appendEventLog({
         type: "state.computed",
         sessionId: id,
@@ -510,10 +542,9 @@ export class LocalSessionStore implements SessionStore {
         status: parsedState.status,
         at: now.toISOString()
       });
-      this.replaceReviewSessionPrivateArtifacts(id, privateArtifacts);
       return cloneLocalSession(nextSession);
     } catch (error) {
-      if (privateArtifacts) {
+      if (privateArtifacts && !this.isStaleReviewSessionCommitError(error)) {
         this.deleteReviewSessionTransactionMaterials(id);
       }
       throw error;
@@ -526,9 +557,37 @@ export class LocalSessionStore implements SessionStore {
     now = new Date()
   ): Promise<ReviewSession> {
     const session = await this.requireMutableSession(id, now);
-    assertSameSessionId(id, result.reviewSessionId, "Execution result");
-    assertPlanInSession(session, result.planId);
-    const parsedResult = parseExecutionResult(result, session.executionResult);
+    const parsedResult = parseExecutionResult(result);
+    assertPageExecutionResultTransition(session, parsedResult);
+    return this.recordExecutionResultInternal(id, session, parsedResult, now);
+  }
+
+  async recordChainExecutionResult(
+    id: string,
+    result: ExecutionResult,
+    now = new Date()
+  ): Promise<ReviewSession> {
+    const session = await this.requireMutableSession(id, now);
+    if (session.executionResult?.status === "success" || session.executionResult?.status === "failure") {
+      this.deleteReviewSessionTransactionMaterials(id);
+      throw new SessionStoreError(
+        "execution_result_finalized",
+        `Execution result already finalized: ${id}`
+      );
+    }
+    const parsedResult = parseExecutionResult(result);
+    assertChainExecutionResultTransition(session, parsedResult);
+    return this.recordExecutionResultInternal(id, session, parsedResult, now);
+  }
+
+  private async recordExecutionResultInternal(
+    id: string,
+    session: ReviewSession,
+    parsedResult: ExecutionResult,
+    now: Date
+  ): Promise<ReviewSession> {
+    assertSameSessionId(id, parsedResult.reviewSessionId, "Execution result");
+    assertPlanInSession(session, parsedResult.planId);
     if (session.executionResult?.status === "success" || session.executionResult?.status === "failure") {
       this.deleteReviewSessionTransactionMaterials(id);
       throw new SessionStoreError(
@@ -579,7 +638,7 @@ export class LocalSessionStore implements SessionStore {
     delete nextSession.pendingHandoffDigest;
     nextSession.lastActivityAt = now.toISOString();
     try {
-      await this.activityStore.recordReviewExecution({
+      await this.recordReviewExecutionWithLiveSession({
         reviewSessionId: parsedResult.reviewSessionId,
         planId: parsedResult.planId,
         account: reviewAccount,
@@ -590,9 +649,7 @@ export class LocalSessionStore implements SessionStore {
         failureReason: "failureReason" in parsedResult ? parsedResult.failureReason : undefined,
         result: parsedResult,
         recordedAt: parsedResult.recordedAt
-      });
-      this.sessions.set(id, nextSession);
-      this.deleteReviewSessionTransactionMaterials(id);
+      }, session, nextSession, { deleteTransactionMaterials: true });
       const event = {
         type: "result.recorded",
         sessionId: id,
@@ -711,7 +768,7 @@ export class LocalSessionStore implements SessionStore {
     if (!session || session.pendingHandoffDigest === undefined) {
       return;
     }
-    this.sessions.releaseHandoffLock(id);
+    this.sessions.releaseHandoffLock(id, session.pendingHandoffDigest);
     await this.appendEventLog({
       type: "handoff.cancelled",
       sessionId: id,
@@ -844,6 +901,150 @@ export class LocalSessionStore implements SessionStore {
     this.privateReviewArtifacts.delete(reviewSessionId);
   }
 
+  private async commitLiveReviewSessionProcess(input: LiveReviewSessionProcess): Promise<void> {
+    const live: LiveReviewSessionMutation = input.expectedSession
+      ? {
+          expected: input.expectedSession,
+          next: input.nextSession,
+          ...input.liveSideEffects
+        }
+      : {
+          next: input.nextSession,
+          ...input.liveSideEffects
+        };
+
+    if (this.canUseActivityStoreLiveSessionMutations() && input.commitWithLiveSession) {
+      const committed = await input.commitWithLiveSession(live);
+      if (!committed) {
+        this.throwStaleReviewSession(input.sessionId, input.failureMessage);
+      }
+      return;
+    }
+
+    try {
+      await input.commitActivityOnly();
+      input.commitLiveSessionOnly();
+      input.applyActivityOnlySideEffects?.();
+    } catch (error) {
+      if (input.applyActivityOnlySideEffectsOnFailure) {
+        input.applyActivityOnlySideEffects?.();
+      }
+      throw error;
+    }
+  }
+
+  private async recordReviewTransitionWithLiveSession(
+    input: ReviewTransitionInput,
+    expectedSession: ReviewSession,
+    nextSession: ReviewSession,
+    liveSideEffects: LiveReviewSessionSideEffects = {},
+    options: { applyActivityOnlySideEffectsOnFailure?: boolean | undefined } = {}
+  ): Promise<void> {
+    await this.commitLiveReviewSessionProcess({
+      sessionId: expectedSession.id,
+      expectedSession,
+      nextSession,
+      liveSideEffects,
+      commitWithLiveSession: this.activityStore.recordReviewTransitionWithLiveSession
+        ? (live) => this.activityStore.recordReviewTransitionWithLiveSession!(input, live)
+        : undefined,
+      commitActivityOnly: () => this.activityStore.recordReviewTransition(input),
+      commitLiveSessionOnly: () => this.commitReviewSessionUpdate(expectedSession.id, expectedSession, nextSession),
+      applyActivityOnlySideEffects: () => this.applyActivityOnlyLiveSessionSideEffects(expectedSession.id, liveSideEffects),
+      applyActivityOnlySideEffectsOnFailure: options.applyActivityOnlySideEffectsOnFailure
+    });
+  }
+
+  private async recordReviewStateSnapshotWithLiveSession(
+    input: ReviewStateSnapshotInput,
+    expectedSession: ReviewSession,
+    nextSession: ReviewSession,
+    liveSideEffects: LiveReviewSessionSideEffects = {},
+    applyActivityOnlySideEffects?: (() => void) | undefined
+  ): Promise<void> {
+    await this.commitLiveReviewSessionProcess({
+      sessionId: expectedSession.id,
+      expectedSession,
+      nextSession,
+      liveSideEffects,
+      commitWithLiveSession: this.activityStore.recordReviewStateSnapshotWithLiveSession
+        ? (live) => this.activityStore.recordReviewStateSnapshotWithLiveSession!(input, live)
+        : undefined,
+      commitActivityOnly: () => this.activityStore.recordReviewStateSnapshot(input),
+      commitLiveSessionOnly: () => this.commitReviewSessionUpdate(expectedSession.id, expectedSession, nextSession),
+      applyActivityOnlySideEffects: applyActivityOnlySideEffects
+        ?? (() => this.applyActivityOnlyLiveSessionSideEffects(expectedSession.id, liveSideEffects))
+    });
+  }
+
+  private async recordReviewExecutionWithLiveSession(
+    input: ReviewExecutionInput,
+    expectedSession: ReviewSession,
+    nextSession: ReviewSession,
+    liveSideEffects: LiveReviewSessionSideEffects = {}
+  ): Promise<void> {
+    await this.commitLiveReviewSessionProcess({
+      sessionId: expectedSession.id,
+      expectedSession,
+      nextSession,
+      liveSideEffects,
+      commitWithLiveSession: this.activityStore.recordReviewExecutionWithLiveSession
+        ? async (live) => (await this.activityStore.recordReviewExecutionWithLiveSession!(input, live)) !== undefined
+        : undefined,
+      commitActivityOnly: async () => { await this.activityStore.recordReviewExecution(input); },
+      commitLiveSessionOnly: () => this.commitReviewSessionUpdate(expectedSession.id, expectedSession, nextSession),
+      applyActivityOnlySideEffects: () => this.applyActivityOnlyLiveSessionSideEffects(expectedSession.id, liveSideEffects)
+    });
+  }
+
+  private applyActivityOnlyLiveSessionSideEffects(
+    reviewSessionId: string,
+    liveSideEffects: LiveReviewSessionSideEffects
+  ): void {
+    if (liveSideEffects.deleteTransactionMaterials) {
+      this.deleteReviewSessionTransactionMaterials(reviewSessionId);
+    }
+  }
+
+  private privateArtifactsJsonForLiveMutation(
+    privateArtifacts: PrivateReviewArtifacts | undefined
+  ): string | null {
+    if (!privateArtifacts?.transactionMaterial || !privateArtifacts.transactionMaterialDigest) {
+      return null;
+    }
+    return JSON.stringify(clonePrivateReviewArtifacts(privateArtifacts));
+  }
+
+  private canUseActivityStoreLiveSessionMutations(): boolean {
+    return this.sessions.usesActivityStoreLiveSessionMutations === true;
+  }
+
+  private commitReviewSessionUpdate(
+    id: string,
+    expectedSession: ReviewSession,
+    nextSession: ReviewSession
+  ): void {
+    if (this.sessions.commitReviewSessionTransition(id, expectedSession, nextSession)) {
+      return;
+    }
+    this.throwStaleReviewSession(id);
+  }
+
+  private throwStaleReviewSession(id: string, message?: string): never {
+    throw new SessionStoreError(
+      "invalid_session_transition",
+      message ?? `Review session changed before transition committed: ${id}`
+    );
+  }
+
+  private isStaleReviewSessionCommitError(error: unknown): boolean {
+    return (
+      error instanceof SessionStoreError &&
+      error.code === "invalid_session_transition" &&
+      error.message.includes("changed before transition committed")
+    );
+  }
+
   private async expireReviewSession(
     id: string,
     session: ReviewSession,
@@ -851,18 +1052,15 @@ export class LocalSessionStore implements SessionStore {
   ): Promise<ReviewSession> {
     const nextSession = cloneLocalSession(session);
     transition(nextSession, "expired");
-    try {
-      await this.activityStore.recordReviewTransition({
-        reviewSessionId: id,
-        event: "expired",
-        fromStatus: session.status,
-        toStatus: nextSession.status,
-        transitionedAt: now.toISOString()
-      });
-    } finally {
-      this.deleteReviewSessionTransactionMaterials(id);
-    }
-    this.sessions.set(id, nextSession);
+    await this.recordReviewTransitionWithLiveSession({
+      reviewSessionId: id,
+      event: "expired",
+      fromStatus: session.status,
+      toStatus: nextSession.status,
+      transitionedAt: now.toISOString()
+    }, session, nextSession, { deleteTransactionMaterials: true }, {
+      applyActivityOnlySideEffectsOnFailure: true
+    });
     return nextSession;
   }
 
@@ -906,7 +1104,6 @@ export class LocalSessionStore implements SessionStore {
     session: ReviewSession,
     now: Date
   ): Promise<ReviewSession> {
-    this.deleteReviewSessionTransactionMaterials(id);
     const nextSession = cloneLocalSession(session);
     transition(nextSession, "refresh_required");
     if (nextSession.reviewState) {
@@ -927,22 +1124,22 @@ export class LocalSessionStore implements SessionStore {
       };
     }
     nextSession.lastActivityAt = now.toISOString();
-    this.sessions.set(id, nextSession);
-    await this.activityStore.recordReviewTransition({
-      reviewSessionId: id,
-      event: "state_computed",
-      fromStatus: session.status,
-      toStatus: nextSession.status,
-      reason: "private_review_artifacts_refresh_required",
-      transitionedAt: now.toISOString()
-    });
     if (nextSession.reviewState) {
-      await this.activityStore.recordReviewStateSnapshot({
+      await this.recordReviewStateSnapshotWithLiveSession({
         reviewSessionId: id,
         fromStatus: session.status,
         state: nextSession.reviewState,
         recordedAt: now.toISOString()
-      });
+      }, session, nextSession, { deleteTransactionMaterials: true });
+    } else {
+      await this.recordReviewTransitionWithLiveSession({
+        reviewSessionId: id,
+        event: "state_computed",
+        fromStatus: session.status,
+        toStatus: nextSession.status,
+        reason: "private_review_artifacts_refresh_required",
+        transitionedAt: now.toISOString()
+      }, session, nextSession, { deleteTransactionMaterials: true });
     }
     await this.appendEventLog({
       type: "state.computed",
@@ -1155,22 +1352,88 @@ function parseReviewState(
   return { ...parsed, account: normalizedAccount } as ReviewState;
 }
 
-function parseExecutionResult(
-  result: ExecutionResult,
-  previous?: ExecutionResult
-): ExecutionResult {
-  const candidate =
-    result.status === "failure" &&
-    result.txDigest === undefined &&
-    previous?.status === "signed_pending_result"
-      ? { ...result, txDigest: previous.txDigest }
-      : result;
+const CHAIN_EXECUTION_FAILURE_REASONS = new Set<FailureReason>([
+  "chain_receipt_unavailable",
+  "receipt_verification_failed",
+  "chain_execution_failed"
+]);
+
+const PAGE_EXECUTION_FAILURE_REASONS = new Set<FailureReason>([
+  "wallet_rejected",
+  "wallet_provider_error",
+  "signing_disconnected",
+  "network_error",
+  "unknown_failure"
+]);
+
+function assertPageExecutionResultTransition(
+  session: ReviewSession,
+  result: ExecutionResult
+): void {
+  if (result.status === "success") {
+    throw new SessionStoreError("input_invalid", "Page execution result cannot finalize chain success");
+  }
+  if (result.status === "signed_pending_result") {
+    const commitment = session.reviewState?.walletReviewAdapterContract?.transactionMaterialCommitment;
+    if (commitment !== undefined && result.txDigest !== commitment) {
+      throw new SessionStoreError(
+        "handoff_commitment_mismatch",
+        "Signed transaction digest does not match the reviewed transaction commitment"
+      );
+    }
+    return;
+  }
+  if (!PAGE_EXECUTION_FAILURE_REASONS.has(result.failureReason) || result.txDigest !== undefined) {
+    throw new SessionStoreError("input_invalid", "Page execution failure must be a local pre-chain failure");
+  }
+  if (session.executionResult?.status === "signed_pending_result") {
+    throw new SessionStoreError(
+      "signed_pending_result_conflict",
+      `Signed pending result already recorded: ${session.id}`
+    );
+  }
+}
+
+function assertChainExecutionResultTransition(
+  session: ReviewSession,
+  result: ExecutionResult
+): void {
+  const pending = session.executionResult;
+  if (!pending || pending.status !== "signed_pending_result") {
+    throw new SessionStoreError(
+      "invalid_session_transition",
+      `Chain execution finalization requires signed pending result: ${session.id}`
+    );
+  }
+  if (result.status === "signed_pending_result") {
+    throw new SessionStoreError("input_invalid", "Chain execution finalization requires a final result");
+  }
+  if (result.txDigest !== pending.txDigest) {
+    throw new SessionStoreError(
+      "signed_pending_result_conflict",
+      `Chain execution result digest does not match signed pending result: ${session.id}`
+    );
+  }
+  if (result.status === "success") {
+    if (!result.chainReceipt) {
+      throw new SessionStoreError("input_invalid", "Verified chain success requires chain receipt evidence");
+    }
+    return;
+  }
+  if (!CHAIN_EXECUTION_FAILURE_REASONS.has(result.failureReason)) {
+    throw new SessionStoreError("input_invalid", "Chain execution finalization requires a chain failure reason");
+  }
+  if (result.failureReason === "chain_execution_failed" && !result.chainReceipt) {
+    throw new SessionStoreError("input_invalid", "Verified chain execution failure requires chain receipt evidence");
+  }
+}
+
+function parseExecutionResult(result: ExecutionResult): ExecutionResult {
   const parsed = executionResultSchema.safeParse(result);
-  const reparsed = executionResultSchema.safeParse(candidate);
-  if (!parsed.success && !reparsed.success) {
+  if (!parsed.success) {
     throw new SessionStoreError("input_invalid", "Invalid execution result shape");
   }
-  return (reparsed.success ? reparsed.data : parsed.data) as ExecutionResult;
+  return parsed.data as ExecutionResult;
 }
 
 function cloneSession<T>(session: T): T {

@@ -22,6 +22,7 @@ import {
 import { DB_USER_VERSION } from "../src/core/activity/schemaVersion.js";
 import { SuiEndpointError } from "../src/core/suiEndpoint.js";
 import { InMemorySessionStore } from "../src/core/session/sessionStore.js";
+import { chainReceiptFixture } from "./fixtures/chainReceipt.js";
 
 const walletAccount = `0x${"a".repeat(64)}`;
 const otherWalletAccount = `0x${"b".repeat(64)}`;
@@ -253,6 +254,7 @@ async function recordConnectedReview(
           planId: input.planId,
           status: "success",
           txDigest,
+          chainReceipt: chainReceiptFixture({ txDigest }),
           explorerUrl: `https://suivision.xyz/txblock/${txDigest}`,
           recordedAt: iso(input.createdAtSeconds + 5)
         },
@@ -1839,6 +1841,7 @@ describe("SqliteActivityStore", () => {
             planId: "plan_1",
             status: "success",
             txDigest: "digest_1",
+            chainReceipt: chainReceiptFixture({ txDigest: "digest_1" }),
             recordedAt: new Date(1).toISOString()
           },
           recordedAt: new Date(1).toISOString()
@@ -1857,6 +1860,7 @@ describe("SqliteActivityStore", () => {
           planId: "plan_1",
           status: "success",
           txDigest: "digest_1",
+          chainReceipt: chainReceiptFixture({ txDigest: "digest_1" }),
           explorerUrl: "https://suivision.xyz/txblock/digest_1",
           recordedAt: new Date(1).toISOString()
         },
@@ -2239,6 +2243,7 @@ describe("SqliteActivityStore", () => {
           planId: "plan_success",
           status: "success",
           txDigest: "digest_success",
+          chainReceipt: chainReceiptFixture({ txDigest: "digest_success" }),
           recordedAt: iso(6)
         },
         recordedAt: iso(6)

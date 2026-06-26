@@ -207,6 +207,12 @@ type ReviewSessionPayload = {
     txDigest?: string;
     failureReason?: string;
     failureDetail?: string;
+    chainReceipt?: {
+      source?: { fetchedAt?: string };
+      effectsStatus?: { success?: boolean };
+      packageCalls?: Array<{ target?: string }>;
+      accountBalanceChanges?: Array<{ coinType?: string; amountRaw?: string; direction?: string }>;
+    };
     recordedAt?: string;
   };
   plans: ActionPlan[];
@@ -1104,10 +1110,10 @@ function renderExecutionResultPanel(result: NonNullable<ReviewSessionPayload["ex
   panel.classList.add(result.status === "success" ? "execution-success" : result.status === "failure" ? "execution-failure" : "execution-pending");
   const headline =
     result.status === "success"
-      ? "Transaction executed successfully."
+      ? "Chain receipt verified."
       : result.status === "failure"
-        ? "Transaction did not execute."
-        : "Signed - waiting for the chain result.";
+        ? headlineForFailureResult(result.failureReason)
+        : "Signed - verifying on Sui mainnet.";
   panel.append(element("p", "execution-headline", headline));
   if (result.txDigest) {
     panel.append(row("Transaction digest", result.txDigest));
@@ -1121,14 +1127,47 @@ function renderExecutionResultPanel(result: NonNullable<ReviewSessionPayload["ex
   if (result.recordedAt) {
     panel.append(row("Recorded at", result.recordedAt));
   }
+  if (result.chainReceipt?.source?.fetchedAt) {
+    panel.append(row("Receipt fetched at", result.chainReceipt.source.fetchedAt));
+  }
+  if (result.chainReceipt?.effectsStatus) {
+    panel.append(row("Chain effects", result.chainReceipt.effectsStatus.success ? "Success" : "Failure"));
+  }
+  if (result.chainReceipt?.packageCalls?.length) {
+    panel.append(renderFactList(
+      "Package calls",
+      result.chainReceipt.packageCalls.map((call) => call.target ?? "Unknown package call")
+    ));
+  }
+  if (result.chainReceipt?.accountBalanceChanges?.length) {
+    panel.append(renderFactList(
+      "Account balance changes",
+      result.chainReceipt.accountBalanceChanges.map((change) =>
+        `${change.direction ?? "change"} ${change.amountRaw ?? "?"} raw (${shortType(change.coinType ?? "?")})`
+      )
+    ));
+  }
   panel.append(
     element(
       "p",
       "boundary-note",
-      "Recorded from your wallet's execution result for this review session. Verify the digest in a Sui explorer for chain-level confirmation."
+      "Execution result is recorded from the local server's Sui mainnet receipt read. It is not transaction bytes, signing data, or a guarantee of economic outcome."
     )
   );
   return panel;
+}
+
+function headlineForFailureResult(failureReason: string | undefined): string {
+  switch (failureReason) {
+    case "chain_execution_failed":
+      return "Chain receipt verified; execution failed.";
+    case "chain_receipt_unavailable":
+      return "Signed transaction digest was not found before the local receipt lookup window ended.";
+    case "receipt_verification_failed":
+      return "Chain receipt verification failed.";
+    default:
+      return "Transaction did not execute.";
+  }
 }
 
 function renderProposalReviewModel(model: ProposalReviewModel): HTMLElement {
@@ -1626,9 +1665,10 @@ function renderSigningSection(state: ReviewState): HTMLElement {
 async function signInWallet(state: ReviewState): Promise<void> {
   if (isSigning) return;
   isSigning = true;
-  signNotice = { kind: "info", text: "Approve the request in your wallet. After approval this page waits for the chain result and shows success or failure here." };
+  signNotice = { kind: "info", text: "Approve the request in your wallet. After approval this page submits the signed transaction and the local server verifies the receipt." };
   render();
   let handedOff = false;
+  let signedDigestReported = false;
   try {
     const handoff = await requestJson<{ transactionBytesBase64: string; transactionMaterialCommitment: string }>(
       `/api/review/${encodeURIComponent(reviewSessionId)}/handoff`,
@@ -1660,38 +1700,24 @@ async function signInWallet(state: ReviewState): Promise<void> {
       return;
     }
     await postExecutionResult(state, { status: "signed_pending_result", txDigest: signedDigest });
-    let executed;
+    signedDigestReported = true;
     try {
-      executed = await suiMainnetClient.core.executeTransaction({
+      await suiMainnetClient.core.executeTransaction({
         transaction: signedBytes,
         signatures: [signed.signature],
         include: { effects: true }
       });
     } catch (submitError) {
-      await postExecutionResult(state, { status: "failure", failureReason: "transaction_submit_failed" });
       signNotice = {
         kind: "error",
-        text: messageForHttpError(submitError, "The signed transaction could not be submitted to the chain.")
+        text: messageForHttpError(submitError, "The signed transaction could not be submitted from this page. The local server will mark the digest unavailable if it does not appear on Sui mainnet.")
       };
       return;
     }
-    if (executed.$kind !== "Transaction" || !executed.Transaction) {
-      await postExecutionResult(state, { status: "failure", failureReason: "execution_result_unavailable" });
-      signNotice = { kind: "error", text: "The chain did not return an executed transaction record." };
-      return;
-    }
-    const digest = executed.Transaction.digest;
-    const effectsStatus = executed.Transaction.effects?.status;
-    if (effectsStatus && !effectsStatus.success) {
-      await postExecutionResult(state, { status: "failure", failureReason: "unknown_failure" });
-      signNotice = { kind: "error", text: "The transaction executed on chain but failed - see the receipt below." };
-      return;
-    }
-    await postExecutionResult(state, { status: "success", txDigest: digest });
-    signNotice = { kind: "info", text: "Transaction executed successfully - receipt recorded below." };
+    signNotice = { kind: "info", text: "Signed transaction submitted. Verifying the receipt on Sui mainnet." };
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
-    if (handedOff) {
+    if (handedOff && !signedDigestReported) {
       const failureReason = isWalletStandardUserRejected(error) ? "wallet_rejected" : "wallet_provider_error";
       try {
         await postExecutionResult(state, { status: "failure", failureReason });
@@ -1749,7 +1775,7 @@ async function reconnectBoundWallet(wallet: UiWallet): Promise<void> {
 
 async function postExecutionResult(
   state: ReviewState,
-  body: { status: "signed_pending_result" | "success" | "failure"; txDigest?: string; failureReason?: string }
+  body: { status: "signed_pending_result" | "failure"; txDigest?: string; failureReason?: string }
 ): Promise<void> {
   await requestJson(`/api/review/${encodeURIComponent(reviewSessionId)}/result`, {
     method: "POST",

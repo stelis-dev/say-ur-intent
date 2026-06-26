@@ -9,6 +9,7 @@ import {
   isInteractionPendingReviewStatus,
   isWaitStoppingExecutionStatus
 } from "../src/core/session/status.js";
+import { chainReceiptDigest, chainReceiptFixture } from "./fixtures/chainReceipt.js";
 
 const baseSession: ReviewSession = {
   id: "session_1",
@@ -46,7 +47,8 @@ describe("execution polling status", () => {
           reviewSessionId: "session_1",
           planId: "plan_1",
           status: "success",
-          txDigest: "digest",
+          txDigest: chainReceiptDigest,
+          chainReceipt: chainReceiptFixture(),
           recordedAt: new Date(1).toISOString()
         }
       })

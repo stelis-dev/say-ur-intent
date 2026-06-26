@@ -143,6 +143,16 @@ describe("source policy", () => {
     }
   });
 
+  it("keeps the review page from reporting chain-final execution results", () => {
+    const source = readFileSync(join(process.cwd(), "review-app/src/review.ts"), "utf8");
+
+    expect(source).toContain('body: { status: "signed_pending_result" | "failure"; txDigest?: string; failureReason?: string }');
+    expect(source).toContain('status: "signed_pending_result"');
+    expect(source).not.toContain('status: "success"');
+    expect(source).not.toContain("transaction_submit_failed");
+    expect(source).not.toContain("execution_result_unavailable");
+  });
+
   it("keeps the initial MCP tool registration wrapper migration narrow", () => {
     const wrapperSource = readFileSync(join(process.cwd(), "src/mcp/registerTool.ts"), "utf8");
     expect(wrapperSource).toMatch(/server\.registerTool/);

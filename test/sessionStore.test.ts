@@ -46,6 +46,11 @@ import type { WalletIdentitySession } from "../src/core/session/walletIdentity.j
 import type { SettingsSession } from "../src/core/session/settingsSession.js";
 import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
 import { deepbookDisplayQuote } from "./fixtures/deepbookQuote.js";
+import {
+  chainReceiptDigest,
+  chainReceiptFixture,
+  otherChainReceiptDigest
+} from "./fixtures/chainReceipt.js";
 import { createTestSwapHumanReadableReviewEvidence } from "./fixtures/humanReadableReview.js";
 import { recordTestTransactionMaterial } from "./fixtures/transactionMaterial.js";
 import { createSuccessfulReviewTimeSimulationClient } from "./fixtures/reviewTimeSimulation.js";
@@ -632,18 +637,19 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
         reviewSessionId: finalSession.id,
         planId: plan.id,
         status: "signed_pending_result",
-        txDigest: "digest",
+        txDigest: chainReceiptDigest,
         recordedAt: new Date(3).toISOString()
       },
       new Date(3)
     );
-    await finalStore.recordExecutionResult(
+    await finalStore.recordChainExecutionResult(
       finalSession.id,
       {
         reviewSessionId: finalSession.id,
         planId: plan.id,
         status: "success",
-        txDigest: "digest",
+        txDigest: chainReceiptDigest,
+        chainReceipt: chainReceiptFixture(),
         recordedAt: new Date(4).toISOString()
       },
       new Date(4)
@@ -671,12 +677,13 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
           reviewSessionId: session.id,
           planId: plan.id,
           status: "success",
-          txDigest: "digest",
+          txDigest: chainReceiptDigest,
+          chainReceipt: chainReceiptFixture(),
           recordedAt: new Date(2).toISOString()
         },
         new Date(2)
       )
-    ).rejects.toThrow("Invalid session transition");
+    ).rejects.toMatchObject({ code: "input_invalid" } satisfies Partial<SessionStoreError>);
 
     await openAndConnectReview(store, session.id, walletAccount, new Date(2));
     const reviewState: ReviewState = {
@@ -1767,18 +1774,19 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
         reviewSessionId: session.id,
         planId: plan.id,
         status: "signed_pending_result",
-        txDigest: "digest",
+        txDigest: chainReceiptDigest,
         recordedAt: "2026-06-06T00:00:04.000Z"
       },
       new Date("2026-06-06T00:00:04.000Z")
     );
-    await store.recordExecutionResult(
+    await store.recordChainExecutionResult(
       session.id,
       {
         reviewSessionId: session.id,
         planId: plan.id,
         status: "success",
-        txDigest: "digest",
+        txDigest: chainReceiptDigest,
+        chainReceipt: chainReceiptFixture(),
         recordedAt: "2026-06-06T00:00:05.000Z"
       },
       new Date("2026-06-06T00:00:05.000Z")
@@ -1794,13 +1802,14 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
     });
 
     await expect(
-      store.recordExecutionResult(
+      store.recordChainExecutionResult(
         session.id,
         {
           reviewSessionId: session.id,
           planId: plan.id,
           status: "success",
-          txDigest: "different",
+          txDigest: otherChainReceiptDigest,
+          chainReceipt: chainReceiptFixture({ txDigest: otherChainReceiptDigest }),
           recordedAt: "2026-06-06T00:00:07.000Z"
         },
         new Date("2026-06-06T00:00:07.000Z")
@@ -2514,18 +2523,19 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
         reviewSessionId: session.id,
         planId: plan.id,
         status: "signed_pending_result",
-        txDigest: "digest",
+        txDigest: chainReceiptDigest,
         recordedAt: t0.toISOString()
       },
       t0
     );
-    await store.recordExecutionResult(
+    await store.recordChainExecutionResult(
       session.id,
       {
         reviewSessionId: session.id,
         planId: plan.id,
         status: "success",
-        txDigest: "digest",
+        txDigest: chainReceiptDigest,
+        chainReceipt: chainReceiptFixture(),
         recordedAt: t0.toISOString()
       },
       t0
@@ -2591,23 +2601,25 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
       reviewSessionId: session.id,
       planId: plan.id,
       status: "signed_pending_result",
-      txDigest: "first",
+      txDigest: chainReceiptDigest,
       recordedAt: new Date().toISOString()
     });
-    await store.recordExecutionResult(session.id, {
+    await store.recordChainExecutionResult(session.id, {
       reviewSessionId: session.id,
       planId: plan.id,
       status: "success",
-      txDigest: "first",
+      txDigest: chainReceiptDigest,
+      chainReceipt: chainReceiptFixture(),
       recordedAt: new Date().toISOString()
     });
 
     await expect(
-      store.recordExecutionResult(session.id, {
+      store.recordChainExecutionResult(session.id, {
         reviewSessionId: session.id,
         planId: plan.id,
         status: "success",
-        txDigest: "second",
+        txDigest: otherChainReceiptDigest,
+        chainReceipt: chainReceiptFixture({ txDigest: otherChainReceiptDigest }),
         recordedAt: new Date().toISOString()
       })
     ).rejects.toThrow("already finalized");
@@ -2629,14 +2641,15 @@ describe.each(SESSION_STORE_BACKENDS)("LocalSessionStore (%s)", (_backendLabel, 
       reviewSessionId: session.id,
       planId: plan.id,
       status: "signed_pending_result",
-      txDigest: "digest",
+      txDigest: chainReceiptDigest,
       recordedAt: new Date().toISOString()
     });
-    await store.recordExecutionResult(session.id, {
+    await store.recordChainExecutionResult(session.id, {
       reviewSessionId: session.id,
       planId: plan.id,
       status: "success",
-      txDigest: "digest",
+      txDigest: chainReceiptDigest,
+      chainReceipt: chainReceiptFixture(),
       recordedAt: new Date().toISOString()
     });
 

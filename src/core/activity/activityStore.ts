@@ -2,6 +2,7 @@ import type {
   ActionPlan,
   ExecutionResult,
   InternalSessionStatus,
+  ReviewSession,
   ToolErrorKind,
   ReviewState
 } from "../action/types.js";
@@ -336,6 +337,13 @@ export type ReviewStateSnapshotInput = {
   recordedAt: string;
 };
 
+export type LiveReviewSessionMutation = {
+  expected?: ReviewSession | undefined;
+  next: ReviewSession;
+  privateArtifactsJson?: string | null | undefined;
+  deleteTransactionMaterials?: boolean | undefined;
+};
+
 export interface ActivityStore {
   upsertAccount(address: string, source: AccountSource, now?: Date): Promise<AccountRecord>;
   getKnownAccount(address: string): Promise<AccountRecord | undefined>;
@@ -343,9 +351,13 @@ export interface ActivityStore {
   getActiveAccount(): Promise<ActiveAccountRecord | undefined>;
   clearActiveAccount(now?: Date): Promise<void>;
   recordReviewSession(input: ReviewSessionEvidenceInput): Promise<void>;
+  recordReviewSessionWithLiveSession?(input: ReviewSessionEvidenceInput, live: LiveReviewSessionMutation): Promise<boolean>;
   recordReviewTransition(input: ReviewTransitionInput): Promise<void>;
+  recordReviewTransitionWithLiveSession?(input: ReviewTransitionInput, live: LiveReviewSessionMutation): Promise<boolean>;
   recordReviewStateSnapshot(input: ReviewStateSnapshotInput): Promise<void>;
+  recordReviewStateSnapshotWithLiveSession?(input: ReviewStateSnapshotInput, live: LiveReviewSessionMutation): Promise<boolean>;
   recordReviewExecution(input: ReviewExecutionInput): Promise<ReviewExecutionRecord>;
+  recordReviewExecutionWithLiveSession?(input: ReviewExecutionInput, live: LiveReviewSessionMutation): Promise<ReviewExecutionRecord | undefined>;
   getReviewExecution(reviewSessionId: string): Promise<ReviewExecutionRecord | undefined>;
   listReviewActivity(filter: ReviewActivityListFilter): Promise<ReviewActivityListResult>;
   summarizeReviewFunnel(filter: ReviewActivityFilter): Promise<ReviewFunnelSummaryResult>;

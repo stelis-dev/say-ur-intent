@@ -4,6 +4,7 @@ import {
   executionPollingStatusSchema,
   executionResultSchema
 } from "../../../core/action/schemas.js";
+import { getReviewSessionWithLazyChainReceiptFinalization } from "../../../core/session/chainReceiptFinalization.js";
 import { waitForExecutionResult } from "../../../core/session/wait.js";
 import type { McpServerDeps } from "../../server.js";
 import { errorToolResult, okToolResult } from "../../result.js";
@@ -43,7 +44,10 @@ export function registerExecutionResultTools(server: McpServer, deps: McpServerD
     },
     async ({ reviewSessionId }) => {
       try {
-        const session = await deps.sessions.getReviewSession(reviewSessionId);
+        const session = await getReviewSessionWithLazyChainReceiptFinalization({
+          sessions: deps.sessions,
+          chainReceiptVerifier: deps.chainReceiptVerifier
+        }, reviewSessionId);
         if (!session) {
           return errorToolResult({
             kind: "session_not_found",
@@ -91,7 +95,12 @@ export function registerExecutionResultTools(server: McpServer, deps: McpServerD
       try {
         const result = await waitForExecutionResult(deps.sessions, reviewSessionId, {
           timeoutMs,
-          signal: extra.signal
+          signal: extra.signal,
+          readReviewSession: (id, now) =>
+            getReviewSessionWithLazyChainReceiptFinalization({
+              sessions: deps.sessions,
+              chainReceiptVerifier: deps.chainReceiptVerifier
+            }, id, now)
         });
         return okToolResult({
           waitOutcome: result.waitOutcome,

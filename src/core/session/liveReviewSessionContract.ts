@@ -1,0 +1,4 @@
+export const LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION = "shared_sqlite_review_session_v1";
+
+export const LIVE_REVIEW_SESSION_INSERT_TRIGGER = "trg_live_review_sessions_contract_insert";
+export const LIVE_REVIEW_SESSION_UPDATE_TRIGGER = "trg_live_review_sessions_contract_update";

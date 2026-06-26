@@ -220,6 +220,48 @@ describe("prepareWalletHandoff", () => {
     expect(after?.pendingHandoffDigest).toBeUndefined();
   });
 
+  it("rejects signed pending results that do not match the reviewed contract commitment", async () => {
+    const { store, session, computed } = await readyReviewSession();
+    const commitment = computed.state.walletReviewAdapterContract?.transactionMaterialCommitment;
+    if (!commitment) {
+      throw new Error("expected wallet review adapter contract");
+    }
+
+    await expect(
+      store.recordExecutionResult(
+        session.id,
+        {
+          reviewSessionId: session.id,
+          planId: plan.id,
+          status: "signed_pending_result",
+          txDigest: "8yFN1xzFyVHwF4aXJQzLb2Xdh4avWcXWJ4qJGnYSC8kq",
+          recordedAt: computeNow.toISOString()
+        },
+        computeNow
+      )
+    ).rejects.toMatchObject({ code: "handoff_commitment_mismatch" });
+    const afterMismatch = await store.getReviewSession(session.id, computeNow);
+    expect(afterMismatch?.status).toBe("ready_for_wallet_review");
+    expect(afterMismatch).not.toHaveProperty("executionResult");
+
+    await expect(
+      store.recordExecutionResult(
+        session.id,
+        {
+          reviewSessionId: session.id,
+          planId: plan.id,
+          status: "signed_pending_result",
+          txDigest: commitment,
+          recordedAt: computeNow.toISOString()
+        },
+        computeNow
+      )
+    ).resolves.toMatchObject({
+      status: "signed_pending_result",
+      executionResult: { status: "signed_pending_result", txDigest: commitment }
+    });
+  });
+
   it("releases the handoff lock on explicit cancel", async () => {
     const { store, session, computed } = await readyReviewSession();
     await store.prepareWalletHandoff(session.id, plan.id, walletAccount, computeNow);

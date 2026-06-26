@@ -313,7 +313,7 @@ export type ExecutionResult =
   | (ExecutionResultBase & {
       status: "success";
       txDigest: string;
-      chainReceipt?: SuiChainReceiptEvidence;
+      chainReceipt: SuiChainReceiptEvidence;
       failureReason?: never;
     })
   | (ExecutionResultBase & {

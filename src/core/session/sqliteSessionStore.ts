@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type {
   ActionPlan,
   ExecutionResult,
@@ -15,8 +16,9 @@ import type { SessionRecordStore } from "./sessionRecordStore.js";
 import type { KeyedRecordStore } from "./keyedRecordStore.js";
 import { walletIdentitySessionSchema, type WalletIdentitySession } from "./walletIdentity.js";
 import type { SettingsSession } from "./settingsSession.js";
+import { LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION } from "./liveReviewSessionContract.js";
 
-type LiveReviewSessionRow = {
+export type LiveReviewSessionRow = {
   id: string;
   token_hash: string;
   status: string;
@@ -28,61 +30,95 @@ type LiveReviewSessionRow = {
   created_at: string;
   expires_at: string;
   last_activity_at: string;
+  revision: number;
+  write_contract_version: string;
+};
+
+export function insertLiveReviewSessionRow(db: SqliteDatabase, session: ReviewSession): void {
+  const serialized = serializeSessionForLiveReviewSessionRow(session);
+  db.prepare(
+    `INSERT INTO live_review_sessions
+       (id, token_hash, status, account, pending_handoff_digest,
+        plans_json, review_state_json, execution_result_json,
+        created_at, expires_at, last_activity_at, revision, write_contract_version)
+     VALUES
+       (@id, @tokenHash, @status, @account, @pendingHandoffDigest,
+        @plansJson, @reviewStateJson, @executionResultJson,
+        @createdAt, @expiresAt, @lastActivityAt, 0, @writeContractVersion)`
+  ).run(serialized);
+}
+
+export function updateLiveReviewSessionRow(
+  db: SqliteDatabase,
+  expectedRevision: number,
+  session: ReviewSession
+): boolean {
+  const serialized = serializeSessionForLiveReviewSessionRow(session);
+  const result = db
+    .prepare(
+      `UPDATE live_review_sessions
+       SET token_hash = @tokenHash,
+           status = @status,
+           account = @account,
+           pending_handoff_digest = @pendingHandoffDigest,
+           plans_json = @plansJson,
+           review_state_json = @reviewStateJson,
+           execution_result_json = @executionResultJson,
+           created_at = @createdAt,
+           expires_at = @expiresAt,
+           last_activity_at = @lastActivityAt,
+           revision = revision + 1,
+           write_contract_version = @writeContractVersion
+       WHERE id = @id AND revision = @expectedRevision`
+    )
+    .run({ ...serialized, expectedRevision });
+  return result.changes > 0;
+}
+
+export type SqliteSessionRecordStoreOptions = {
+  usesActivityStoreLiveSessionMutations?: boolean;
 };
 
 /**
- * SQLite-backed live review-session records. Holds the same SessionRecordStore
- * contract as the in-memory backend so the shared LocalSessionStore orchestration
- * (and every security invariant) runs unchanged. The handoff lock is a single
- * conditional UPDATE so two processes can never hand off two different transactions
- * for the same session.
+ * SQLite-backed live review-session records. Runtime product transitions are
+ * committed by SqliteActivityStore when the store is created through that owner,
+ * so live session state and review activity stay in one SQLite transaction.
+ * Direct instances keep a low-level transition commit path for tests and mixed
+ * harnesses that do not couple live state with activity rows.
  */
 export class SqliteSessionRecordStore implements SessionRecordStore {
-  constructor(private readonly db: SqliteDatabase) {}
+  readonly usesActivityStoreLiveSessionMutations: boolean;
+
+  constructor(
+    private readonly db: SqliteDatabase,
+    options: SqliteSessionRecordStoreOptions = {}
+  ) {
+    this.usesActivityStoreLiveSessionMutations = options.usesActivityStoreLiveSessionMutations === true;
+  }
 
   get(id: string): ReviewSession | undefined {
     const row = this.db
       .prepare(`SELECT * FROM live_review_sessions WHERE id = ?`)
       .get(id) as LiveReviewSessionRow | undefined;
-    return row ? sessionFromRow(row) : undefined;
+    return row ? sessionFromLiveReviewSessionRow(row) : undefined;
   }
 
-  set(id: string, session: ReviewSession): void {
-    this.db
-      .prepare(
-        `INSERT INTO live_review_sessions
-           (id, token_hash, status, account, pending_handoff_digest,
-            plans_json, review_state_json, execution_result_json,
-            created_at, expires_at, last_activity_at)
-         VALUES
-           (@id, @tokenHash, @status, @account, @pendingHandoffDigest,
-            @plansJson, @reviewStateJson, @executionResultJson,
-            @createdAt, @expiresAt, @lastActivityAt)
-         ON CONFLICT(id) DO UPDATE SET
-           token_hash = excluded.token_hash,
-           status = excluded.status,
-           account = excluded.account,
-           pending_handoff_digest = excluded.pending_handoff_digest,
-           plans_json = excluded.plans_json,
-           review_state_json = excluded.review_state_json,
-           execution_result_json = excluded.execution_result_json,
-           created_at = excluded.created_at,
-           expires_at = excluded.expires_at,
-           last_activity_at = excluded.last_activity_at`
-      )
-      .run({
-        id: session.id,
-        tokenHash: session.tokenHash,
-        status: session.status,
-        account: session.account ?? null,
-        pendingHandoffDigest: session.pendingHandoffDigest ?? null,
-        plansJson: JSON.stringify(session.plans),
-        reviewStateJson: session.reviewState ? JSON.stringify(session.reviewState) : null,
-        executionResultJson: session.executionResult ? JSON.stringify(session.executionResult) : null,
-        createdAt: session.createdAt,
-        expiresAt: session.expiresAt,
-        lastActivityAt: session.lastActivityAt
-      });
+  create(id: string, session: ReviewSession): void {
+    if (this.getRow(id)) {
+      throw new Error(`Review session already exists: ${id}`);
+    }
+    insertLiveReviewSessionRow(this.db, session);
+  }
+
+  commitReviewSessionTransition(id: string, expected: ReviewSession, next: ReviewSession): boolean {
+    const commit = this.db.transaction(() => {
+      const row = this.getRow(id);
+      if (!row || !isDeepStrictEqual(sessionFromLiveReviewSessionRow(row), expected)) {
+        return false;
+      }
+      return updateLiveReviewSessionRow(this.db, row.revision, next);
+    });
+    return commit.immediate();
   }
 
   ids(): string[] {
@@ -95,23 +131,58 @@ export class SqliteSessionRecordStore implements SessionRecordStore {
   }
 
   acquireHandoffLock(id: string, digest: string): boolean {
+    const existing = this.db
+      .prepare(`SELECT pending_handoff_digest FROM live_review_sessions WHERE id = ?`)
+      .get(id) as { pending_handoff_digest: string | null } | undefined;
+    if (!existing) {
+      return false;
+    }
+    if (existing.pending_handoff_digest === digest) {
+      return true;
+    }
     // Atomic across processes: claim the lock only when it is free or already held
     // by the same digest. A different in-flight digest leaves the row untouched.
     const result = this.db
       .prepare(
         `UPDATE live_review_sessions
-         SET pending_handoff_digest = ?
-         WHERE id = ? AND (pending_handoff_digest IS NULL OR pending_handoff_digest = ?)`
+         SET pending_handoff_digest = ?,
+             revision = revision + 1,
+             write_contract_version = ?
+         WHERE id = ? AND pending_handoff_digest IS NULL`
       )
-      .run(digest, id, digest);
-    return result.changes > 0;
+      .run(digest, LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION, id);
+    if (result.changes > 0) {
+      return true;
+    }
+    const current = this.get(id);
+    return current?.pendingHandoffDigest === digest;
   }
 
-  releaseHandoffLock(id: string): void {
-    this.db
-      .prepare(`UPDATE live_review_sessions SET pending_handoff_digest = NULL WHERE id = ?`)
-      .run(id);
+  releaseHandoffLock(id: string, expectedDigest?: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE live_review_sessions
+         SET pending_handoff_digest = NULL,
+             revision = revision + 1,
+             write_contract_version = ?
+         WHERE id = ?
+           AND pending_handoff_digest IS NOT NULL
+           AND (? IS NULL OR pending_handoff_digest = ?)`
+      )
+      .run(LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION, id, expectedDigest ?? null, expectedDigest ?? null);
+    if (result.changes > 0) {
+      return true;
+    }
+    const session = this.get(id);
+    return session !== undefined && session.pendingHandoffDigest === undefined;
   }
+
+  private getRow(id: string): LiveReviewSessionRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM live_review_sessions WHERE id = ?`)
+      .get(id) as LiveReviewSessionRow | undefined;
+  }
+
 }
 
 export class SqlitePrivateReviewArtifactStore implements PrivateReviewArtifactStore {
@@ -211,7 +282,7 @@ export function createSqliteSettingsRecordStore(db: SqliteDatabase): KeyedRecord
 
 // Reconstruct the ReviewSession from columns + JSON blobs. Optional fields are
 // omitted (not set to undefined) so the shape matches the in-memory store exactly.
-function sessionFromRow(row: LiveReviewSessionRow): ReviewSession {
+export function sessionFromLiveReviewSessionRow(row: LiveReviewSessionRow): ReviewSession {
   return {
     id: row.id,
     tokenHash: row.token_hash,
@@ -230,5 +301,22 @@ function sessionFromRow(row: LiveReviewSessionRow): ReviewSession {
     ...(row.pending_handoff_digest === null
       ? {}
       : { pendingHandoffDigest: row.pending_handoff_digest })
+  };
+}
+
+export function serializeSessionForLiveReviewSessionRow(session: ReviewSession): Record<string, unknown> {
+  return {
+    id: session.id,
+    tokenHash: session.tokenHash,
+    status: session.status,
+    account: session.account ?? null,
+    pendingHandoffDigest: session.pendingHandoffDigest ?? null,
+    plansJson: JSON.stringify(session.plans),
+    reviewStateJson: session.reviewState ? JSON.stringify(session.reviewState) : null,
+    executionResultJson: session.executionResult ? JSON.stringify(session.executionResult) : null,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+    lastActivityAt: session.lastActivityAt,
+    writeContractVersion: LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION
   };
 }

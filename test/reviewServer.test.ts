@@ -21,6 +21,11 @@ import { deepbookDisplayQuote } from "./fixtures/deepbookQuote.js";
 import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
 import { InMemoryLocalSettingsService, InMemoryPreferencesRepository } from "./fixtures/inMemoryLocalSettings.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL } from "../src/runtime/config.js";
+import {
+  chainReceiptDigest,
+  chainReceiptFixture,
+  otherChainReceiptDigest
+} from "./fixtures/chainReceipt.js";
 
 const logger: Logger = {
   info() {},
@@ -82,6 +87,35 @@ async function openAndConnectReview(
   await connectWalletIdentity(store, account, now);
   await openReview(store, sessionId, now);
   return store.recordWalletConnected(sessionId, account, now);
+}
+
+function attachReviewedCommitment(
+  store: InMemorySessionStore,
+  sessionId: string,
+  transactionMaterialCommitment = chainReceiptDigest
+) {
+  const recordStore = (store as unknown as {
+    sessions: {
+      get(id: string): unknown;
+      commitReviewSessionTransition(id: string, expected: unknown, next: unknown): boolean;
+    };
+  }).sessions;
+  const session = recordStore.get(sessionId) as {
+    reviewState?: Record<string, unknown>;
+  } | undefined;
+  if (!session?.reviewState) {
+    throw new Error("test setup requires review state");
+  }
+  const committed = recordStore.commitReviewSessionTransition(sessionId, session, {
+    ...session,
+    reviewState: {
+      ...session.reviewState,
+      walletReviewAdapterContract: { transactionMaterialCommitment }
+    }
+  });
+  if (!committed) {
+    throw new Error("test setup could not attach reviewed commitment");
+  }
 }
 
 async function createDefaultLocalSettings(): Promise<InMemoryLocalSettingsService> {
@@ -659,14 +693,15 @@ describe("review HTTP server", () => {
       reviewSessionId: successSession.id,
       planId: "plan_success",
       status: "signed_pending_result",
-      txDigest: "digest_success",
+      txDigest: chainReceiptDigest,
       recordedAt: new Date().toISOString()
     });
-    await store.recordExecutionResult(successSession.id, {
+    await store.recordChainExecutionResult(successSession.id, {
       reviewSessionId: successSession.id,
       planId: "plan_success",
       status: "success",
-      txDigest: "digest_success",
+      txDigest: chainReceiptDigest,
+      chainReceipt: chainReceiptFixture(),
       recordedAt: new Date().toISOString()
     });
     const server = await createReviewHttpServer({
@@ -1212,7 +1247,8 @@ describe("review HTTP server", () => {
         },
         body: JSON.stringify({ planId: plan.id, status: "success", txDigest: "digest" })
       });
-      expect(invalidTransition.status).toBe(409);
+      expect(invalidTransition.status).toBe(400);
+      expect(await invalidTransition.json()).toMatchObject({ error: "input_invalid" });
 
       const planMismatch = await fetch(`${base}/api/review/${session.id}/result`, {
         method: "POST",
@@ -1318,18 +1354,19 @@ describe("review HTTP server", () => {
         reviewSessionId: session.id,
         planId: plan.id,
         status: "signed_pending_result",
-        txDigest: "digest_1",
+        txDigest: chainReceiptDigest,
         recordedAt: new Date(3).toISOString()
       },
       new Date(3)
     );
-    await store.recordExecutionResult(
+    await store.recordChainExecutionResult(
       session.id,
       {
         reviewSessionId: session.id,
         planId: plan.id,
         status: "success",
-        txDigest: "digest_1",
+        txDigest: chainReceiptDigest,
+        chainReceipt: chainReceiptFixture(),
         recordedAt: new Date(4).toISOString()
       },
       new Date(4)
@@ -1503,7 +1540,7 @@ describe("review HTTP server", () => {
     }
   });
 
-  it("does not allow finalized execution result overwrite", async () => {
+  it("rejects page-submitted success even when the session is already finalized", async () => {
     const store = createSessionStore();
     const { session, token } = await store.createReviewSession([plan]);
     await openAndConnectReview(store, session.id);
@@ -1519,14 +1556,15 @@ describe("review HTTP server", () => {
       reviewSessionId: session.id,
       planId: plan.id,
       status: "signed_pending_result",
-      txDigest: "first",
+      txDigest: chainReceiptDigest,
       recordedAt: new Date().toISOString()
     });
-    await store.recordExecutionResult(session.id, {
+    await store.recordChainExecutionResult(session.id, {
       reviewSessionId: session.id,
       planId: plan.id,
       status: "success",
-      txDigest: "first",
+      txDigest: chainReceiptDigest,
+      chainReceipt: chainReceiptFixture(),
       recordedAt: new Date().toISOString()
     });
 
@@ -1545,11 +1583,11 @@ describe("review HTTP server", () => {
           "x-say-ur-intent-token": token,
           origin: base
         },
-        body: JSON.stringify({ planId: plan.id, status: "success", txDigest: "second" })
+        body: JSON.stringify({ planId: plan.id, status: "success", txDigest: otherChainReceiptDigest })
       });
-      expect(overwrite.status).toBe(409);
+      expect(overwrite.status).toBe(400);
       const json = (await overwrite.json()) as { error: string };
-      expect(json.error).toBe("execution_result_finalized");
+      expect(json.error).toBe("input_invalid");
     } finally {
       await server.close();
     }
@@ -1658,9 +1696,9 @@ describe("review HTTP server", () => {
           txDigest: "second"
         })
       });
-      expect(finalConflict.status).toBe(409);
+      expect(finalConflict.status).toBe(400);
       expect((await finalConflict.json()) as { error: string }).toMatchObject({
-        error: "signed_pending_result_conflict"
+        error: "input_invalid"
       });
     } finally {
       await server.close();
@@ -1708,17 +1746,154 @@ describe("review HTTP server", () => {
       expect(missingReason.status).toBe(400);
       expect((await missingReason.json()) as { error: string }).toMatchObject({ error: "input_invalid" });
 
-      const failure = await fetch(`${base}/api/review/${session.id}/result`, {
+      const failureAfterPending = await fetch(`${base}/api/review/${session.id}/result`, {
         method: "POST",
         headers,
         body: JSON.stringify({ planId: plan.id, status: "failure", failureReason: "network_error" })
       });
-      expect(failure.status).toBe(200);
-      const json = (await failure.json()) as { executionResult: { status: string; failureReason: string; txDigest: string } };
+      expect(failureAfterPending.status).toBe(409);
+      expect((await failureAfterPending.json()) as { error: string }).toMatchObject({
+        error: "signed_pending_result_conflict"
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("records local pre-chain failures from the page before a signed digest exists", async () => {
+    const store = createSessionStore();
+    const { session, token } = await store.createReviewSession([plan]);
+    await openAndConnectReview(store, session.id);
+    await store.recordReviewState(session.id, {
+      planId: plan.id,
+      reviewSessionId: session.id,
+      account: walletAccount,
+      status: "ready_for_wallet_review",
+      checks: [],
+      updatedAt: new Date().toISOString()
+    });
+
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const response = await fetch(`${base}/api/review/${session.id}/result`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-say-ur-intent-token": token,
+          origin: base
+        },
+        body: JSON.stringify({ planId: plan.id, status: "failure", failureReason: "wallet_rejected" })
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        executionResult: {
+          status: "failure",
+          failureReason: "wallet_rejected"
+        }
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("verifies signed pending result posts through server-owned chain receipt finalization", async () => {
+    const store = createSessionStore();
+    const { session, token } = await store.createReviewSession([plan]);
+    await openAndConnectReview(store, session.id);
+    await store.recordReviewState(session.id, {
+      planId: plan.id,
+      reviewSessionId: session.id,
+      account: walletAccount,
+      status: "ready_for_wallet_review",
+      checks: [],
+      updatedAt: new Date().toISOString()
+    });
+    attachReviewedCommitment(store, session.id);
+    const chainReceiptVerifier = async () => ({
+      status: "verified_success" as const,
+      receipt: chainReceiptFixture()
+    });
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      chainReceiptVerifier
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const response = await fetch(`${base}/api/review/${session.id}/result`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-say-ur-intent-token": token,
+          origin: base
+        },
+        body: JSON.stringify({ planId: plan.id, status: "signed_pending_result", txDigest: chainReceiptDigest })
+      });
+      expect(response.status).toBe(200);
+      const json = (await response.json()) as { executionResult: { status: string; chainReceipt?: unknown } };
       expect(json.executionResult).toMatchObject({
+        status: "success",
+        txDigest: chainReceiptDigest,
+        chainReceipt: { kind: "sui_chain_receipt_v1" }
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("lazy-verifies pending result reads and closes unavailable receipts after the lookup window", async () => {
+    const store = createSessionStore({ ttlMs: 100 * 365 * 24 * 60 * 60 * 1000 });
+    const { session, token } = await store.createReviewSession([plan], new Date("2026-06-25T00:00:00.000Z"));
+    await openAndConnectReview(store, session.id, walletAccount, new Date("2026-06-25T00:00:01.000Z"));
+    await store.recordReviewState(session.id, {
+      planId: plan.id,
+      reviewSessionId: session.id,
+      account: walletAccount,
+      status: "ready_for_wallet_review",
+      checks: [],
+      updatedAt: "2026-06-25T00:00:02.000Z"
+    }, new Date("2026-06-25T00:00:02.000Z"));
+    attachReviewedCommitment(store, session.id);
+    await store.recordExecutionResult(session.id, {
+      reviewSessionId: session.id,
+      planId: plan.id,
+      status: "signed_pending_result",
+      txDigest: chainReceiptDigest,
+      recordedAt: "2026-06-25T00:00:03.000Z"
+    }, new Date("2026-06-25T00:00:03.000Z"));
+    const chainReceiptVerifier = async () => ({
+      status: "not_found" as const,
+      failureReason: "chain_receipt_unavailable" as const,
+      message: "not indexed"
+    });
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      chainReceiptVerifier
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const response = await fetch(`${base}/api/result/${session.id}`, {
+        headers: { "x-say-ur-intent-token": token, origin: base }
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
         status: "failure",
-        txDigest: "digest",
-        failureReason: "network_error"
+        executionResult: {
+          status: "failure",
+          failureReason: "chain_receipt_unavailable",
+          txDigest: chainReceiptDigest
+        }
       });
     } finally {
       await server.close();

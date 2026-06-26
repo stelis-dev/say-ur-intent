@@ -1,6 +1,11 @@
 import { EXTERNAL_ACTIVITY_SCAN_MAX_LIMIT } from "./activityStore.js";
 import { DB_USER_VERSION } from "./schemaVersion.js";
 import { ActivityStoreError, type SqliteDatabase } from "./sqliteActivityStoreTypes.js";
+import {
+  LIVE_REVIEW_SESSION_INSERT_TRIGGER,
+  LIVE_REVIEW_SESSION_UPDATE_TRIGGER,
+  LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION
+} from "../session/liveReviewSessionContract.js";
 
 const EXTERNAL_ACTIVITY_SCAN_INDEX_SQL = `CREATE INDEX IF NOT EXISTS idx_external_activity_scans_account_fetched
   ON external_activity_scans(account_id, fetched_at)`;
@@ -169,10 +174,10 @@ export function initializeDatabase(db: SqliteDatabase): void {
 
   `);
 
-  // Live multi-client state (Option B): runtime session state lives in the shared
-  // database so any review-server process can serve any session. Added WITHOUT a
-  // DB_USER_VERSION bump — older runtimes ignore unknown tables, so a newer client can
-  // introduce them without breaking a concurrently-running older client.
+  // Live multi-client state: runtime session state lives in the shared database
+  // so any review-server process can serve any session. The hardened review-session
+  // write contract bumps DB_USER_VERSION so revision-unaware runtimes fail closed
+  // instead of silently sharing this table.
   db.exec(`
     CREATE TABLE IF NOT EXISTS live_transaction_materials (
       material_id TEXT PRIMARY KEY,
@@ -201,7 +206,9 @@ export function initializeDatabase(db: SqliteDatabase): void {
       execution_result_json TEXT,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
-      last_activity_at TEXT NOT NULL
+      last_activity_at TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      write_contract_version TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS live_private_review_artifacts (
@@ -221,6 +228,7 @@ export function initializeDatabase(db: SqliteDatabase): void {
     );
   `);
   migrateDatabase(db, currentUserVersion);
+  ensureLiveReviewSessionWriteContract(db);
   if ((db.pragma("user_version", { simple: true }) as number) !== DB_USER_VERSION) {
     db.pragma(`user_version = ${DB_USER_VERSION}`);
   }
@@ -240,6 +248,135 @@ function migrateDatabase(db: SqliteDatabase, currentUserVersion: number): void {
     if (!tableHasColumn(db, "active_account_context", "wallet_id")) {
       db.exec("ALTER TABLE active_account_context ADD COLUMN wallet_id TEXT");
     }
+  }
+  if (
+    tableExists(db, "live_review_sessions") &&
+    (!tableHasColumn(db, "live_review_sessions", "revision") ||
+      !tableHasColumn(db, "live_review_sessions", "write_contract_version"))
+  ) {
+    rebuildLiveReviewSessionsForWriteContract(db);
+  }
+}
+
+function ensureLiveReviewSessionWriteContract(db: SqliteDatabase): void {
+  if (
+    !tableHasColumn(db, "live_review_sessions", "revision") ||
+    !tableHasColumn(db, "live_review_sessions", "write_contract_version")
+  ) {
+    throw new ActivityStoreError("Local activity database is missing the live review-session write contract.");
+  }
+
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS ${LIVE_REVIEW_SESSION_INSERT_TRIGGER}
+    BEFORE INSERT ON live_review_sessions
+    FOR EACH ROW
+    WHEN NEW.revision IS NULL
+      OR NEW.revision != 0
+      OR NEW.write_contract_version IS NULL
+      OR NEW.write_contract_version != '${LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION}'
+    BEGIN
+      SELECT RAISE(ABORT, 'live review session insert requires the hardened write contract');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS ${LIVE_REVIEW_SESSION_UPDATE_TRIGGER}
+    BEFORE UPDATE ON live_review_sessions
+    FOR EACH ROW
+    WHEN NEW.revision IS NULL
+      OR OLD.revision IS NULL
+      OR NEW.revision != OLD.revision + 1
+      OR NEW.write_contract_version IS NULL
+      OR NEW.write_contract_version != '${LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION}'
+    BEGIN
+      SELECT RAISE(ABORT, 'live review session update requires the hardened write contract');
+    END;
+  `);
+
+  const triggerRows = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name IN (?, ?)")
+    .all(LIVE_REVIEW_SESSION_INSERT_TRIGGER, LIVE_REVIEW_SESSION_UPDATE_TRIGGER) as Array<{ name: string }>;
+  if (triggerRows.length !== 2) {
+    throw new ActivityStoreError("Local activity database cannot enforce the live review-session write contract.");
+  }
+}
+
+function rebuildLiveReviewSessionsForWriteContract(db: SqliteDatabase): void {
+  const previousForeignKeys = db.pragma("foreign_keys", { simple: true }) as number;
+  db.pragma("foreign_keys = OFF");
+  let transactionStarted = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionStarted = true;
+    db.exec(`
+      DROP TABLE IF EXISTS live_review_sessions_new;
+      DROP TABLE IF EXISTS live_private_review_artifacts_new;
+      DROP TABLE IF EXISTS live_private_review_artifacts_backup;
+
+      CREATE TEMP TABLE live_private_review_artifacts_backup AS
+        SELECT review_session_id, artifacts_json
+        FROM live_private_review_artifacts;
+
+      CREATE TABLE live_review_sessions_new (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        account TEXT,
+        pending_handoff_digest TEXT,
+        plans_json TEXT NOT NULL,
+        review_state_json TEXT,
+        execution_result_json TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        write_contract_version TEXT NOT NULL
+      );
+
+      INSERT INTO live_review_sessions_new
+        (id, token_hash, status, account, pending_handoff_digest,
+         plans_json, review_state_json, execution_result_json,
+         created_at, expires_at, last_activity_at, revision, write_contract_version)
+      SELECT
+        id, token_hash, status, account, pending_handoff_digest,
+        plans_json, review_state_json, execution_result_json,
+        created_at, expires_at, last_activity_at,
+        0,
+        '${LIVE_REVIEW_SESSION_WRITE_CONTRACT_VERSION}'
+      FROM live_review_sessions;
+
+      DROP TABLE live_private_review_artifacts;
+      DROP TABLE live_review_sessions;
+      ALTER TABLE live_review_sessions_new RENAME TO live_review_sessions;
+
+      CREATE TABLE live_private_review_artifacts (
+        review_session_id TEXT PRIMARY KEY
+          REFERENCES live_review_sessions(id) ON DELETE CASCADE,
+        artifacts_json TEXT NOT NULL
+      );
+
+      INSERT INTO live_private_review_artifacts (review_session_id, artifacts_json)
+      SELECT review_session_id, artifacts_json
+      FROM live_private_review_artifacts_backup
+      WHERE review_session_id IN (SELECT id FROM live_review_sessions);
+
+      DROP TABLE live_private_review_artifacts_backup;
+    `);
+    const foreignKeyFailures = db.prepare("PRAGMA foreign_key_check").all();
+    if (foreignKeyFailures.length > 0) {
+      throw new ActivityStoreError("Local activity database migration failed foreign key check");
+    }
+    db.exec("COMMIT");
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        // Preserve the migration error that caused the rollback attempt.
+      }
+    }
+    throw error;
+  } finally {
+    db.pragma(`foreign_keys = ${previousForeignKeys === 0 ? "OFF" : "ON"}`);
   }
 }
 

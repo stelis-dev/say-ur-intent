@@ -4,6 +4,7 @@ import type { SuiReadService } from "../core/read/readService.js";
 import type { TransactionActivityService } from "../core/activity/transactionActivityService.js";
 import type { ActivityStore } from "../core/activity/activityStore.js";
 import type { LocalSettingsService } from "../core/preferences/preferencesStore.js";
+import type { ChainReceiptVerifier } from "../core/session/chainReceiptFinalization.js";
 import type { SessionStore } from "../core/session/sessionStore.js";
 import { registerMcpPrompts } from "./prompts.js";
 import type { AdapterPromptSurface } from "../adapters/adapterPromptSurfaces.js";
@@ -24,6 +25,7 @@ export type McpServerDeps = {
   reviewBaseUrl: string;
   readService: SuiReadService;
   transactionActivityService: TransactionActivityService;
+  chainReceiptVerifier?: ChainReceiptVerifier | undefined;
   logger: {
     error(message: string, meta?: Record<string, unknown>): void;
   };

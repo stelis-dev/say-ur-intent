@@ -9,6 +9,7 @@ import { TransactionActivityService, type SuiTransactionActivitySource } from ".
 import { PreferencesStoreError, type LocalSettingsService } from "../src/core/preferences/preferencesStore.js";
 import { SuiEndpointError } from "../src/core/suiEndpoint.js";
 import { InMemorySessionStore } from "../src/core/session/sessionStore.js";
+import type { ChainReceiptVerifier } from "../src/core/session/chainReceiptFinalization.js";
 import { MCP_RESOURCES } from "../src/mcp/resources.js";
 import { createMcpServer } from "../src/mcp/server.js";
 import {
@@ -26,6 +27,7 @@ import {
   InMemoryLocalSettingsService,
   InMemoryPreferencesRepository
 } from "./fixtures/inMemoryLocalSettings.js";
+import { chainReceiptDigest, chainReceiptFixture } from "./fixtures/chainReceipt.js";
 import type { ActionPlan, ReviewState } from "../src/core/action/types.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL } from "../src/runtime/config.js";
 
@@ -109,6 +111,7 @@ async function connectTestClient(
     readService?: SuiReadService;
     transactionActivitySource?: SuiTransactionActivitySource;
     sessionTtlMs?: number;
+    chainReceiptVerifier?: ChainReceiptVerifier;
   } = {}
 ) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -128,6 +131,7 @@ async function connectTestClient(
     localSettings,
     reviewBaseUrl: "http://127.0.0.1:4173",
     logger: testLogger,
+    chainReceiptVerifier: options.chainReceiptVerifier,
     readService: options.readService ?? createTestReadService(),
     transactionActivityService: new TransactionActivityService({
       activityStore,
@@ -289,6 +293,35 @@ function createTestReadService(
       }
     }
   });
+}
+
+function attachReviewedCommitment(
+  store: InMemorySessionStore,
+  sessionId: string,
+  transactionMaterialCommitment = chainReceiptDigest
+) {
+  const recordStore = (store as unknown as {
+    sessions: {
+      get(id: string): unknown;
+      commitReviewSessionTransition(id: string, expected: unknown, next: unknown): boolean;
+    };
+  }).sessions;
+  const session = recordStore.get(sessionId) as {
+    reviewState?: Record<string, unknown>;
+  } | undefined;
+  if (!session?.reviewState) {
+    throw new Error("test setup requires review state");
+  }
+  const committed = recordStore.commitReviewSessionTransition(sessionId, session, {
+    ...session,
+    reviewState: {
+      ...session.reviewState,
+      walletReviewAdapterContract: { transactionMaterialCommitment }
+    }
+  });
+  if (!committed) {
+    throw new Error("test setup could not attach reviewed commitment");
+  }
 }
 
 function textPayload(result: Awaited<ReturnType<Client["callTool"]>>): unknown {
@@ -2867,18 +2900,19 @@ describe("MCP discoverability", () => {
           reviewSessionId: successSession.id,
           planId: reviewPlan.id,
           status: "signed_pending_result",
-          txDigest: "digest_success",
+          txDigest: chainReceiptDigest,
           recordedAt: "2026-05-11T00:03:04.000Z"
         },
         new Date("2026-05-11T00:03:04.000Z")
       );
-      await sessions.recordExecutionResult(
+      await sessions.recordChainExecutionResult(
         successSession.id,
         {
           reviewSessionId: successSession.id,
           planId: reviewPlan.id,
           status: "success",
-          txDigest: "digest_success",
+          txDigest: chainReceiptDigest,
+          chainReceipt: chainReceiptFixture(),
           recordedAt: "2026-05-11T00:03:05.000Z"
         },
         new Date("2026-05-11T00:03:05.000Z")
@@ -3026,6 +3060,92 @@ describe("MCP discoverability", () => {
           }
         }
       });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("lazy-verifies pending execution results through MCP read and wait tools", async () => {
+    const chainReceiptVerifier = vi.fn<ChainReceiptVerifier>().mockResolvedValue({
+      status: "verified_success",
+      receipt: chainReceiptFixture()
+    });
+    const { client, server, sessions } = await connectTestClient({
+      sessionTtlMs: durableFixtureSessionTtlMs,
+      chainReceiptVerifier
+    });
+    try {
+      const { session: walletSession } = await sessions.createWalletIdentitySession(new Date("2026-05-11T00:00:00.000Z"));
+      await sessions.recordWalletIdentityOpened(walletSession.id, new Date("2026-05-11T00:00:01.000Z"));
+      await sessions.recordWalletIdentityConnecting(walletSession.id, new Date("2026-05-11T00:00:02.000Z"));
+      await sessions.recordWalletIdentityResult(
+        walletSession.id,
+        { status: "connected", account: walletAccount, chain: "sui:mainnet" },
+        new Date("2026-05-11T00:00:03.000Z")
+      );
+      const { session: reviewSession } = await sessions.createReviewSession([reviewPlan], new Date("2026-05-11T00:01:00.000Z"));
+      await sessions.recordReviewPageOpened(reviewSession.id, new Date("2026-05-11T00:01:01.000Z"));
+      await sessions.recordWalletConnected(reviewSession.id, walletAccount, new Date("2026-05-11T00:01:02.000Z"));
+      await sessions.recordReviewState(
+        reviewSession.id,
+        {
+          reviewSessionId: reviewSession.id,
+          planId: reviewPlan.id,
+          account: walletAccount,
+          status: "ready_for_wallet_review",
+          checks: [],
+          updatedAt: "2026-05-11T00:01:03.000Z"
+        },
+        new Date("2026-05-11T00:01:03.000Z")
+      );
+      attachReviewedCommitment(sessions, reviewSession.id);
+      await sessions.recordExecutionResult(
+        reviewSession.id,
+        {
+          reviewSessionId: reviewSession.id,
+          planId: reviewPlan.id,
+          status: "signed_pending_result",
+          txDigest: chainReceiptDigest,
+          recordedAt: "2026-05-11T00:01:04.000Z"
+        },
+        new Date("2026-05-11T00:01:04.000Z")
+      );
+
+      const read = textPayload(await client.callTool({
+        name: TOOL_NAMES.sessionGetExecutionResult,
+        arguments: { reviewSessionId: reviewSession.id }
+      }));
+      expect(read).toMatchObject({
+        ok: true,
+        data: {
+          reviewSessionId: reviewSession.id,
+          status: "success",
+          executionResult: {
+            status: "success",
+            txDigest: chainReceiptDigest,
+            chainReceipt: { kind: "sui_chain_receipt_v1" }
+          }
+        }
+      });
+      expect(chainReceiptVerifier).toHaveBeenCalledTimes(1);
+
+      const waited = textPayload(await client.callTool({
+        name: TOOL_NAMES.sessionWaitExecutionResult,
+        arguments: { reviewSessionId: reviewSession.id, timeoutMs: 1 }
+      }));
+      expect(waited).toMatchObject({
+        ok: true,
+        data: {
+          waitOutcome: "status_reached",
+          reviewSessionId: reviewSession.id,
+          status: "success",
+          executionResult: {
+            status: "success",
+            chainReceipt: { kind: "sui_chain_receipt_v1" }
+          }
+        }
+      });
+      expect(chainReceiptVerifier).toHaveBeenCalledTimes(1);
     } finally {
       await server.close();
     }

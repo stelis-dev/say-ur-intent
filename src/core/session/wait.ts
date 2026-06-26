@@ -44,6 +44,10 @@ type WaitOptions = {
   signal?: AbortSignal;
   now?: () => Date;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  readReviewSession?: (
+    reviewSessionId: string,
+    now?: Date
+  ) => Promise<ReviewSession | undefined>;
 };
 
 export async function waitForWalletIdentitySession(
@@ -89,7 +93,7 @@ export async function waitForExecutionResult(
   const startedAt = Date.now();
 
   assertNotAborted(options.signal);
-  let session = await getRequiredReviewSession(sessions, reviewSessionId, options.now, "missing");
+  let session = await getRequiredReviewSession(sessions, reviewSessionId, options.now, "missing", options.readReviewSession);
   let status = getExecutionPollingStatus(session);
   if (isWaitStoppingExecutionStatus(status)) {
     return { waitOutcome: "status_reached", session, status };
@@ -99,7 +103,13 @@ export async function waitForExecutionResult(
     assertNotAborted(options.signal);
     const remainingMs = timeoutMs - (Date.now() - startedAt);
     await sleep(Math.min(remainingMs, EXECUTION_POLLING_INTERVAL_SECONDS * 1000), options.signal);
-    session = await getRequiredReviewSession(sessions, reviewSessionId, options.now, "session_removed_during_wait");
+    session = await getRequiredReviewSession(
+      sessions,
+      reviewSessionId,
+      options.now,
+      "session_removed_during_wait",
+      options.readReviewSession
+    );
     status = getExecutionPollingStatus(session);
     if (isWaitStoppingExecutionStatus(status)) {
       return { waitOutcome: "status_reached", session, status };
@@ -140,9 +150,13 @@ async function getRequiredReviewSession(
   sessions: SessionStore,
   reviewSessionId: string,
   now: (() => Date) | undefined,
-  reason: WaitSessionMissingReason
+  reason: WaitSessionMissingReason,
+  readReviewSession?: (reviewSessionId: string, now?: Date) => Promise<ReviewSession | undefined>
 ): Promise<ReviewSession> {
-  const session = await sessions.getReviewSession(reviewSessionId, now?.());
+  const at = now?.();
+  const session = await (readReviewSession
+    ? readReviewSession(reviewSessionId, at)
+    : sessions.getReviewSession(reviewSessionId, at));
   if (!session) {
     throw new SessionStoreError("session_not_found", `Review session not found: ${reviewSessionId}`, { reason });
   }

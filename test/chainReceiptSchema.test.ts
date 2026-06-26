@@ -160,6 +160,16 @@ describe("chain receipt schemas", () => {
       executionResultSchema.safeParse({
         reviewSessionId: "session_1",
         planId: "plan_1",
+        status: "success",
+        txDigest: digest,
+        recordedAt: "2026-06-26T00:00:00.000Z"
+      }).success
+    ).toBe(false);
+
+    expect(
+      executionResultSchema.safeParse({
+        reviewSessionId: "session_1",
+        planId: "plan_1",
         status: "failure",
         txDigest: digest,
         failureReason: "chain_execution_failed",
