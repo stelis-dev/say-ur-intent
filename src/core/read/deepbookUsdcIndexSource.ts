@@ -103,7 +103,7 @@ const deepbookUsdcIndexWeekSchema = z.object({
   }
 });
 
-const deepbookUsdcIndexBarBaseSchema = z.object({
+export const deepbookUsdcIndexBarSchema = z.object({
   start: isoDateStringSchema,
   end: isoDateStringSchema,
   status: z.enum(["filled", "empty", "missing"]),
@@ -165,7 +165,7 @@ export const deepbookUsdcIndexWeeklyBarsSchema = z.object({
   barIntervalMinutes: z.literal(DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES),
   priceConvention: z.literal(DEEPBOOK_USDC_INDEX_PRICE_CONVENTION),
   disclaimer: z.string().min(1),
-  bars: z.array(deepbookUsdcIndexBarBaseSchema)
+  bars: z.array(deepbookUsdcIndexBarSchema)
 }).strict().superRefine((payload, context) => {
   for (const [index, bar] of payload.bars.entries()) {
     const start = Date.parse(bar.start);

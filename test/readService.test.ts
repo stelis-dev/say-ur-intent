@@ -32,6 +32,11 @@ import {
   scenarioInputForUserPrompt,
   type IntentEvidenceScenarioPrompt
 } from "./fixtures/intentEvidenceScenarios.js";
+import {
+  PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF,
+  publicDeepbookUsdcIndexRegistryFixture,
+  publicDeepbookUsdcIndexSuiW26Fixture
+} from "./fixtures/deepbookUsdcIndex.js";
 import { MemoryCoinMetadataCache } from "./fixtures/memoryCoinMetadataCache.js";
 
 const now = () => new Date("2026-05-11T00:00:00.000Z");
@@ -169,6 +174,7 @@ function deepbookCoinsWithInvalidSuiScalar(): DeepBookCoinRegistry {
 function createDeepbookUsdcIndexSourceFixture(options: {
   registry?: DeepbookUsdcIndexRegistry | undefined;
   weeklyResults?: Record<string, Awaited<ReturnType<DeepbookUsdcIndexSourceClient["fetchWeeklyBars"]>>> | undefined;
+  sourceRef?: string | undefined;
 } = {}): {
   source: DeepbookUsdcIndexSourceClient;
   calls: {
@@ -186,7 +192,7 @@ function createDeepbookUsdcIndexSourceFixture(options: {
       async fetchRegistry() {
         calls.registry += 1;
         return {
-          source: indexSource("registry/pairs.json"),
+          source: indexSource("registry/pairs.json", options.sourceRef),
           registry: options.registry ?? registryWithPairs([indexPairFixture()])
         };
       },
@@ -244,10 +250,15 @@ function indexPairFixture(
   };
 }
 
-function foundWeeklyResult(pairId: string, week: UtcIsoWeek, weeklyBars: DeepbookUsdcIndexWeeklyBars) {
+function foundWeeklyResult(
+  pairId: string,
+  week: UtcIsoWeek,
+  weeklyBars: DeepbookUsdcIndexWeeklyBars,
+  sourceRef?: string | undefined
+) {
   return {
     status: "found" as const,
-    source: indexSource(weeklyPath(pairId, week)),
+    source: indexSource(weeklyPath(pairId, week), sourceRef),
     weeklyBars
   };
 }
@@ -333,11 +344,11 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
   };
 }
 
-function indexSource(path: string) {
+function indexSource(path: string, sourceRef = "test-index-ref") {
   return {
     repositoryUrl: "https://github.com/stelis-dev/deepbook-usdc-index",
     baseUrl: "https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main",
-    sourceRef: "test-index-ref",
+    sourceRef,
     path,
     url: `https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main/${path}`,
     fetchedAt: "2026-06-27T00:00:00.000Z"
@@ -2221,6 +2232,59 @@ describe("SuiReadService", () => {
     ]);
     expect(result.responseSummary.usdcDisclaimer).toContain("not fiat USD");
     expect(result.responseSummary.usdcDisclaimer).toContain("not a USDC/USD peg guarantee");
+  });
+
+  it("reads literal public DeepBook USDC index fixtures through the read-service path", async () => {
+    const week26 = { weekYear: 2026, week: 26 };
+    const { source, calls } = createDeepbookUsdcIndexSourceFixture({
+      registry: publicDeepbookUsdcIndexRegistryFixture(),
+      sourceRef: PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF,
+      weeklyResults: {
+        "SUI_USDC:2026:26": foundWeeklyResult(
+          "SUI_USDC",
+          week26,
+          publicDeepbookUsdcIndexSuiW26Fixture(),
+          PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF
+        )
+      }
+    });
+
+    const result = await createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({
+      pairId: "SUI_USDC",
+      start: "2026-06-26T16:50:00.000Z",
+      end: "2026-06-26T17:20:00.000Z"
+    });
+
+    expect(calls.registry).toBe(1);
+    expect(calls.weekly).toEqual([{ pairId: "SUI_USDC", week: week26 }]);
+    expect(result).toMatchObject({
+      status: "ok",
+      coverageStatus: "complete",
+      barCount: 3,
+      source: {
+        sourceRef: PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF,
+        weeklyFiles: {
+          requested: [{ week: week26, path: "data/SUI_USDC/bars/2026/W26.json" }],
+          found: [{ week: week26, path: "data/SUI_USDC/bars/2026/W26.json" }],
+          missing: []
+        },
+        chainRecomputedBySayUrIntent: false
+      },
+      responseSummary: {
+        sourceStatement:
+          "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.",
+        usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+      }
+    });
+    if (result.status !== "ok") {
+      throw new Error("expected ok history result");
+    }
+    expect(result.bars.map((bar) => bar.status)).toEqual(["filled", "filled", "filled"]);
+    expect(result.bars.map((bar) => bar.raw)).toEqual([
+      "data/SUI_USDC/raw/2026/W26/2026-06-26T1650Z.jsonl.gz",
+      "data/SUI_USDC/raw/2026/W26/2026-06-26T1700Z.jsonl.gz",
+      "data/SUI_USDC/raw/2026/W26/2026-06-26T1710Z.jsonl.gz"
+    ]);
   });
 
   it("resolves indexed DeepBook USDC history by pair id and coin type", async () => {

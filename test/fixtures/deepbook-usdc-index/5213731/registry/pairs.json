@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "network": "sui:mainnet",
+  "quoteAsset": {
+    "symbol": "USDC",
+    "coinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+    "decimals": 6,
+    "disclaimer": "USDC is a token-denominated reference asset in this index. It is not fiat USD and this repository does not guarantee a USDC/USD peg."
+  },
+  "eventSources": {
+    "orderInfoPackageIds": [
+      "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809"
+    ],
+    "orderFilledEventTypes": [
+      "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809::order_info::OrderFilled"
+    ]
+  },
+  "pairs": [
+    {
+      "id": "SUI_USDC",
+      "enabled": true,
+      "poolId": "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+      "baseAsset": {
+        "symbol": "SUI",
+        "coinType": "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+        "decimals": 9
+      },
+      "quoteAsset": "USDC",
+      "priceConvention": "USDC_PER_BASE",
+      "collection": {
+        "barIntervalMinutes": 10,
+        "rollingRetentionYears": 2
+      }
+    },
+    {
+      "id": "DEEP_USDC",
+      "enabled": true,
+      "poolId": "0xf948981b806057580f91622417534f491da5f61aeaf33d0ed8e69fd5691c95ce",
+      "baseAsset": {
+        "symbol": "DEEP",
+        "coinType": "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP",
+        "decimals": 6
+      },
+      "quoteAsset": "USDC",
+      "priceConvention": "USDC_PER_BASE",
+      "collection": {
+        "barIntervalMinutes": 10,
+        "rollingRetentionYears": 2
+      }
+    },
+    {
+      "id": "WAL_USDC",
+      "enabled": true,
+      "poolId": "0x56a1c985c1f1123181d6b881714793689321ba24301b3585eec427436eb1c76d",
+      "baseAsset": {
+        "symbol": "WAL",
+        "coinType": "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL",
+        "decimals": 9
+      },
+      "quoteAsset": "USDC",
+      "priceConvention": "USDC_PER_BASE",
+      "collection": {
+        "barIntervalMinutes": 10,
+        "rollingRetentionYears": 2
+      }
+    },
+    {
+      "id": "NS_USDC",
+      "enabled": true,
+      "poolId": "0x0c0fdd4008740d81a8a7d4281322aee71a1b62c449eb5b142656753d89ebc060",
+      "baseAsset": {
+        "symbol": "NS",
+        "coinType": "0x5145494a5f5100e3cdbf3d8f919c4b68cf7d2e9ed7318a9fbceccc03c0aa614f::ns::NS",
+        "decimals": 6
+      },
+      "quoteAsset": "USDC",
+      "priceConvention": "USDC_PER_BASE",
+      "collection": {
+        "barIntervalMinutes": 10,
+        "rollingRetentionYears": 2
+      }
+    }
+  ]
+}

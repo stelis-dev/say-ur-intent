@@ -102,6 +102,7 @@ import {
   DEEPBOOK_MID_PRICE_PRECISION,
   DEEPBOOK_MID_PRICE_TYPE,
   DEEPBOOK_RAW_QUOTE_QUANTITY_KIND,
+  DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS,
   DEFAULT_DEEPBOOK_SIMULATION_SENDER,
   INTENT_EVIDENCE_TARGET_ASSET_SELECTION_SOURCES,
   MAX_DEEPBOOK_ACCOUNT_OPEN_ORDER_IDS,
@@ -185,21 +186,6 @@ type WalletBalanceClassificationScan = {
 };
 
 const DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS = DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES * 60 * 1000;
-
-const DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS = [
-  "fiat_usd_cash_out",
-  "usd_peg_assumption",
-  "global_market_price",
-  "historical_mid_price",
-  "live_quote",
-  "route_recommendation",
-  "best_route",
-  "transaction_building",
-  "signing_readiness",
-  "profit_or_pnl",
-  "cost_basis",
-  "independent_chain_recomputation"
-] as const satisfies DeepbookUsdcPriceHistoryUnsupportedClaim[];
 
 const DEEPBOOK_USDC_PRICE_HISTORY_RESPONSE_SUMMARY = {
   questionKind: "deepbook_usdc_price_history",

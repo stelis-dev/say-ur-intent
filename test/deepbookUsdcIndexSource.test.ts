@@ -10,6 +10,15 @@ import {
   normalizeDeepbookUsdcIndexBaseUrl,
   utcIsoWeekFromDate
 } from "../src/core/read/deepbookUsdcIndexSource.js";
+import {
+  PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF,
+  PUBLIC_DEEPBOOK_USDC_INDEX_REGISTRY_FIXTURE_SHA256,
+  PUBLIC_DEEPBOOK_USDC_INDEX_SUI_W26_FIXTURE_SHA256,
+  publicDeepbookUsdcIndexRegistryFixtureSha256,
+  publicDeepbookUsdcIndexRegistryJson,
+  publicDeepbookUsdcIndexSuiW26FixtureSha256,
+  publicDeepbookUsdcIndexSuiW26Json
+} from "./fixtures/deepbookUsdcIndex.js";
 
 const fetchedAt = new Date("2026-06-27T00:00:00.000Z");
 
@@ -47,18 +56,21 @@ describe("DeepbookUsdcIndexSource", () => {
     });
   });
 
-  it("accepts observed public generated registry and weekly payload shapes", () => {
-    const registry = deepbookUsdcIndexRegistrySchema.parse(observedPublicRegistryFixture());
+  it("accepts literal public generated registry and weekly payload fixtures", () => {
+    const registry = deepbookUsdcIndexRegistrySchema.parse(publicDeepbookUsdcIndexRegistryJson());
     expect(registry.pairs.map((pair) => pair.id)).toEqual(["SUI_USDC", "DEEP_USDC", "WAL_USDC", "NS_USDC"]);
 
-    const weekly = deepbookUsdcIndexWeeklyBarsSchema.parse(observedPublicSuiWeeklyBarsFixture());
+    const weekly = deepbookUsdcIndexWeeklyBarsSchema.parse(publicDeepbookUsdcIndexSuiW26Json());
     expect(weekly).toMatchObject({
       pairId: "SUI_USDC",
       week: { weekYear: 2026, week: 26, timeZone: "UTC" },
       barIntervalMinutes: 10,
       priceConvention: "USDC_PER_BASE"
     });
-    expect(weekly.bars).toHaveLength(5);
+    expect(PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF).toBe("5213731e096a9e1c3b337fd4438b0d53242a1f43");
+    expect(publicDeepbookUsdcIndexRegistryFixtureSha256()).toBe(PUBLIC_DEEPBOOK_USDC_INDEX_REGISTRY_FIXTURE_SHA256);
+    expect(publicDeepbookUsdcIndexSuiW26FixtureSha256()).toBe(PUBLIC_DEEPBOOK_USDC_INDEX_SUI_W26_FIXTURE_SHA256);
+    expect(weekly.bars).toHaveLength(3);
     expect(weekly.bars.every((bar) => bar.status === "filled")).toBe(true);
   });
 
@@ -304,175 +316,6 @@ function weeklyBarsFixture() {
         baseVolumeRaw: "0",
         quoteVolumeRaw: "0",
         raw: null
-      }
-    ]
-  };
-}
-
-function observedPublicRegistryFixture() {
-  return {
-    schemaVersion: 1,
-    network: "sui:mainnet",
-    quoteAsset: {
-      symbol: "USDC",
-      coinType: DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
-      decimals: 6,
-      disclaimer: "USDC is a token-denominated reference asset in this index. It is not fiat USD and this repository does not guarantee a USDC/USD peg."
-    },
-    eventSources: {
-      orderInfoPackageIds: ["0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809"],
-      orderFilledEventTypes: [
-        "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809::order_info::OrderFilled"
-      ]
-    },
-    pairs: [
-      {
-        id: "SUI_USDC",
-        enabled: true,
-        poolId: "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
-        baseAsset: {
-          symbol: "SUI",
-          coinType: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
-          decimals: 9
-        },
-        quoteAsset: "USDC",
-        priceConvention: "USDC_PER_BASE",
-        collection: {
-          barIntervalMinutes: 10,
-          rollingRetentionYears: 2
-        }
-      },
-      {
-        id: "DEEP_USDC",
-        enabled: true,
-        poolId: "0xf948981b806057580f91622417534f491da5f61aeaf33d0ed8e69fd5691c95ce",
-        baseAsset: {
-          symbol: "DEEP",
-          coinType: "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP",
-          decimals: 6
-        },
-        quoteAsset: "USDC",
-        priceConvention: "USDC_PER_BASE",
-        collection: {
-          barIntervalMinutes: 10,
-          rollingRetentionYears: 2
-        }
-      },
-      {
-        id: "WAL_USDC",
-        enabled: true,
-        poolId: "0x56a1c985c1f1123181d6b881714793689321ba24301b3585eec427436eb1c76d",
-        baseAsset: {
-          symbol: "WAL",
-          coinType: "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL",
-          decimals: 9
-        },
-        quoteAsset: "USDC",
-        priceConvention: "USDC_PER_BASE",
-        collection: {
-          barIntervalMinutes: 10,
-          rollingRetentionYears: 2
-        }
-      },
-      {
-        id: "NS_USDC",
-        enabled: true,
-        poolId: "0x0c0fdd4008740d81a8a7d4281322aee71a1b62c449eb5b142656753d89ebc060",
-        baseAsset: {
-          symbol: "NS",
-          coinType: "0x5145494a5f5100e3cdbf3d8f919c4b68cf7d2e9ed7318a9fbceccc03c0aa614f::ns::NS",
-          decimals: 6
-        },
-        quoteAsset: "USDC",
-        priceConvention: "USDC_PER_BASE",
-        collection: {
-          barIntervalMinutes: 10,
-          rollingRetentionYears: 2
-        }
-      }
-    ]
-  };
-}
-
-function observedPublicSuiWeeklyBarsFixture() {
-  return {
-    schemaVersion: 1,
-    pairId: "SUI_USDC",
-    week: {
-      weekYear: 2026,
-      week: 26,
-      startsAt: "2026-06-22T00:00:00.000Z",
-      endsAt: "2026-06-29T00:00:00.000Z",
-      timeZone: "UTC"
-    },
-    barIntervalMinutes: 10,
-    priceConvention: "USDC_PER_BASE",
-    disclaimer: "USDC is a token-denominated reference asset in this index. It is not fiat USD and this repository does not guarantee a USDC/USD peg.",
-    bars: [
-      {
-        start: "2026-06-26T16:50:00.000Z",
-        end: "2026-06-26T17:00:00.000Z",
-        status: "filled",
-        eventCount: 257,
-        open: "0.69507",
-        high: "0.69672",
-        low: "0.69287",
-        close: "0.69316",
-        baseVolumeRaw: "146148100000000",
-        quoteVolumeRaw: "101444802158",
-        raw: "data/SUI_USDC/raw/2026/W26/2026-06-26T1650Z.jsonl.gz"
-      },
-      {
-        start: "2026-06-26T17:00:00.000Z",
-        end: "2026-06-26T17:10:00.000Z",
-        status: "filled",
-        eventCount: 221,
-        open: "0.69289",
-        high: "0.69609",
-        low: "0.69289",
-        close: "0.69557",
-        baseVolumeRaw: "137067200000000",
-        quoteVolumeRaw: "95246163086",
-        raw: "data/SUI_USDC/raw/2026/W26/2026-06-26T1700Z.jsonl.gz"
-      },
-      {
-        start: "2026-06-26T17:10:00.000Z",
-        end: "2026-06-26T17:20:00.000Z",
-        status: "filled",
-        eventCount: 297,
-        open: "0.69593",
-        high: "0.69793",
-        low: "0.69506",
-        close: "0.69616",
-        baseVolumeRaw: "145652700000000",
-        quoteVolumeRaw: "101479036478",
-        raw: "data/SUI_USDC/raw/2026/W26/2026-06-26T1710Z.jsonl.gz"
-      },
-      {
-        start: "2026-06-26T17:20:00.000Z",
-        end: "2026-06-26T17:30:00.000Z",
-        status: "filled",
-        eventCount: 247,
-        open: "0.69604",
-        high: "0.69797",
-        low: "0.69495",
-        close: "0.69734",
-        baseVolumeRaw: "124853000000000",
-        quoteVolumeRaw: "86921414432",
-        raw: "data/SUI_USDC/raw/2026/W26/2026-06-26T1720Z.jsonl.gz"
-      },
-      {
-        start: "2026-06-26T17:30:00.000Z",
-        end: "2026-06-26T17:40:00.000Z",
-        status: "filled",
-        eventCount: 296,
-        open: "0.697",
-        high: "0.69851",
-        low: "0.69394",
-        close: "0.69449",
-        baseVolumeRaw: "148337800000000",
-        quoteVolumeRaw: "103213859498",
-        raw: "data/SUI_USDC/raw/2026/W26/2026-06-26T1730Z.jsonl.gz"
       }
     ]
   };

@@ -682,6 +682,40 @@ describe("source policy", () => {
     );
   });
 
+  it("keeps DeepBook USDC price history bounded to external candle evidence", () => {
+    const toolSource = readFileSync(join(process.cwd(), "src/mcp/tools/read/deepbookReadTools.ts"), "utf8");
+    const source = [
+      "src/core/read/readService.ts",
+      "src/core/read/readServiceTypes.ts",
+      "src/core/read/deepbookReadHelpers.ts",
+      "src/mcp/serverInfo.ts",
+      "src/mcp/toolNames.ts",
+      "src/mcp/tools/read/deepbookReadTools.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+
+    const description =
+      toolSource.match(
+        /TOOL_NAMES\.readGetDeepbookUsdcPriceHistory[\s\S]{0,700}description:\s*"([^"]+)"/
+      )?.[1] ?? "";
+
+    expect(description).toContain("DeepBook USDC 10-minute UTC candle evidence");
+    expect(description).not.toMatch(/live quote|execution price|route|best price|USD value|P&L|tax|signing readiness/i);
+    expect(source).toMatch(/read\.get_deepbook_usdc_price_history/);
+    expect(source).toMatch(/external_precomputed_deepbook_usdc_index/);
+    expect(source).toMatch(/observed_deepbook_usdc_fill_candle_history/);
+    expect(source).toMatch(/usdcIsFiatUsd:\s*false/);
+    expect(source).toMatch(/usdPegGuaranteeAvailable:\s*false/);
+    expect(source).toMatch(/chainRecomputedBySayUrIntent:\s*false/);
+    expect(source).toMatch(/liveQuoteAvailable:\s*false/);
+    expect(source).toMatch(/historicalMidPriceAvailable:\s*false/);
+    expect(source).toMatch(/routeRecommendationAvailable:\s*false/);
+    expect(source).toMatch(/transactionBuildingAvailable:\s*false/);
+    expect(source).toMatch(/signingReadinessAvailable:\s*false/);
+    expect(source).toMatch(/profitAndLossAvailable:\s*false/);
+    expect(source).toMatch(/costBasisAvailable:\s*false/);
+    expect(source).toMatch(/independent_chain_recomputation/);
+  });
+
   it("keeps review-time simulation requirements separate from transaction bytes and quote reads", () => {
     const sdkApi = readFileSync(join(process.cwd(), "docs/SDK_API.md"), "utf8");
     const simulationSource = readFileSync(

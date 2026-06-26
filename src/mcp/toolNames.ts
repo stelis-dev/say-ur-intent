@@ -5,6 +5,7 @@ export const TOOL_NAMES = {
   readListDeepbookTokens: "read.list_deepbook_tokens",
   readInspectDeepbookOrderbook: "read.inspect_deepbook_orderbook",
   readGetDeepbookMidPrice: "read.get_deepbook_mid_price",
+  readGetDeepbookUsdcPriceHistory: "read.get_deepbook_usdc_price_history",
   readQuoteDeepbookAction: "read.quote_deepbook_action",
   readQuoteDeepbookDisplayAmount: "read.quote_deepbook_display_amount",
   readListFlowxPools: "read.list_flowx_pools",

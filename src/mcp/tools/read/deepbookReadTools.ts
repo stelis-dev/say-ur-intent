@@ -6,14 +6,27 @@ import {
   DEEPBOOK_SCALAR_UNIT_SOURCE
 } from "../../../core/read/coinMetadata.js";
 import {
+  DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES,
+  DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
+  DEEPBOOK_USDC_INDEX_PRICE_CONVENTION,
+  deepbookUsdcIndexBarSchema,
+  deepbookUsdcIndexBaseAssetSchema
+} from "../../../core/read/deepbookUsdcIndexSource.js";
+import {
   DEEPBOOK_MID_PRICE_DIRECTION,
   DEEPBOOK_MID_PRICE_PRECISION,
   DEEPBOOK_MID_PRICE_SEMANTICS_KIND,
   DEEPBOOK_MID_PRICE_TYPE,
   DEEPBOOK_ACCOUNT_QUANTITY_KIND,
+  DEEPBOOK_USDC_PRICE_HISTORY_COVERAGE_STATUSES,
+  DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND,
+  DEEPBOOK_USDC_PRICE_HISTORY_SOURCE_UNAVAILABLE_REASONS,
+  DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS,
+  DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_PAIR_REASONS,
   DEEPBOOK_QUOTE_QUANTITY_KIND,
   DEFAULT_DEEPBOOK_SIMULATION_SENDER,
   MAX_DEEPBOOK_ACCOUNT_OPEN_ORDER_IDS,
+  MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS,
   MAX_DEEPBOOK_ORDERBOOK_TICKS
 } from "../../../core/read/readService.js";
 import { noParamsInputSchema, successOutputSchema } from "../../schemas.js";
@@ -103,6 +116,161 @@ const deepbookMidPriceSemanticsSchema = z.object({
     z.literal("cost_basis")
   ])
 });
+
+const deepbookUsdcPriceHistorySelectorSchema = z.union([
+  z.object({ kind: z.literal("pair_id"), value: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("asset_symbol"), value: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("coin_type"), value: z.string().min(1) }).strict()
+]);
+
+const deepbookUsdcPriceHistoryRangeSchema = z.object({
+  start: fetchedAtSchema,
+  end: fetchedAtSchema,
+  timeZone: z.literal("UTC"),
+  barIntervalMinutes: z.literal(DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES),
+  maxBars: z.literal(MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS),
+  requestedBarSlots: z.number().int().positive()
+}).strict();
+
+const deepbookUsdcPriceHistoryRequestedSchema = z.object({
+  selector: deepbookUsdcPriceHistorySelectorSchema,
+  range: deepbookUsdcPriceHistoryRangeSchema
+}).strict();
+
+const deepbookUsdcPriceHistoryPairSchema = z.object({
+  pairId: z.string().min(1),
+  poolId: z.string().min(1),
+  baseAsset: deepbookUsdcIndexBaseAssetSchema,
+  quoteAsset: z.object({
+    symbol: z.literal("USDC"),
+    coinType: z.literal(DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE),
+    decimals: z.literal(6)
+  }).strict(),
+  priceConvention: z.literal(DEEPBOOK_USDC_INDEX_PRICE_CONVENTION),
+  barIntervalMinutes: z.literal(DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES)
+}).strict();
+
+const deepbookUsdcPriceHistoryFileReferenceSchema = z.object({
+  week: z.object({
+    weekYear: z.number().int().min(1970).max(9999),
+    week: z.number().int().min(1).max(53)
+  }).strict(),
+  path: z.string().min(1),
+  url: z.string().url()
+}).strict();
+
+const deepbookUsdcPriceHistoryFoundFileReferenceSchema = deepbookUsdcPriceHistoryFileReferenceSchema.extend({
+  fetchedAt: fetchedAtSchema
+}).strict();
+
+const deepbookUsdcPriceHistorySourceSchema = z.object({
+  kind: z.literal("external_precomputed_deepbook_usdc_index"),
+  repositoryUrl: z.string().url(),
+  baseUrl: z.string().url(),
+  sourceRef: z.string().min(1),
+  registry: z.object({
+    path: z.literal("registry/pairs.json"),
+    url: z.string().url(),
+    fetchedAt: fetchedAtSchema
+  }).strict(),
+  weeklyFiles: z.object({
+    requested: z.array(deepbookUsdcPriceHistoryFileReferenceSchema),
+    found: z.array(deepbookUsdcPriceHistoryFoundFileReferenceSchema),
+    missing: z.array(deepbookUsdcPriceHistoryFileReferenceSchema)
+  }).strict(),
+  chainRecomputedBySayUrIntent: z.literal(false)
+}).strict();
+
+const deepbookUsdcPriceHistoryUnsupportedClaimSchema = z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS);
+
+const deepbookUsdcPriceHistoryQuantitySemanticsSchema = z.object({
+  kind: z.literal(DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND),
+  allowedUse: z.literal("observed_deepbook_usdc_fill_candle_history"),
+  source: z.literal("external_precomputed_deepbook_usdc_index"),
+  barIntervalMinutes: z.literal(DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES),
+  quoteAsset: z.literal("USDC"),
+  priceConvention: z.literal(DEEPBOOK_USDC_INDEX_PRICE_CONVENTION),
+  usdcIsFiatUsd: z.literal(false),
+  usdPegGuaranteeAvailable: z.literal(false),
+  chainRecomputedBySayUrIntent: z.literal(false),
+  liveQuoteAvailable: z.literal(false),
+  historicalMidPriceAvailable: z.literal(false),
+  globalMarketPriceAvailable: z.literal(false),
+  fiatUsdCashOutAvailable: z.literal(false),
+  routeRecommendationAvailable: z.literal(false),
+  transactionBuildingAvailable: z.literal(false),
+  signingReadinessAvailable: z.literal(false),
+  profitAndLossAvailable: z.literal(false),
+  costBasisAvailable: z.literal(false),
+  notFor: z.tuple([
+    z.literal("fiat_usd_cash_out"),
+    z.literal("usd_peg_assumption"),
+    z.literal("global_market_price"),
+    z.literal("historical_mid_price"),
+    z.literal("live_quote"),
+    z.literal("route_recommendation"),
+    z.literal("best_route"),
+    z.literal("transaction_building"),
+    z.literal("signing_data"),
+    z.literal("signing_readiness"),
+    z.literal("profit_or_pnl"),
+    z.literal("cost_basis")
+  ])
+}).strict();
+
+const deepbookUsdcPriceHistoryResponseSummarySchema = z.object({
+  questionKind: z.literal("deepbook_usdc_price_history"),
+  evidenceKind: z.literal("external_precomputed_deepbook_usdc_index_10m_candles"),
+  sourceStatement: z.literal(
+    "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response."
+  ),
+  usdcDisclaimer: z.literal(
+    "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+  ),
+  candleMeaning: z.literal(
+    "Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket."
+  ),
+  excludedFromConclusion: z.array(deepbookUsdcPriceHistoryUnsupportedClaimSchema)
+}).strict();
+
+const deepbookUsdcPriceHistoryCommonOutputSchema = z.object({
+  fetchedAt: fetchedAtSchema,
+  requested: deepbookUsdcPriceHistoryRequestedSchema,
+  userAnswerUse: userAnswerUseSchema,
+  quantitySemantics: deepbookUsdcPriceHistoryQuantitySemanticsSchema,
+  responseSummary: deepbookUsdcPriceHistoryResponseSummarySchema,
+  unsupportedClaims: z.array(deepbookUsdcPriceHistoryUnsupportedClaimSchema)
+}).strict();
+
+const deepbookUsdcPriceHistoryOutputSchema = z.object({
+  ok: z.literal(true),
+  data: z.discriminatedUnion("status", [
+    deepbookUsdcPriceHistoryCommonOutputSchema.extend({
+      status: z.literal("ok"),
+      pair: deepbookUsdcPriceHistoryPairSchema,
+      coverageStatus: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_COVERAGE_STATUSES),
+      barCount: z.number().int().nonnegative().max(MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS),
+      bars: z.array(deepbookUsdcIndexBarSchema).max(MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS),
+      source: deepbookUsdcPriceHistorySourceSchema
+    }).strict(),
+    deepbookUsdcPriceHistoryCommonOutputSchema.extend({
+      status: z.literal("unsupported_pair"),
+      reason: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_PAIR_REASONS),
+      matchingPairIds: z.array(z.string()),
+      availablePairIds: z.array(z.string())
+    }).strict(),
+    deepbookUsdcPriceHistoryCommonOutputSchema.extend({
+      status: z.literal("unsupported_range"),
+      reason: z.literal("requested_range_exceeds_max_bars")
+    }).strict(),
+    deepbookUsdcPriceHistoryCommonOutputSchema.extend({
+      status: z.literal("source_unavailable"),
+      reason: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_SOURCE_UNAVAILABLE_REASONS),
+      pair: deepbookUsdcPriceHistoryPairSchema.optional(),
+      source: deepbookUsdcPriceHistorySourceSchema.optional()
+    }).strict()
+  ])
+}).strict();
 
 const deepbookQuoteQuantitySemanticsSchema = z.object({
   kind: z.literal(DEEPBOOK_QUOTE_QUANTITY_KIND),
@@ -362,6 +530,39 @@ export function registerDeepbookReadTools(server: McpServer, deps: McpServerDeps
           await deps.readService.getDeepbookMidPrice({
             poolKey,
             simulationSender: DEFAULT_DEEPBOOK_SIMULATION_SENDER
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readGetDeepbookUsdcPriceHistory,
+    {
+      title: "Get DeepBook USDC price history",
+      description:
+        "Return indexed DeepBook USDC 10-minute UTC candle evidence from deepbook-usdc-index.",
+      inputSchema: {
+        pairId: z.string().min(1).optional(),
+        assetSymbol: z.string().min(1).optional(),
+        coinType: z.string().min(1).optional(),
+        start: fetchedAtSchema,
+        end: fetchedAtSchema
+      },
+      outputSchema: deepbookUsdcPriceHistoryOutputSchema,
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ pairId, assetSymbol, coinType, start, end }) => {
+      try {
+        return okToolResult(
+          await deps.readService.getDeepbookUsdcPriceHistory({
+            pairId,
+            assetSymbol,
+            coinType,
+            start,
+            end
           })
         );
       } catch (error) {

@@ -40,6 +40,36 @@ export const SETTLEMENT_ASSET_GROUP_PARITY_QUANTITY_KIND = "settlement_asset_gro
 export const SUI_USD_SETTLEMENT_ASSET_GROUP_ID = "SUI_USD_SETTLEMENT_ASSETS";
 export const MAX_WALLET_BALANCE_SCAN_PAGES = 20;
 export const MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS = 1_008;
+export const DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS = [
+  "fiat_usd_cash_out",
+  "usd_peg_assumption",
+  "global_market_price",
+  "historical_mid_price",
+  "live_quote",
+  "route_recommendation",
+  "best_route",
+  "transaction_building",
+  "signing_readiness",
+  "profit_or_pnl",
+  "cost_basis",
+  "independent_chain_recomputation"
+] as const;
+export const DEEPBOOK_USDC_PRICE_HISTORY_COVERAGE_STATUSES = [
+  "complete",
+  "partial_missing_week_files",
+  "contains_missing_bars",
+  "no_bars_in_range"
+] as const;
+export const DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_PAIR_REASONS = [
+  "selector_not_in_index_registry",
+  "selector_resolves_to_multiple_enabled_pairs"
+] as const;
+export const DEEPBOOK_USDC_PRICE_HISTORY_SOURCE_UNAVAILABLE_REASONS = [
+  "index_source_not_configured",
+  "registry_unavailable",
+  "weekly_file_fetch_failed",
+  "weekly_files_missing"
+] as const;
 // Internal placeholder for sender-independent DeepBook market reads. The pinned Sui gRPC
 // resolver uses the same dummy sender when no transaction sender is provided.
 export const DEFAULT_DEEPBOOK_SIMULATION_SENDER =
@@ -1028,19 +1058,7 @@ export type DeepbookUsdcPriceHistoryQuantitySemantics = {
   ];
 };
 
-export type DeepbookUsdcPriceHistoryUnsupportedClaim =
-  | "fiat_usd_cash_out"
-  | "usd_peg_assumption"
-  | "global_market_price"
-  | "historical_mid_price"
-  | "live_quote"
-  | "route_recommendation"
-  | "best_route"
-  | "transaction_building"
-  | "signing_readiness"
-  | "profit_or_pnl"
-  | "cost_basis"
-  | "independent_chain_recomputation";
+export type DeepbookUsdcPriceHistoryUnsupportedClaim = typeof DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS[number];
 
 export type DeepbookUsdcPriceHistoryPair = {
   pairId: string;
@@ -1094,21 +1112,13 @@ export type DeepbookUsdcPriceHistoryResponseSummary = {
   excludedFromConclusion: DeepbookUsdcPriceHistoryUnsupportedClaim[];
 };
 
-export type DeepbookUsdcPriceHistoryCoverageStatus =
-  | "complete"
-  | "partial_missing_week_files"
-  | "contains_missing_bars"
-  | "no_bars_in_range";
+export type DeepbookUsdcPriceHistoryCoverageStatus = typeof DEEPBOOK_USDC_PRICE_HISTORY_COVERAGE_STATUSES[number];
 
 export type DeepbookUsdcPriceHistoryUnsupportedPairReason =
-  | "selector_not_in_index_registry"
-  | "selector_resolves_to_multiple_enabled_pairs";
+  typeof DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_PAIR_REASONS[number];
 
 export type DeepbookUsdcPriceHistorySourceUnavailableReason =
-  | "index_source_not_configured"
-  | "registry_unavailable"
-  | "weekly_file_fetch_failed"
-  | "weekly_files_missing";
+  typeof DEEPBOOK_USDC_PRICE_HISTORY_SOURCE_UNAVAILABLE_REASONS[number];
 
 export type DeepbookUsdcPriceHistorySummary =
   | {
