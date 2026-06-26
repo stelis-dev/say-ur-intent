@@ -2,6 +2,16 @@ import type { UserAnswerUse } from "../evidence/userAnswerUse.js";
 import type { ProposalReviewModel } from "../proposal/types.js";
 import type { LocalSessionBase } from "../session/localSession.js";
 import type { PtbVisualizationArtifact, WalletReviewAdapterContract } from "./signableAdapterContract.js";
+import type { SuiChainReceiptEvidence } from "./suiChainReceiptEvidence.js";
+export {
+  SUI_CHAIN_RECEIPT_REQUIRED_INCLUDE,
+  type SuiChainReceiptAccountBalanceChange,
+  type SuiChainReceiptEffectsStatus,
+  type SuiChainReceiptEvidence,
+  type SuiChainReceiptIncludeField,
+  type SuiChainReceiptPackageCall,
+  type SuiChainReceiptSource
+} from "./suiChainReceiptEvidence.js";
 
 export type UnknownRecord = Record<string, unknown>;
 
@@ -12,6 +22,9 @@ export const FAILURE_REASONS = [
   "network_error",
   "transaction_submit_failed",
   "execution_result_unavailable",
+  "chain_receipt_unavailable",
+  "receipt_verification_failed",
+  "chain_execution_failed",
   "unknown_failure"
 ] as const;
 
@@ -292,14 +305,22 @@ type ExecutionResultBase = {
 
 export type ExecutionResult =
   | (ExecutionResultBase & {
-      status: "signed_pending_result" | "success";
+      status: "signed_pending_result";
       txDigest: string;
+      failureReason?: never;
+      chainReceipt?: never;
+    })
+  | (ExecutionResultBase & {
+      status: "success";
+      txDigest: string;
+      chainReceipt?: SuiChainReceiptEvidence;
       failureReason?: never;
     })
   | (ExecutionResultBase & {
       status: "failure";
       txDigest?: string;
       failureReason: FailureReason;
+      chainReceipt?: SuiChainReceiptEvidence;
     });
 
 export type ReviewSession = LocalSessionBase & {

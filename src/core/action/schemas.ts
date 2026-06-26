@@ -5,6 +5,7 @@ import { makeRawU64StringSchema } from "../numeric/rawU64.js";
 import { normalizeCoinType } from "../read/coinMetadata.js";
 import { BLOCKED_REASONS, FAILURE_REASONS, REFRESH_REASONS } from "./types.js";
 import { ptbVisualizationArtifactSchema, walletReviewAdapterContractSchema } from "./signableAdapterContract.js";
+import { suiChainReceiptEvidenceSchema } from "./suiChainReceiptEvidence.js";
 
 export const unknownRecordSchema = z.record(z.string(), z.unknown());
 
@@ -602,13 +603,40 @@ const executionResultBaseSchema = z.object({
 
 export const executionResultSchema = z.discriminatedUnion("status", [
   executionResultBaseSchema.extend({
-    status: z.enum(["success", "signed_pending_result"]),
+    status: z.literal("signed_pending_result"),
     txDigest: z.string().min(1),
+    failureReason: z.never().optional(),
+    chainReceipt: z.never().optional()
+  }),
+  executionResultBaseSchema.extend({
+    status: z.literal("success"),
+    txDigest: z.string().min(1),
+    chainReceipt: suiChainReceiptEvidenceSchema.optional(),
     failureReason: z.never().optional()
   }),
   executionResultBaseSchema.extend({
     status: z.literal("failure"),
     txDigest: z.string().optional(),
-    failureReason: failureReasonSchema
+    failureReason: failureReasonSchema,
+    chainReceipt: suiChainReceiptEvidenceSchema.optional()
   })
-]);
+]).superRefine((result, ctx) => {
+  if (!("chainReceipt" in result) || result.chainReceipt === undefined) {
+    return;
+  }
+  if (result.txDigest === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["txDigest"],
+      message: "chain receipt execution results require txDigest"
+    });
+    return;
+  }
+  if (result.txDigest !== result.chainReceipt.txDigest) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["chainReceipt", "txDigest"],
+      message: "chain receipt txDigest must match execution result txDigest"
+    });
+  }
+});
