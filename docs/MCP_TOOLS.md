@@ -610,7 +610,9 @@ transaction material.
 When every review evidence stage completes, a supported account-bound DeepBook
 or FlowX swap review reaches `ready_for_wallet_review` and the local review
 page offers a digest-gated byte handoff, user-controlled wallet signing, and
-execution-receipt recording.
+signed-digest reporting. After the page reports the signed transaction digest,
+the review server re-reads Sui mainnet and records normalized chain receipt
+evidence.
 
 The MCP layer never signs, executes, or returns transaction bytes; the
 digest-verified bytes stay in the local review-server session and reach the
@@ -648,10 +650,11 @@ server built unsigned transaction material and kept the bytes internal. If
 transaction digest from that stored material; the digest value and transaction
 bytes are not MCP or review-app outputs. Missing stages explain why the review
 remains blocked. This lifecycle covers review evidence producer stages through
-review-time simulation. Wallet handoff, wallet signing, and execution receipts
-are not adapter lifecycle stages; they happen after the lifecycle completes,
-through the digest-gated handoff and user-controlled signing on the local
-review page.
+review-time simulation. Wallet handoff, wallet signing, signed-digest
+reporting, and server-read chain receipt recording are not adapter lifecycle
+stages; they happen after the lifecycle completes, through the digest-gated
+handoff, user-controlled signing on the local review page, and server re-read
+of Sui mainnet for the signed transaction digest.
 Public producer projections are tied to those stage states:
 `reviewState.humanReadableReview` is valid only after `human_readable_review`
 is completed and not listed as missing, and `reviewState.simulation` is valid
@@ -800,11 +803,32 @@ For execution waits, use `statusCategory` and the execution `pollingHint` fields
 
 For execution waits, `signed_pending_result` is categorized as `awaiting_chain_result`.
 
-That means signing has already happened and the wait is observing the chain result.
+That means signing has already happened and the local server is waiting for
+the server re-read of the signed transaction digest from Sui mainnet. Result
+reads and waits may lazily retry that read while the session remains pending.
+
+When the server verifies a chain receipt with successful effects, execution
+polling can return `success` with `executionResult.chainReceipt`. When Sui
+mainnet reports failed effects, execution polling can return `failure` with
+`failureReason: "chain_execution_failed"` and a chain receipt. When the digest
+cannot be found before the local lookup window ends, execution polling can
+return `failure` with `failureReason: "chain_receipt_unavailable"`. When the
+chain transaction fails digest, sender, or receipt validation checks, execution
+polling can return `failure` with
+`failureReason: "receipt_verification_failed"`.
+
+`executionResult.chainReceipt` is a server-read execution fact for the reported
+transaction digest. It is not transaction bytes, not raw BCS, not wallet
+signatures, not signing data, not signing readiness, not an execution
+guarantee, not route quality, not fiat value, not P&L, not tax evidence, not
+best-price evidence, and not peg evidence.
 
 `blocked` and `refresh_required` are wait-stopping statuses, but they are not final success or failure.
 
-Execution result transitions are owned by the local review-server browser flow. MCP wait tools observe those transitions and do not produce signing results.
+Execution result transitions are owned by the local review server. The browser
+reports only signed pending digests or local pre-chain failures; MCP wait tools
+observe stored transitions and may trigger the same lazy server re-read path,
+but they do not sign, submit, or produce signing results.
 
 Session status and wait tools may lazily mark expired local sessions while reading, so session lifecycle tools are annotated `readOnlyHint: false`.
 

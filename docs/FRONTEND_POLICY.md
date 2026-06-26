@@ -158,7 +158,8 @@ whose only action is cancel. Other states render:
 - `blocked`: hide the sign action and show a human-readable reason plus the
   retry action.
 - recorded execution result: show the receipt card (status, digest, failure
-  reason) with no review or sign actions; the session is finished.
+  reason, and server-read chain receipt facts when present) with no review or
+  sign actions; the session is finished.
 - `expired`: show expiration and a concrete restart path. The default restart path is to return to the AI client and request a new wallet identity or review session.
 
 External proposal review sessions are non-signable. Their primary action is to

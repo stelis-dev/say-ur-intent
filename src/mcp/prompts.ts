@@ -26,7 +26,7 @@ export const MCP_PROMPTS = [
       "Prepare a reviewable Sui action only through Say Ur Intent's review-session flow.",
       "Use action.prepare_external_proposal_review when the input is a structured external payment or Sui action proposal.",
       "External proposals get read-only local review and never become signing material. Use action.prepare_sui_action_review for a natural-language swap intent; after a wallet account is connected, account-bound review can reach ready_for_wallet_review, where the local review page offers digest-gated, user-controlled wallet signing.",
-      "Show the reviewUrl and summarize the review checks. This MCP response never contains signing data, transaction bytes, or signing readiness; signing and execution receipts happen on the local review page."
+      "Show the reviewUrl and summarize the review checks. This MCP response never contains signing data, transaction bytes, or signing readiness; wallet signing happens on the local review page, and chain receipts are server-read execution facts after the signed digest is reported."
     ].join("\n")
   }
 ] as const;
@@ -36,7 +36,7 @@ export const MCP_PROMPTS = [
 // or omit these lines.
 const PLATFORM_PROMPT_BOUNDARY_LINES = [
   "Show the reviewUrl and summarize the review checks.",
-  "This MCP response never contains signing data, transaction bytes, or signing readiness; signing and execution receipts happen on the local review page."
+  "This MCP response never contains signing data, transaction bytes, or signing readiness; wallet signing happens on the local review page, and chain receipts are server-read execution facts after the signed digest is reported."
 ];
 
 function surfacePromptText(surface: AdapterPromptSurface, intent: string): string {

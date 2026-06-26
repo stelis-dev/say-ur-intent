@@ -80,7 +80,10 @@ WAL mode can create companion files next to the main database, such as `say-ur-i
 - `review_sessions`: review session header, current status, full action plan JSON, and materialized requested intent JSON when present.
 - `review_state_snapshots`: append-only account-bound `ReviewState` snapshots with status and reason columns for queryability.
 - `review_status_transitions`: append-only review lifecycle timing for funnel and review-timing analysis.
-- `review_executions`: Say Ur Intent review execution result evidence, keyed by `review_session_id`.
+- `review_executions`: Say Ur Intent review execution result evidence, keyed by
+  `review_session_id`. For signed review-page swaps, the execution result JSON
+  can include normalized server-read Sui chain receipt evidence for the signed
+  transaction digest.
 - `external_activity_scans`: user-requested digest lookups, bounded account scans, or sent-function scans, including request window, endpoint host, chain identifier, continuation metadata, coverage signals, and internal scan-kind provenance.
 - `external_activity_transactions`: normalized Sui transaction facts linked to a known local account and the first/last scan that observed them. The optional detail JSON stores typed facts such as capped Move call targets, raw balance changes, object changes, event summaries, gas raw cost fields, execution errors, and truncation flags when GraphQL returns them. Each stored detail JSON value is capped at 64 KiB.
 - `local_settings`: allowlisted local settings. The current key set is `suiGrpcUrl` and `suiGraphqlUrl`, stored as JSON-encoded text and applied after restart.
@@ -88,7 +91,10 @@ WAL mode can create companion files next to the main database, such as `say-ur-i
 
 The following live session tables hold runtime session state in the shared database so any one review server can serve a session another client created (see [Shared single-origin review server](#shared-single-origin-review-server)):
 
-- `live_review_sessions`: the live review session record — status, bound account, the pending wallet-handoff lock, the plan / review-state / execution-result JSON, and timestamps — keyed by session id.
+- `live_review_sessions`: the live review session record — status, bound
+  account, the pending wallet-handoff lock, the plan / review-state /
+  execution-result JSON, timestamps, revision, and write-contract marker —
+  keyed by session id.
 - `live_private_review_artifacts`: per-session private review evidence (the transaction-material handle, its digest commitment, and derived evidence), cascade-deleted with its review session.
 - `live_transaction_materials`: locally built unsigned transaction bytes stored as a BLOB behind a redacted handle, with a TTL; deleted on signing, terminal result, or expiry.
 - `live_wallet_identity_sessions` and `live_settings_sessions`: the short-lived wallet-identity and settings capture sessions, stored as validated JSON keyed by session id.
@@ -106,9 +112,20 @@ Table relationships:
 - `coin_metadata_cache` is account-independent and is keyed by coin type plus chain identifier.
 - `local_settings` is independent local configuration and does not point to account or review rows.
 
-The database does not create background transaction indexing tables. Complete external transaction history, raw GraphQL payloads, transaction bytes, signatures, BCS payloads, non-known party account addresses, and arbitrary transaction payloads are not product surfaces of this database.
+The database does not create background transaction indexing tables. Complete external transaction history, raw GraphQL payloads, transaction bytes, signatures, BCS payloads, non-known party account addresses, and arbitrary transaction payloads are not product surfaces of this database. Server-read chain receipt evidence is normalized execution-result JSON for a reviewed signed transaction digest; it is not raw BCS, transaction bytes, wallet signatures, or a complete transaction-history index.
 
-Schema version 4 adds the `external_activity_scans.kind = 'function_scan'` provenance value. The startup migration rebuilds `external_activity_scans` with foreign keys temporarily disabled, copies rows unchanged, recreates indexes, runs `PRAGMA foreign_key_check`, and updates `user_version` only after the transaction succeeds. Existing rows are not backfilled from `account_scan` to `function_scan` because earlier scan rows do not store the function target needed for safe identification. Local-data backups containing `function_scan` provenance can be imported by version 4 runtimes; older runtimes reject them through their scan-kind validator rather than partially importing unsupported provenance.
+Schema version 4 adds the `external_activity_scans.kind = 'function_scan'` provenance value. The startup migration rebuilds `external_activity_scans` with foreign keys temporarily disabled, copies rows unchanged, recreates indexes, runs `PRAGMA foreign_key_check`, and updates `user_version` only after the transaction succeeds. Existing rows are not backfilled from `account_scan` to `function_scan` because earlier scan rows do not store the function target needed for safe identification. Local-data backups containing `function_scan` provenance can be imported by version 4 or newer runtimes; older runtimes reject them through their scan-kind validator rather than partially importing unsupported provenance.
+
+Schema version 6 adds the live review-session write contract. The
+`live_review_sessions` table stores a monotonically increasing `revision` and
+`write_contract_version: "shared_sqlite_review_session_v1"`. Startup migration
+rebuilds older live review-session rows inside `BEGIN IMMEDIATE`, sets
+`revision = 0`, sets the write-contract marker, preserves private review
+artifacts for rows that still exist, runs `PRAGMA foreign_key_check`, and only
+then updates `user_version`. Insert and update triggers reject
+revision-unaware writers: inserts must use `revision = 0` and the current
+write-contract marker, and updates must increase the revision by exactly one
+and keep the current write-contract marker.
 
 Logical local data reset is the local settings page action that clears stored product state through the runtime without requiring manual database-file deletion. Replace-only import is the settings page import path that replaces local product state from a validated backup. Both logical local data reset and replace-only import clear `coin_metadata_cache`. Clearing active account context does not clear it because coin metadata is account-independent.
 
@@ -118,7 +135,14 @@ Non-terminal review session expiry is recorded lazily when the session is read o
 
 All live session state lives in this one shared database, so multiple local AI clients (for example Claude and Codex running at the same time) share it. Exactly one process binds the fixed review port and serves every client's review pages from the shared database. A second client's MCP does not take the port over; it defers to that healthy peer and takes the origin over only if the owner exits. Because whichever process owns the port reads and writes the same session rows, a review created by one client is servable by the review server of another, and the single fixed origin keeps the browser wallet autoconnect stable.
 
-Cross-process writes rely on WAL plus `PRAGMA busy_timeout`. The one write that must be atomic across processes — the wallet handoff lock — is a single conditional `UPDATE` on `live_review_sessions.pending_handoff_digest`, so two processes cannot hand off two different transactions for the same session.
+Cross-process writes rely on WAL plus `PRAGMA busy_timeout`. Live review-session
+mutations commit through revision-aware transitions on the shared SQLite
+connection. Runtime product transitions that also write activity/audit rows
+commit the live row and the activity rows in one immediate SQLite transaction.
+The wallet handoff lock remains a conditional write on
+`live_review_sessions.pending_handoff_digest`, and it also increments the live
+row revision, so two processes cannot hand off two different transactions for
+the same session or silently overwrite a newer live session state.
 
 ### Unsigned transaction material on disk
 
@@ -126,7 +150,11 @@ Cross-process writes rely on WAL plus `PRAGMA busy_timeout`. The one write that 
 
 ### Schema versioning across shared clients
 
-The live session tables are added without changing `user_version`. A runtime that does not know a live table simply ignores it, so a newer client can introduce live tables while an older client keeps opening the same shared database. Only a change that an older runtime cannot safely read should raise `user_version`, and such a change requires updating every client that shares the database, because a runtime does not open a database whose `user_version` is newer than it supports.
+The live session write contract raises `user_version` because older runtimes
+cannot safely write the shared live review-session table. A runtime that sees a
+newer `user_version` fails closed instead of opening the shared database. That
+means every MCP client sharing the same data directory must run a runtime that
+supports the current schema before writing live review-session state.
 
 ## Boundaries
 

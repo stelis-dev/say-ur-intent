@@ -153,6 +153,30 @@ describe("source policy", () => {
     expect(source).not.toContain("execution_result_unavailable");
   });
 
+  it("documents chain receipts as server-read execution evidence without expanding authority", () => {
+    const publicAndRuntimeSurface = [
+      "AGENTS.md",
+      "README.md",
+      "docs/AGENT_BEHAVIOR.md",
+      "docs/FRONTEND_POLICY.md",
+      "docs/LOCAL_DB_ARCHITECTURE.md",
+      "docs/MCP_SETUP.md",
+      "docs/MCP_TOOLS.md",
+      "src/mcp/serverInfo.ts",
+      "src/mcp/prompts.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+
+    expect(publicAndRuntimeSurface).toMatch(/server re-reads Sui mainnet[\s\S]{0,220}chain receipt/i);
+    expect(publicAndRuntimeSurface).toMatch(/chain receipts are server-read execution facts/i);
+    expect(publicAndRuntimeSurface).toMatch(/not transaction bytes[\s\S]{0,220}signing readiness/i);
+    expect(publicAndRuntimeSurface).toMatch(/not execution guarantees[\s\S]{0,180}route quality[\s\S]{0,180}P&L/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/server-side receipt verification against chain state/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/receipt verification against chain state is not implemented/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/execution receipts happen on the local review page/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/page records the execution receipt/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/Execution result transitions are owned by the local review-server browser flow/i);
+  });
+
   it("keeps the initial MCP tool registration wrapper migration narrow", () => {
     const wrapperSource = readFileSync(join(process.cwd(), "src/mcp/registerTool.ts"), "utf8");
     expect(wrapperSource).toMatch(/server\.registerTool/);
@@ -931,7 +955,8 @@ describe("source policy", () => {
     ];
     const source = files.map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
 
-    expect(source).toMatch(/signable review adapter.{0,120}DeepBook swap route/is);
+    expect(source).toMatch(/account-bound DeepBook and FlowX swap review/i);
+    expect(source).toMatch(/protocol-agnostic adapter contracts|descriptor contract/i);
     const deepBookOwnedPhrases = [
       ["DeepBook", "signable", "adapter"],
       ["signable", "DeepBook", "adapter"],

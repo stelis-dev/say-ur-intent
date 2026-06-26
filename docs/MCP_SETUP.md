@@ -472,13 +472,15 @@ rather than silently moving.
 
 - Product-facing behavior is mainnet-only.
 - Wallet-account reads require an active account read context from wallet identity.
-- The signable review path is implemented for the account-bound DeepBook swap
-  review (the first signable review adapter for the DeepBook swap route):
+- The signable review path is implemented for the account-bound DeepBook and
+  FlowX swap reviews:
   review evidence runs through review-time simulation, a schema-validated
   wallet review contract is emitted on a `ready_for_wallet_review` state, and
   the local review page offers a digest-gated byte handoff with
-  user-controlled wallet signing and execution receipts. MCP responses still
-  do not contain transaction bytes, signing data, or signing readiness.
+  user-controlled wallet signing. After the page reports the signed transaction
+  digest, the review server re-reads Sui mainnet and records normalized chain
+  receipt evidence. MCP responses still do not contain transaction bytes or
+  signing data, and they do not provide signing readiness.
 - Here, `blocked` means required review evidence or user action is missing for
   that session (for example `wallet_review_contract_emit_missing`), not a
   release-wide signing stop.

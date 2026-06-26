@@ -115,6 +115,9 @@ export function executionResultUserAnswerUse(
     cannotAnswer: [
       ...(hasExecutionResult ? [] : ["recorded_review_execution_result_without_executionResult_field"]),
       "transaction_execution_guarantee",
+      "chain_receipt_as_execution_guarantee",
+      "chain_receipt_as_route_quality",
+      "chain_receipt_as_fiat_pnl_tax_or_peg_evidence",
       "absolute_safety_verdict",
       "route_quality",
       "wallet_custody_or_authorization",

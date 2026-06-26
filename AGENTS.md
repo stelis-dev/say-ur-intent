@@ -24,9 +24,11 @@ emit a schema-validated wallet review contract on `ready_for_wallet_review`.
 When every required evidence stage completes, the local review page can request
 the only transaction-byte handoff path: a same-machine, digest-gated handoff
 whose bytes must recompute to the reviewed commitment before the user signs in
-their own wallet and the page records the execution receipt. MCP responses and
-ordinary review-session JSON never expose transaction bytes, request wallet
-signatures, provide signing readiness, or execute on the user's behalf.
+their own wallet. After the page reports the signed transaction digest, the
+review server re-reads Sui mainnet and records normalized chain receipt
+evidence. MCP responses and ordinary review-session JSON never expose
+transaction bytes, request wallet signatures, provide signing readiness, or
+execute on the user's behalf.
 
 The current evidence layer answers a pre-execution question: given a user's Sui
 assets and a payment or action request, what can current verified evidence say,
@@ -44,15 +46,15 @@ and both must stay explicit in this file:
   review-time simulation evidence, and PTB visualization evidence from the same
   material-bound private artifacts. When every review evidence stage completes,
   the local review page offers a digest-gated byte handoff, user-controlled
-  wallet signing, chain submission from the page, and execution-receipt
-  recording. MCP responses and ordinary review-session JSON never expose
-  transaction bytes, request wallet signatures, provide signing readiness, or
-  execute on the user's behalf.
-- Deliberately sequenced next: server-side receipt verification against chain
-  state, richer analysis views, further protocol adapters, and external
-  proposal execution, each added only after Say Ur Intent independently builds or
-  verifies the transaction material inside a human-readable local review, and
-  never outside the product's permanent boundaries.
+  wallet signing, chain submission from the page, signed-digest reporting, and
+  server-read chain receipt recording. MCP responses and ordinary review-session
+  JSON never expose transaction bytes, request wallet signatures, provide
+  signing readiness, or execute on the user's behalf.
+- Deliberately sequenced next: richer analysis views, further protocol
+  adapters, and external proposal execution, each added only after Say Ur Intent
+  independently builds or verifies the transaction material inside a
+  human-readable local review, and never outside the product's permanent
+  boundaries.
 
 This sequencing never weakens the Non-Negotiable Boundaries below. "The current
 release does not include X yet (deliberately sequenced later)" and "the final

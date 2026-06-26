@@ -335,11 +335,13 @@ describe("MCP discoverability", () => {
       expect(client.getInstructions()).toBe(SERVER_INSTRUCTIONS);
       expect(client.getInstructions()).toContain("mainnet-only");
       expect(client.getInstructions()).toMatch(
-        /MCP layer is a session gateway[\s\S]*local review[\s\S]*wallet identity[\s\S]*settings sessions/i
+        /MCP (?:layer )?is a session gateway[\s\S]*local review[\s\S]*wallet identity[\s\S]*settings/i
       );
       expect(client.getInstructions()).toMatch(
-        /does not execute transactions[\s\S]*request wallet signatures[\s\S]*return transaction bytes/i
+        /does not execute[\s\S]*request wallet signatures[\s\S]*return transaction bytes/i
       );
+      expect(client.getInstructions()).toContain("server re-reads Sui mainnet and records chain receipt evidence");
+      expect(client.getInstructions()).toContain("Chain receipts are not execution guarantees");
       expect(client.getInstructions()).toContain("answerSourceStatus.canUseThisResponseForUserAnswer");
       expect(client.getInstructions()).toContain("userAnswerUse.answerFields");
       expect(client.getInstructions()).toContain("active account context");
@@ -434,12 +436,14 @@ describe("MCP discoverability", () => {
       expect(surfaceText).toContain('intent: "10 sui to usdc"');
       expect(surfaceText).toContain("action.prepare_sui_action_review");
       expect(surfaceText).toContain("never contains signing data, transaction bytes, or signing readiness");
+      expect(surfaceText).toContain("chain receipts are server-read execution facts");
 
       const prompt = await client.getPrompt({ name: "prepare-reviewable-sui-action" });
       const text = prompt.messages
         .map((message) => (message.content.type === "text" ? message.content.text : ""))
         .join("\n");
       expect(text).toContain("never contains signing data, transaction bytes, or signing readiness");
+      expect(text).toContain("chain receipts are server-read execution facts");
       expect(text).toContain("read-only local review and never become signing material");
       expect(text).not.toContain("Safe to sign");
     } finally {
