@@ -733,6 +733,57 @@ describe("source policy", () => {
     expect(source).toMatch(/independent_chain_recomputation/);
   });
 
+  it("keeps account asset timeline bounded to stored net-flow evidence", () => {
+    const toolSource = readFileSync(join(process.cwd(), "src/mcp/tools/read/transactionActivityTools.ts"), "utf8");
+    const docs = [
+      "docs/AGENT_BEHAVIOR.md",
+      "docs/MCP_TOOLS.md",
+      "docs/TRANSACTION_ACTIVITY_LOG.md",
+      "docs/UTILITY_INDEX.md",
+      "src/mcp/serverInfo.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+    const source = [
+      "src/core/activity/accountAssetTimeline.ts",
+      "src/core/activity/accountAssetTimelineUsdcReferences.ts",
+      "src/mcp/serverInfo.ts",
+      "src/mcp/toolNames.ts",
+      "src/mcp/tools/read/transactionActivityOutput.ts",
+      "src/mcp/tools/read/transactionActivityTools.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+
+    const description =
+      toolSource.match(
+        /TOOL_NAMES\.readGetAccountAssetTimeline[\s\S]{0,500}description:\s*"([^"]+)"/
+      )?.[1] ?? "";
+
+    expect(description).toContain("stored local account asset net-flow timeline evidence");
+    expect(description).toContain("held balances");
+    expect(description).not.toMatch(/USD value|tax|signing readiness/i);
+    expect(docs).toMatch(/read\.get_account_asset_timeline/);
+    expect(docs).toMatch(/stored local account asset net-flow bars|stored account asset net-flow bars/i);
+    expect(docs).toMatch(/half-open[\s\S]{0,120}start[\s\S]{0,120}included[\s\S]{0,120}end[\s\S]{0,120}excluded/i);
+    expect(docs).toMatch(/account_not_known[\s\S]{0,260}(does not return `?scanNeeded`?|Do not tell the user to run `?read\.scan_sui_account_activity`?)/i);
+    expect(docs).toMatch(/scan_needed[\s\S]{0,220}read\.scan_sui_account_activity/i);
+    expect(docs).toMatch(/balanceStatus:\s*"unavailable_no_balance_anchor"|unavailable_no_balance_anchor/i);
+    expect(docs).toMatch(/netFlowBars[\s\S]{0,220}(observed|raw)[\s\S]{0,220}(not held balances|held balances are unavailable)/i);
+    expect(docs).toMatch(/USDC[\s\S]{0,160}not fiat USD[\s\S]{0,160}not a USDC\/USD peg guarantee/i);
+    expect(docs).toMatch(/not[\s\S]{0,220}(complete wallet history|P&L|cost basis|signing readiness)/i);
+    expect(source).toMatch(/read\.get_account_asset_timeline/);
+    expect(source).toMatch(/ACCOUNT_ASSET_TIMELINE_QUANTITY_SEMANTICS/);
+    expect(source).toMatch(/balanceBarsAvailable:\s*false/);
+    expect(source).toMatch(/held_balance_without_balance_anchor/);
+    expect(source).toMatch(/complete_wallet_history/);
+    expect(source).toMatch(/profit_or_pnl/);
+    expect(source).toMatch(/cost_basis/);
+    expect(source).toMatch(/signing_data_or_readiness/);
+    expect(source).toMatch(/read\.scan_sui_account_activity/);
+    expect(source).toMatch(/account_not_known/);
+    expect(source).toMatch(/deepbook_usdc_token_denominated_reference_candles_for_supported_assets/);
+    expect(source).toMatch(/usdcIsFiatUsd:\s*false/);
+    expect(source).toMatch(/usdPegGuaranteeAvailable:\s*false/);
+    expect(source).toMatch(/chainRecomputedBySayUrIntent:\s*false/);
+  });
+
   it("keeps review-time simulation requirements separate from transaction bytes and quote reads", () => {
     const sdkApi = readFileSync(join(process.cwd(), "docs/SDK_API.md"), "utf8");
     const simulationSource = readFileSync(
@@ -979,7 +1030,7 @@ describe("source policy", () => {
     expect(classifierSpec).toMatch(/accepted_empty[\s\S]{0,120}does not prove matching activity exists/i);
     expect(classifierSpec).toMatch(/accepted_empty[\s\S]{0,160}does not prove no matching activity exists/i);
     expect(classifierSpec).toMatch(/accepted_empty[\s\S]{0,320}must not\s+be\s+treated as complete dApp history/i);
-    expect(classifierSpec).toMatch(/2026-05-14 probe[\s\S]{0,120}graphql\.mainnet\.sui\.io/i);
+    expect(classifierSpec).toMatch(/recorded probe[\s\S]{0,120}graphql\.mainnet\.sui\.io/i);
     expect(classifierSpec).toMatch(
       /accepted[\s\S]{0,120}`function`[\s\S]{0,120}`function \+ sentAddress`[\s\S]{0,120}`function \+ atCheckpoint`[\s\S]{0,120}`function \+ sentAddress \+ atCheckpoint`[\s\S]{0,160}`function \+ sentAddress \+ afterCheckpoint \+ beforeCheckpoint`/i
     );
@@ -987,7 +1038,7 @@ describe("source policy", () => {
       /rejected[\s\S]{0,120}`function \+ affectedAddress`[\s\S]{0,120}`function \+ affectedObject`[\s\S]{0,120}`function \+ kind: PROGRAMMABLE_TX`[\s\S]{0,120}`function \+ kind: SYSTEM_TX`[\s\S]{0,160}`function \+ affectedAddress \+ atCheckpoint`[\s\S]{0,160}`function \+ affectedAddress \+ afterCheckpoint \+ beforeCheckpoint`/i
     );
     expect(classifierSpec).toMatch(/At most one of \[affectedAddress,\s+affectedObject,\s+function,\s+kind\] can be specified/);
-    expect(classifierSpec).toMatch(/date-scoped\s+source evidence[\s\S]{0,220}not a permanent API guarantee/i);
+    expect(classifierSpec).toMatch(/source\s+evidence[\s\S]{0,220}not a permanent API guarantee/i);
     expect(classifierSpec).toMatch(
       /`package`[\s\S]{0,80}`package::module`[\s\S]{0,80}`package::module::function`/
     );
@@ -1611,8 +1662,9 @@ describe("source policy", () => {
     expect(source).toMatch(/stored normalized/i);
     expect(source).toMatch(/function_scan/);
     expect(source).toMatch(/scan kind[\s\S]{0,120}provenance/i);
-    expect(localDbArchitecture).toMatch(/Local-data backups[\s\S]{0,160}`function_scan`[\s\S]{0,160}older runtimes reject/i);
-    expect(mcpSetup).toMatch(/Backups exported[\s\S]{0,160}`function_scan`[\s\S]{0,160}older runtimes reject/i);
+    expect(localDbArchitecture).toMatch(/external_activity_scans\.kind[\s\S]{0,160}`function_scan`[\s\S]{0,160}recorded kind/i);
+    expect(mcpSetup).toMatch(/Backups[\s\S]{0,160}`function_scan`[\s\S]{0,160}current runtime/i);
+    expect(mcpSetup).toMatch(/Unsupported scan-kind values[\s\S]{0,160}rejected/i);
     expect(source).toMatch(/does not accept[\s\S]{0,120}`kind`[\s\S]{0,120}`function`[\s\S]{0,120}function-history filters/i);
     expect(source).toMatch(/Provider retention and rate-limit behavior[\s\S]{0,160}not Say Ur Intent guarantees/i);
     expect(source).toMatch(/requestedAccountTransactionFacts/);

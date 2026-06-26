@@ -298,8 +298,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: "0.69287",
         close: "0.69316",
         baseVolumeRaw: "146148100000000",
-        quoteVolumeRaw: "101444802158",
-        raw: `data/${pairId}/raw/2026/W26/2026-06-26T1650Z.jsonl.gz`
+        quoteVolumeRaw: "101444802158"
       },
       {
         start: "2026-06-26T17:00:00.000Z",
@@ -311,8 +310,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: null,
         close: null,
         baseVolumeRaw: "0",
-        quoteVolumeRaw: "0",
-        raw: null
+        quoteVolumeRaw: "0"
       },
       {
         start: "2026-06-26T17:10:00.000Z",
@@ -324,8 +322,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: null,
         close: null,
         baseVolumeRaw: "0",
-        quoteVolumeRaw: "0",
-        raw: null
+        quoteVolumeRaw: "0"
       },
       {
         start: "2026-06-26T17:20:00.000Z",
@@ -337,8 +334,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: "0.69495",
         close: "0.69734",
         baseVolumeRaw: "124853000000000",
-        quoteVolumeRaw: "86921414432",
-        raw: `data/${pairId}/raw/2026/W26/2026-06-26T1720Z.jsonl.gz`
+        quoteVolumeRaw: "86921414432"
       }
     ]
   };
@@ -2251,8 +2247,8 @@ describe("SuiReadService", () => {
 
     const result = await createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({
       pairId: "SUI_USDC",
-      start: "2026-06-26T16:50:00.000Z",
-      end: "2026-06-26T17:20:00.000Z"
+      start: "2026-06-26T19:40:00.000Z",
+      end: "2026-06-26T20:10:00.000Z"
     });
 
     expect(calls.registry).toBe(1);
@@ -2280,10 +2276,10 @@ describe("SuiReadService", () => {
       throw new Error("expected ok history result");
     }
     expect(result.bars.map((bar) => bar.status)).toEqual(["filled", "filled", "filled"]);
-    expect(result.bars.map((bar) => bar.raw)).toEqual([
-      "data/SUI_USDC/raw/2026/W26/2026-06-26T1650Z.jsonl.gz",
-      "data/SUI_USDC/raw/2026/W26/2026-06-26T1700Z.jsonl.gz",
-      "data/SUI_USDC/raw/2026/W26/2026-06-26T1710Z.jsonl.gz"
+    expect(result.bars.map((bar) => [bar.baseVolumeRaw, bar.quoteVolumeRaw])).toEqual([
+      ["138548100000000", "97026231024"],
+      ["165677500000000", "115612509667"],
+      ["391962900000000", "274362224818"]
     ]);
   });
 
@@ -2363,8 +2359,7 @@ describe("SuiReadService", () => {
             {
               ...week26Bars.bars[0]!,
               start: "2026-06-28T23:50:00.000Z",
-              end: "2026-06-29T00:00:00.000Z",
-              raw: "data/SUI_USDC/raw/2026/W26/2026-06-28T2350Z.jsonl.gz"
+              end: "2026-06-29T00:00:00.000Z"
             }
           ]
         }),

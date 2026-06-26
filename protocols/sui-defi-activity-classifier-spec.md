@@ -441,8 +441,8 @@ Use these rules before adding code:
   registry, or onchain lookup, the classifier must name the chosen source in its
   classifier version notes.
 - If a verified MVR name exists, classifier package evidence should record the
-  MVR name and the resolved current package ID. Keep historical package IDs
-  separately because older transactions can call older package versions.
+  MVR name and the resolved current package ID. Keep package records for
+  transaction interpretation separate from current package claims.
 - If only a shared object id matches, mark the confidence `shared_object` and do
   not infer action type unless the object is action-specific and verified.
 - If only event type matches, mark the confidence `event_type` and preserve the
@@ -496,8 +496,8 @@ Markdown files at runtime.
 ## Function Diagnostics Handoff
 
 This section records the source boundary for function activity diagnostics. The
-minimal MCP product slice may use only the accepted sent-address combinations
-listed here; broader function diagnostics remain future work.
+MCP product slice may use only the accepted sent-address combinations listed
+here. Broader function diagnostics are outside the current boundary.
 
 The pinned generated GraphQL schema exposes `TransactionFilter.function`,
 `sentAddress`, `affectedAddress`, `affectedObject`, `kind`, `atCheckpoint`,
@@ -521,8 +521,8 @@ date. `accepted_empty` does not prove matching activity exists for the sampled
 values, does not prove no matching activity exists globally, and must not be
 treated as complete dApp history.
 
-The 2026-05-14 probe against `graphql.mainnet.sui.io` observed that the live
-service accepted `function`, `function + sentAddress`,
+The recorded probe against `graphql.mainnet.sui.io` shows that the live service
+accepted `function`, `function + sentAddress`,
 `function + atCheckpoint`, `function + sentAddress + atCheckpoint`, and
 `function + sentAddress + afterCheckpoint + beforeCheckpoint`. The same probe
 rejected `function + affectedAddress`, `function + affectedObject`,
@@ -530,10 +530,9 @@ rejected `function + affectedAddress`, `function + affectedObject`,
 `function + affectedAddress + atCheckpoint`, and
 `function + affectedAddress + afterCheckpoint + beforeCheckpoint`, returning
 `Failed to parse "TransactionFilter": At most one of [affectedAddress,
-affectedObject, function, kind] can be specified`. Treat this as date-scoped
-source evidence, not a permanent API guarantee; re-probe before implementation
-when the evidence is stale or the SDK, schema, endpoint, or provider behavior
-changes.
+affectedObject, function, kind] can be specified`. Treat this as source
+evidence, not a permanent API guarantee; re-probe before implementation when
+the SDK, schema, endpoint, or provider behavior changes.
 
 Less granular `package` and `package::module` forms remain out of scope until a
 separate package/module diagnostics plan closes the broader match

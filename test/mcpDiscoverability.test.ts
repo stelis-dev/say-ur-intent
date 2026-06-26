@@ -375,8 +375,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: "0.69287",
         close: "0.69316",
         baseVolumeRaw: "146148100000000",
-        quoteVolumeRaw: "101444802158",
-        raw: `data/${pairId}/raw/2026/W26/2026-06-26T1650Z.jsonl.gz`
+        quoteVolumeRaw: "101444802158"
       },
       {
         start: "2026-06-26T17:00:00.000Z",
@@ -388,8 +387,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: null,
         close: null,
         baseVolumeRaw: "0",
-        quoteVolumeRaw: "0",
-        raw: null
+        quoteVolumeRaw: "0"
       },
       {
         start: "2026-06-26T17:10:00.000Z",
@@ -401,8 +399,7 @@ function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUs
         low: null,
         close: null,
         baseVolumeRaw: "0",
-        quoteVolumeRaw: "0",
-        raw: null
+        quoteVolumeRaw: "0"
       }
     ]
   };
@@ -1607,8 +1604,8 @@ describe("MCP discoverability", () => {
         name: TOOL_NAMES.readGetDeepbookUsdcPriceHistory,
         arguments: {
           pairId: "SUI_USDC",
-          start: "2026-06-26T16:50:00.000Z",
-          end: "2026-06-26T17:20:00.000Z"
+          start: "2026-06-26T19:40:00.000Z",
+          end: "2026-06-26T20:10:00.000Z"
         }
       });
       expect(textPayload(priceHistory)).toMatchObject({
@@ -1618,8 +1615,8 @@ describe("MCP discoverability", () => {
           requested: {
             selector: { kind: "pair_id", value: "SUI_USDC" },
             range: {
-              start: "2026-06-26T16:50:00.000Z",
-              end: "2026-06-26T17:20:00.000Z",
+              start: "2026-06-26T19:40:00.000Z",
+              end: "2026-06-26T20:10:00.000Z",
               timeZone: "UTC",
               barIntervalMinutes: 10,
               maxBars: 1008,
@@ -1715,8 +1712,8 @@ describe("MCP discoverability", () => {
       };
       expect(priceHistoryPayload.data.bars.map((bar) => bar.status)).toEqual(["filled", "filled", "filled"]);
       expect(priceHistoryPayload.data.bars[0]).toMatchObject({
-        start: "2026-06-26T16:50:00.000Z",
-        open: "0.69507"
+        start: "2026-06-26T19:40:00.000Z",
+        open: "0.69846"
       });
 
       const orderbook = await client.callTool({
@@ -2019,7 +2016,8 @@ describe("MCP discoverability", () => {
           TOOL_NAMES.readSummarizeSuiActivityScan,
           TOOL_NAMES.readScanSuiFunctionActivity,
           TOOL_NAMES.readSummarizeSuiFunctionActivityScan,
-          TOOL_NAMES.readSummarizeSuiAccountActivity
+          TOOL_NAMES.readSummarizeSuiAccountActivity,
+          TOOL_NAMES.readGetAccountAssetTimeline
         ])
       );
       const activityToolNames = new Set<string>([
@@ -2028,7 +2026,8 @@ describe("MCP discoverability", () => {
         TOOL_NAMES.readSummarizeSuiActivityScan,
         TOOL_NAMES.readScanSuiFunctionActivity,
         TOOL_NAMES.readSummarizeSuiFunctionActivityScan,
-        TOOL_NAMES.readSummarizeSuiAccountActivity
+        TOOL_NAMES.readSummarizeSuiAccountActivity,
+        TOOL_NAMES.readGetAccountAssetTimeline
       ]);
       for (const tool of tools.tools.filter((item) => activityToolNames.has(item.name))) {
         expect(tool.description).not.toMatch(/must|should|always/i);
@@ -2655,6 +2654,207 @@ describe("MCP discoverability", () => {
               }
             })
           ])
+        }
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns stored account asset timeline evidence without claiming balances or complete wallet history", async () => {
+    const { client, server, activityStore } = await connectTestClient();
+    try {
+      await activityStore.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-06-26T19:40:00.000Z"));
+
+      const scanNeeded = await client.callTool({
+        name: TOOL_NAMES.readGetAccountAssetTimeline,
+        arguments: {
+          account: walletAccount,
+          start: "2026-06-26T19:40:00.000Z",
+          end: "2026-06-26T20:10:00.000Z",
+          bucketMinutes: 10
+        }
+      });
+      expect(textPayload(scanNeeded)).toMatchObject({
+        ok: true,
+        data: {
+          status: "scan_needed",
+          balanceStatus: "unavailable_no_balance_anchor",
+          netFlowBars: [],
+          scanNeeded: {
+            tool: TOOL_NAMES.readScanSuiAccountActivity,
+            relationship: "affected"
+          },
+          userAnswerUse: {
+            canAnswer: expect.not.arrayContaining([
+              "stored_account_asset_net_flow_timeline_for_selected_account",
+              "deepbook_usdc_token_denominated_reference_candles_for_supported_assets"
+            ]),
+            answerFields: expect.not.arrayContaining(["netFlowBars", "usdcReferences"]),
+            cannotAnswer: expect.arrayContaining([
+              "complete_wallet_history",
+              "held_balances_without_balanceBars",
+              "profit_or_pnl",
+              "signing_data_or_readiness"
+            ])
+          }
+        }
+      });
+
+      const unknownAccount = await client.callTool({
+        name: TOOL_NAMES.readGetAccountAssetTimeline,
+        arguments: {
+          account: `0x${"c".repeat(64)}`,
+          start: "2026-06-26T19:40:00.000Z",
+          end: "2026-06-26T20:10:00.000Z",
+          bucketMinutes: 10
+        }
+      });
+      const unknownAccountPayload = textPayload(unknownAccount) as {
+        data: { scanNeeded?: unknown };
+      };
+      expect(unknownAccountPayload).toMatchObject({
+        ok: true,
+        data: {
+          status: "account_not_known",
+          coverage: {
+            accountKnown: false,
+            coverageStatus: "no_stored_scans"
+          },
+          netFlowBars: [],
+          limitations: expect.arrayContaining(["account_not_known"]),
+          userAnswerUse: {
+            canAnswer: expect.not.arrayContaining([
+              "stored_account_asset_net_flow_timeline_for_selected_account",
+              "deepbook_usdc_token_denominated_reference_candles_for_supported_assets"
+            ]),
+            answerFields: expect.not.arrayContaining(["netFlowBars", "usdcReferences"])
+          }
+        }
+      });
+      expect(unknownAccountPayload.data.scanNeeded).toBeUndefined();
+
+      await activityStore.recordExternalActivityScan({
+        scanId: "timeline_scan",
+        kind: "account_scan",
+        account: walletAccount,
+        relationship: "affected",
+        fromTimestamp: "2026-06-26T19:40:00.000Z",
+        toTimestamp: "2026-06-26T20:10:00.000Z",
+        limit: 100,
+        endpointHost: "graphql.mainnet.sui.io",
+        chainIdentifier: "mainnet-chain",
+        fetchedAt: "2026-06-26T20:10:01.000Z",
+        hasMore: false,
+        windowComplete: true,
+        transactions: [
+          {
+            digest: "7".repeat(44),
+            relationship: "affected",
+            checkpoint: "1000",
+            timestamp: "2026-06-26T19:45:00.000Z",
+            status: "success",
+            details: transactionDetails
+          }
+        ]
+      });
+
+      const timeline = await client.callTool({
+        name: TOOL_NAMES.readGetAccountAssetTimeline,
+        arguments: {
+          account: walletAccount,
+          start: "2026-06-26T19:40:00.000Z",
+          end: "2026-06-26T20:10:00.000Z",
+          bucketMinutes: 10
+        }
+      });
+
+      expect(textPayload(timeline)).toMatchObject({
+        ok: true,
+        data: {
+          status: "ok",
+          source: {
+            transport: "local_db",
+            method: "stored_normalized_facts"
+          },
+          coverage: {
+            coverageStatus: "complete",
+            coverageEvidence: {
+              completeAffectedAccountScanIds: ["timeline_scan"]
+            }
+          },
+          sourceTransactions: {
+            storedTransactionCount: 1,
+            returnedTransactionCount: 1,
+            truncated: false,
+            detailAvailability: {
+              detailAvailability: "all"
+            }
+          },
+          balanceStatus: "unavailable_no_balance_anchor",
+          balanceBars: [],
+          netFlowBars: [
+            {
+              bucketStart: "2026-06-26T19:40:00.000Z",
+              bucketEnd: "2026-06-26T19:50:00.000Z",
+              coinType: "0x2::sui::SUI",
+              increaseRaw: "0",
+              decreaseRaw: "1000",
+              netRaw: "-1000",
+              transactionCount: 1
+            }
+          ],
+          quantitySemantics: {
+            kind: "sui_account_asset_timeline_raw_net_flows",
+            balanceBarsAvailable: false,
+            notFor: expect.arrayContaining([
+              "held_balance_without_balance_anchor",
+              "complete_wallet_history",
+              "fiat_usd_cash_out",
+              "usd_peg_assumption",
+              "profit_or_pnl",
+              "cost_basis",
+              "signing_data_or_readiness"
+            ])
+          },
+          usdcReferences: {
+            status: "available",
+            quoteAsset: "USDC",
+            usdcIsFiatUsd: false,
+            usdPegGuaranteeAvailable: false,
+            chainRecomputedBySayUrIntent: false,
+            coinReferences: [
+              expect.objectContaining({
+                coinType: "0x2::sui::SUI",
+                status: "available",
+                barReferences: [
+                  expect.objectContaining({
+                    bucketStart: "2026-06-26T19:40:00.000Z",
+                    bucketEnd: "2026-06-26T19:50:00.000Z",
+                    status: "filled"
+                  })
+                ]
+              })
+            ],
+            responseSummary: {
+              usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+            }
+          },
+          userAnswerUse: {
+            canAnswer: expect.arrayContaining([
+              "stored_account_asset_net_flow_timeline_for_selected_account",
+              "deepbook_usdc_token_denominated_reference_candles_for_supported_assets"
+            ]),
+            cannotAnswer: expect.arrayContaining([
+              "complete_wallet_history",
+              "held_balances_without_balanceBars",
+              "fiat_usd_cash_out",
+              "usd_peg_assumption",
+              "profit_or_pnl",
+              "cost_basis",
+              "signing_data_or_readiness"
+            ])
+          }
         }
       });
     } finally {

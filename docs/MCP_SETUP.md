@@ -414,8 +414,8 @@ The settings page lets the user:
 Settings validation rules:
 
 - Import preview validates the backup shape without contacting the imported endpoint.
-- Import preview reports `defaultsInjected` when an older backup is missing a setting that the current runtime requires; for example, backups created before `suiGraphqlUrl` existed are previewed with that setting filled from the current default.
-- Backups exported by a runtime that records `function_scan` provenance can be imported by the current runtime, but older runtimes reject those backups through their scan-kind validator rather than partially importing unsupported provenance.
+- Import preview reports `defaultsInjected` when a backup is missing a setting that the current runtime requires; the preview fills that setting from the current default.
+- Backups that contain `function_scan` provenance can be imported by the current runtime. Unsupported scan-kind values are rejected rather than partially imported.
 - Endpoint chain-identifier verification runs only when the user confirms the replace-only import.
 - A custom gRPC endpoint must be an `http` or `https` URL with an explicit port and no credentials, path, query string, or fragment.
 - A custom GraphQL endpoint must be an `https` URL with no credentials, query string, or fragment.

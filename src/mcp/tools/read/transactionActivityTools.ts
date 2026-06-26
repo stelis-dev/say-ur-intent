@@ -1,6 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES,
+  buildAccountAssetTimeline
+} from "../../../core/activity/accountAssetTimeline.js";
+import {
+  attachDeepbookUsdcReferencesToTimeline
+} from "../../../core/activity/accountAssetTimelineUsdcReferences.js";
+import {
   EXTERNAL_ACTIVITY_SCAN_MAX_LIMIT,
   REVIEW_ACTIVITY_LIST_MAX_LIMIT,
   REVIEW_ACTIVITY_LOW_SAMPLE_THRESHOLD
@@ -18,6 +25,8 @@ import type {
   SummarizeSuiFunctionActivityScanResult
 } from "../../../core/activity/transactionActivityTypes.js";
 import { suiActivityAnalysisLimitations } from "../../../core/activity/transactionActivityAnalysis.js";
+import { deepbookUsdcIndexBarSchema } from "../../../core/read/deepbookUsdcIndexSource.js";
+import { DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS } from "../../../core/read/readServiceTypes.js";
 import { suiTransactionDigestSchema } from "../../../core/suiAddress.js";
 import { okToolResult } from "../../result.js";
 import { successOutputSchema } from "../../schemas.js";
@@ -32,6 +41,8 @@ import {
   userAnswerUseSchema
 } from "./commonSchemas.js";
 import {
+  accountAssetTimelineQuantitySemantics,
+  accountAssetTimelineUserAnswerUse,
   externalActivityTransactionRecordOutput,
   inspectSuiTransactionUserAnswerUse,
   liveSuiActivityUserAnswerUse,
@@ -71,6 +82,20 @@ const suiFunctionActivityScanInputSchema = {
   toCheckpoint: z.string().regex(/^\d+$/).optional(),
   fromTimestamp: fetchedAtSchema.optional(),
   toTimestamp: fetchedAtSchema.optional()
+};
+const accountAssetTimelineBucketMinutesSchema = z.union(
+  ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES.map((minutes) => z.literal(minutes)) as [
+    z.ZodLiteral<10>,
+    z.ZodLiteral<30>,
+    z.ZodLiteral<60>,
+    z.ZodLiteral<1440>
+  ]
+);
+const accountAssetTimelineInputSchema = {
+  account: z.string().min(1).optional(),
+  start: fetchedAtSchema,
+  end: fetchedAtSchema,
+  bucketMinutes: accountAssetTimelineBucketMinutesSchema
 };
 
 const suiTransactionActivitySourceSchema = z.discriminatedUnion("transport", [
@@ -317,6 +342,43 @@ const externalActivityScanRecordSchema = z.object({
   incompleteReason: externalActivityScanIncompleteReasonSchema.optional()
 });
 
+const externalActivityCoverageLimitationSchema = z.enum([
+  "no_stored_activity_scans",
+  "no_complete_affected_account_scan",
+  "sent_only_scan_not_full_account_coverage",
+  "scan_window_incomplete",
+  "scan_window_unbounded",
+  "scan_records_truncated"
+]);
+
+const externalActivityCoverageSchema = z.object({
+  dataScope: reviewActivityDataScopeSchema,
+  accountSource: reviewActivityAccountSourceSchema,
+  accountKnown: z.boolean(),
+  requestedRange: z.object({
+    from: fetchedAtSchema,
+    to: fetchedAtSchema
+  }).strict(),
+  coverageStatus: z.enum(["complete", "partial", "no_stored_scans"]),
+  scanCount: z.number().int().nonnegative(),
+  returnedScanCount: z.number().int().nonnegative(),
+  scansTruncated: z.boolean(),
+  storedTransactionCount: z.number().int().nonnegative(),
+  storedTransactionRange: z.object({
+    earliestTimestamp: fetchedAtSchema.optional(),
+    latestTimestamp: fetchedAtSchema.optional(),
+    earliestCheckpoint: z.string().optional(),
+    latestCheckpoint: z.string().optional()
+  }).strict().optional(),
+  coverageEvidence: z.object({
+    completeAffectedAccountScanIds: z.array(z.string()),
+    incompleteScanIds: z.array(z.string()),
+    sentOnlyScanIds: z.array(z.string())
+  }).strict(),
+  limitations: z.array(externalActivityCoverageLimitationSchema),
+  scans: z.array(externalActivityScanRecordSchema)
+}).strict();
+
 const externalActivityTransactionRecordSchema = z.object({
   accountId: z.number().int().positive(),
   account: z.string(),
@@ -345,6 +407,170 @@ const transactionDetailAvailabilitySchema = z.object({
   withoutDetails: z.number().int().nonnegative(),
   detailAvailability: z.enum(["none", "some", "all"]),
   allReturnedTransactionsHaveDetails: z.boolean()
+}).strict();
+
+const accountAssetTimelineQuantitySemanticsSchema = z.object({
+  kind: z.literal("sui_account_asset_timeline_raw_net_flows"),
+  rawAmountsOnly: z.literal(true),
+  netFlowFields: z.tuple([
+    z.literal("netFlowBars[].increaseRaw"),
+    z.literal("netFlowBars[].decreaseRaw"),
+    z.literal("netFlowBars[].netRaw")
+  ]),
+  balanceBarsAvailable: z.literal(false),
+  balanceStatusField: z.literal("balanceStatus"),
+  balanceBarRule: z.literal("balanceBars are unavailable unless a stored balance anchor exists"),
+  notFor: z.tuple([
+    z.literal("held_balance_without_balance_anchor"),
+    z.literal("complete_wallet_history"),
+    z.literal("display_conversion_without_verified_decimals"),
+    z.literal("fiat_usd_cash_out"),
+    z.literal("usd_peg_assumption"),
+    z.literal("profit_or_pnl"),
+    z.literal("cost_basis"),
+    z.literal("route_recommendation"),
+    z.literal("transaction_building"),
+    z.literal("signing_data_or_readiness")
+  ])
+}).strict();
+
+const accountAssetTimelineLimitationSchema = z.enum([
+  "no_balance_anchor",
+  "account_not_known",
+  "no_stored_activity_scans",
+  "no_complete_affected_account_scan",
+  "sent_only_scan_not_full_account_coverage",
+  "scan_window_incomplete",
+  "scan_window_unbounded",
+  "scan_records_truncated",
+  "source_transactions_truncated",
+  "transaction_timestamp_unavailable",
+  "transaction_details_unavailable",
+  "provider_balance_changes_truncated",
+  "no_observed_account_balance_changes"
+]);
+
+const accountAssetTimelineNetFlowBarSchema = z.object({
+  bucketStart: fetchedAtSchema,
+  bucketEnd: fetchedAtSchema,
+  coinType: z.string(),
+  increaseRaw: z.string().regex(/^\d+$/),
+  decreaseRaw: z.string().regex(/^\d+$/),
+  netRaw: z.string().regex(/^-?\d+$/),
+  transactionCount: z.number().int().positive()
+}).strict();
+
+const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
+  status: z.enum(["available", "partial", "unavailable", "unsupported_bucket_size", "no_timeline_bars"]),
+  quoteAsset: z.literal("USDC"),
+  priceConvention: z.literal("USDC_PER_BASE"),
+  usdcIsFiatUsd: z.literal(false),
+  usdPegGuaranteeAvailable: z.literal(false),
+  source: z.literal("external_precomputed_deepbook_usdc_index"),
+  chainRecomputedBySayUrIntent: z.literal(false),
+  quantitySemantics: z.object({
+    kind: z.literal("deepbook_usdc_indexed_10m_bars"),
+    allowedUse: z.literal("observed_deepbook_usdc_fill_candle_history"),
+    source: z.literal("external_precomputed_deepbook_usdc_index"),
+    barIntervalMinutes: z.literal(10),
+    quoteAsset: z.literal("USDC"),
+    priceConvention: z.literal("USDC_PER_BASE"),
+    usdcIsFiatUsd: z.literal(false),
+    usdPegGuaranteeAvailable: z.literal(false),
+    chainRecomputedBySayUrIntent: z.literal(false),
+    liveQuoteAvailable: z.literal(false),
+    historicalMidPriceAvailable: z.literal(false),
+    globalMarketPriceAvailable: z.literal(false),
+    fiatUsdCashOutAvailable: z.literal(false),
+    routeRecommendationAvailable: z.literal(false),
+    transactionBuildingAvailable: z.literal(false),
+    signingReadinessAvailable: z.literal(false),
+    profitAndLossAvailable: z.literal(false),
+    costBasisAvailable: z.literal(false),
+    notFor: z.array(z.string())
+  }).strict(),
+  responseSummary: z.object({
+    questionKind: z.literal("deepbook_usdc_price_history"),
+    evidenceKind: z.literal("external_precomputed_deepbook_usdc_index_10m_candles"),
+    sourceStatement: z.string(),
+    usdcDisclaimer: z.literal("USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."),
+    candleMeaning: z.literal("Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket."),
+    excludedFromConclusion: z.array(z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS))
+  }).strict(),
+  unsupportedClaims: z.array(z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS)),
+  coinReferences: z.array(z.union([
+    z.object({
+      coinType: z.string(),
+      status: z.enum(["available", "partial"]),
+      pair: z.object({
+        pairId: z.string(),
+        poolId: z.string(),
+        baseAsset: z.object({
+          symbol: z.string(),
+          coinType: z.string(),
+          decimals: z.number().int().nonnegative()
+        }).strict(),
+        quoteAsset: z.object({
+          symbol: z.literal("USDC"),
+          coinType: z.string(),
+          decimals: z.literal(6)
+        }).strict(),
+        priceConvention: z.literal("USDC_PER_BASE"),
+        barIntervalMinutes: z.literal(10)
+      }).strict(),
+      coverageStatus: z.string(),
+      source: z.object({
+        kind: z.literal("external_precomputed_deepbook_usdc_index"),
+        repositoryUrl: z.string(),
+        baseUrl: z.string(),
+        sourceRef: z.string(),
+        registry: z.object({
+          path: z.string(),
+          url: z.string(),
+          fetchedAt: fetchedAtSchema
+        }).strict(),
+        weeklyFiles: z.object({
+          requested: z.array(z.unknown()),
+          found: z.array(z.unknown()),
+          missing: z.array(z.unknown())
+        }).strict(),
+        chainRecomputedBySayUrIntent: z.literal(false)
+      }).strict(),
+      barReferences: z.array(z.union([
+        z.object({
+          bucketStart: fetchedAtSchema,
+          bucketEnd: fetchedAtSchema,
+          status: z.enum(["filled", "empty", "missing"]),
+          candle: deepbookUsdcIndexBarSchema
+        }).strict(),
+        z.object({
+          bucketStart: fetchedAtSchema,
+          bucketEnd: fetchedAtSchema,
+          status: z.literal("missing_candle")
+        }).strict()
+      ]))
+    }).strict(),
+    z.object({
+      coinType: z.string(),
+      status: z.literal("unsupported_asset"),
+      reason: z.enum(["selector_not_in_index_registry", "selector_resolves_to_multiple_enabled_pairs"]),
+      matchingPairIds: z.array(z.string()),
+      availablePairIds: z.array(z.string())
+    }).strict(),
+    z.object({
+      coinType: z.string(),
+      status: z.literal("unsupported_range"),
+      reason: z.literal("requested_range_exceeds_max_bars"),
+      requested: z.unknown()
+    }).strict(),
+    z.object({
+      coinType: z.string(),
+      status: z.literal("source_unavailable"),
+      reason: z.enum(["index_source_not_configured", "registry_unavailable", "weekly_file_fetch_failed", "weekly_files_missing"]),
+      pair: z.unknown().optional(),
+      source: z.unknown().optional()
+    }).strict()
+  ]))
 }).strict();
 
 const liveActivityScanPersistenceSchema = z.object({
@@ -529,6 +755,121 @@ export function registerTransactionActivityTools(server: McpServer, deps: McpSer
           },
           transactionDetailAvailability: detailAvailability,
           transactions: summary.transactions.map(externalActivityTransactionRecordOutput)
+        });
+      } catch (error) {
+        return transactionActivityToolError(error, deps.logger);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readGetAccountAssetTimeline,
+    {
+      title: "Get account asset timeline",
+      description: "Return stored local account asset net-flow timeline evidence. Not complete wallet history, P&L, or held balances.",
+      inputSchema: accountAssetTimelineInputSchema,
+      outputSchema: successOutputSchema({
+        status: z.enum(["ok", "partial_coverage", "scan_needed", "account_not_known"]),
+        fetchedAt: fetchedAtSchema,
+        account: z.string(),
+        requestedRange: z.object({
+          from: fetchedAtSchema,
+          to: fetchedAtSchema
+        }).strict(),
+        bucket: z.object({
+          minutes: accountAssetTimelineBucketMinutesSchema,
+          alignment: z.literal("utc_epoch")
+        }).strict(),
+        balanceStatus: z.literal("unavailable_no_balance_anchor"),
+        coverage: externalActivityCoverageSchema,
+        source: suiTransactionActivitySourceSchema,
+        sourceTransactions: z.object({
+          storedTransactionCount: z.number().int().nonnegative(),
+          returnedTransactionCount: z.number().int().nonnegative(),
+          truncated: z.boolean(),
+          detailAvailability: transactionDetailAvailabilitySchema
+        }).strict(),
+        sourceTransactionCount: z.number().int().nonnegative(),
+        analyzedTransactionCount: z.number().int().nonnegative(),
+        skippedTransactionCount: z.number().int().nonnegative(),
+        netFlowBars: z.array(accountAssetTimelineNetFlowBarSchema),
+        balanceBars: z.tuple([]),
+        quantitySemantics: accountAssetTimelineQuantitySemanticsSchema,
+        usdcReferences: accountAssetTimelineUsdcReferenceSummarySchema,
+        limitations: z.array(accountAssetTimelineLimitationSchema),
+        userAnswerUse: userAnswerUseSchema,
+        scanNeeded: z.object({
+          tool: z.literal(TOOL_NAMES.readScanSuiAccountActivity),
+          account: z.string(),
+          relationship: z.literal("affected"),
+          fromTimestamp: fetchedAtSchema,
+          toTimestamp: fetchedAtSchema
+        }).strict().optional()
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ account, start, end, bucketMinutes }) => {
+      try {
+        const coverage = await deps.activityStore.getExternalActivityCoverage({
+          account,
+          from: start,
+          to: end
+        });
+        const activityTransactions = await deps.activityStore.listExternalActivityEffectTransactions({
+          account: coverage.dataScope.account,
+          from: start,
+          to: end,
+          limit: REVIEW_ACTIVITY_LIST_MAX_LIMIT
+        });
+        const timeline = buildAccountAssetTimeline({
+          account: coverage.dataScope.account,
+          from: start,
+          to: end,
+          bucketMinutes,
+          coverage,
+          transactions: activityTransactions.transactions,
+          transactionsTruncated: activityTransactions.truncated
+        });
+        const withUsdcReferences = await attachDeepbookUsdcReferencesToTimeline({
+          timeline,
+          getPriceHistory: (priceInput) => deps.readService.getDeepbookUsdcPriceHistory(priceInput)
+        });
+        const detailAvailability = transactionDetailAvailability(activityTransactions.transactions);
+        const scanNeeded = withUsdcReferences.status === "scan_needed";
+        const accountKnown = withUsdcReferences.status !== "account_not_known";
+        return okToolResult({
+          ...withUsdcReferences,
+          fetchedAt: new Date().toISOString(),
+          source: {
+            transport: "local_db",
+            method: "stored_normalized_facts"
+          },
+          sourceTransactions: {
+            storedTransactionCount: activityTransactions.transactionCount,
+            returnedTransactionCount: activityTransactions.transactions.length,
+            truncated: activityTransactions.truncated,
+            detailAvailability
+          },
+          quantitySemantics: accountAssetTimelineQuantitySemantics(),
+          userAnswerUse: accountAssetTimelineUserAnswerUse({
+            hasNetFlowBars: withUsdcReferences.netFlowBars.length > 0,
+            hasUsdcReferenceCandles: withUsdcReferences.usdcReferences.coinReferences.some((reference) =>
+              reference.status === "available" || reference.status === "partial"
+            ),
+            scanNeeded,
+            accountKnown
+          }),
+          ...(scanNeeded && accountKnown
+            ? {
+                scanNeeded: {
+                  tool: TOOL_NAMES.readScanSuiAccountActivity,
+                  account: coverage.dataScope.account,
+                  relationship: "affected",
+                  fromTimestamp: start,
+                  toTimestamp: end
+                }
+              }
+            : {})
         });
       } catch (error) {
         return transactionActivityToolError(error, deps.logger);

@@ -58,7 +58,18 @@ describe("DeepbookUsdcIndexSource", () => {
 
   it("accepts literal public generated registry and weekly payload fixtures", () => {
     const registry = deepbookUsdcIndexRegistrySchema.parse(publicDeepbookUsdcIndexRegistryJson());
-    expect(registry.pairs.map((pair) => pair.id)).toEqual(["SUI_USDC", "DEEP_USDC", "WAL_USDC", "NS_USDC"]);
+    expect(registry.pairs.map((pair) => pair.id)).toEqual([
+      "SUI_USDC",
+      "DEEP_USDC",
+      "WAL_USDC",
+      "NS_USDC",
+      "WUSDT_USDC",
+      "WUSDC_USDC",
+      "AUSD_USDC",
+      "USDT_USDC",
+      "SUIUSDE_USDC",
+      "USDSUI_USDC"
+    ]);
 
     const weekly = deepbookUsdcIndexWeeklyBarsSchema.parse(publicDeepbookUsdcIndexSuiW26Json());
     expect(weekly).toMatchObject({
@@ -67,7 +78,7 @@ describe("DeepbookUsdcIndexSource", () => {
       barIntervalMinutes: 10,
       priceConvention: "USDC_PER_BASE"
     });
-    expect(PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF).toBe("5213731e096a9e1c3b337fd4438b0d53242a1f43");
+    expect(PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF).toBe("e47af4886ee835e0941e6af8d446a5473a6682a8");
     expect(publicDeepbookUsdcIndexRegistryFixtureSha256()).toBe(PUBLIC_DEEPBOOK_USDC_INDEX_REGISTRY_FIXTURE_SHA256);
     expect(publicDeepbookUsdcIndexSuiW26FixtureSha256()).toBe(PUBLIC_DEEPBOOK_USDC_INDEX_SUI_W26_FIXTURE_SHA256);
     expect(weekly.bars).toHaveLength(3);
@@ -287,9 +298,8 @@ function weeklyBarsFixture() {
         high: "0.69672",
         low: "0.69287",
         close: "0.69316",
-        baseVolumeRaw: "146148100000000",
-        quoteVolumeRaw: "101444802158",
-        raw: "data/SUI_USDC/raw/2026/W26/2026-06-26T1650Z.jsonl.gz"
+        baseVolumeAtomic: "146148100000000",
+        quoteVolumeAtomic: "101444802158"
       },
       {
         start: "2026-06-26T17:00:00.000Z",
@@ -300,9 +310,8 @@ function weeklyBarsFixture() {
         high: null,
         low: null,
         close: null,
-        baseVolumeRaw: "0",
-        quoteVolumeRaw: "0",
-        raw: null
+        baseVolumeAtomic: "0",
+        quoteVolumeAtomic: "0"
       },
       {
         start: "2026-06-26T17:10:00.000Z",
@@ -313,9 +322,8 @@ function weeklyBarsFixture() {
         high: null,
         low: null,
         close: null,
-        baseVolumeRaw: "0",
-        quoteVolumeRaw: "0",
-        raw: null
+        baseVolumeAtomic: "0",
+        quoteVolumeAtomic: "0"
       }
     ]
   };

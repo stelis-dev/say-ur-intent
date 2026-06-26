@@ -114,18 +114,15 @@ Table relationships:
 
 The database does not create background transaction indexing tables. Complete external transaction history, raw GraphQL payloads, transaction bytes, signatures, BCS payloads, non-known party account addresses, and arbitrary transaction payloads are not product surfaces of this database. Server-read chain receipt evidence is normalized execution-result JSON for a reviewed signed transaction digest; it is not raw BCS, transaction bytes, wallet signatures, or a complete transaction-history index.
 
-Schema version 4 adds the `external_activity_scans.kind = 'function_scan'` provenance value. The startup migration rebuilds `external_activity_scans` with foreign keys temporarily disabled, copies rows unchanged, recreates indexes, runs `PRAGMA foreign_key_check`, and updates `user_version` only after the transaction succeeds. Existing rows are not backfilled from `account_scan` to `function_scan` because earlier scan rows do not store the function target needed for safe identification. Local-data backups containing `function_scan` provenance can be imported by version 4 or newer runtimes; older runtimes reject them through their scan-kind validator rather than partially importing unsupported provenance.
+`external_activity_scans.kind` records the lookup category as `account_scan`,
+`digest_lookup`, or `function_scan`. Stored scan rows keep their recorded kind;
+the database does not infer missing function targets from `account_scan` rows.
 
-Schema version 6 adds the live review-session write contract. The
-`live_review_sessions` table stores a monotonically increasing `revision` and
-`write_contract_version: "shared_sqlite_review_session_v1"`. Startup migration
-rebuilds older live review-session rows inside `BEGIN IMMEDIATE`, sets
-`revision = 0`, sets the write-contract marker, preserves private review
-artifacts for rows that still exist, runs `PRAGMA foreign_key_check`, and only
-then updates `user_version`. Insert and update triggers reject
-revision-unaware writers: inserts must use `revision = 0` and the current
-write-contract marker, and updates must increase the revision by exactly one
-and keep the current write-contract marker.
+The `live_review_sessions` table stores a monotonically increasing `revision`
+and `write_contract_version: "shared_sqlite_review_session_v1"`. Insert and
+update triggers reject revision-unaware writers: inserts must use
+`revision = 0` and the current write-contract marker, and updates must increase
+the revision by exactly one and keep the current write-contract marker.
 
 Logical local data reset is the local settings page action that clears stored product state through the runtime without requiring manual database-file deletion. Replace-only import is the settings page import path that replaces local product state from a validated backup. Both logical local data reset and replace-only import clear `coin_metadata_cache`. Clearing active account context does not clear it because coin metadata is account-independent.
 
@@ -146,15 +143,15 @@ the same session or silently overwrite a newer live session state.
 
 ### Unsigned transaction material on disk
 
-`live_transaction_materials` stores locally built unsigned transaction bytes so a review can be signed by whichever process owns the port, not only the process that built it. Because these bytes are now on disk in the shared database rather than only in one process's memory, the data directory is created `0700` and the database file is set `0600` so other operating-system users cannot read them; the bytes carry a short TTL and are deleted on signing, terminal result, or expiry. This store is separate from the review evidence path: the MCP tool layer still does not return transaction bytes, and the activity-store evidence inputs still reject transaction bytes, signatures, and signing material before write.
+`live_transaction_materials` stores locally built unsigned transaction bytes so a review can be signed by whichever process owns the port. The data directory is created `0700` and the database file is set `0600` so other operating-system users cannot read them; the bytes carry a short TTL and are deleted on signing, terminal result, or expiry. This store is separate from the review evidence path: the MCP tool layer still does not return transaction bytes, and the activity-store evidence inputs still reject transaction bytes, signatures, and signing material before write.
 
 ### Schema versioning across shared clients
 
-The live session write contract raises `user_version` because older runtimes
-cannot safely write the shared live review-session table. A runtime that sees a
-newer `user_version` fails closed instead of opening the shared database. That
-means every MCP client sharing the same data directory must run a runtime that
-supports the current schema before writing live review-session state.
+The live session write contract uses `user_version` as the shared-schema
+compatibility guard. A runtime that sees a newer `user_version` fails closed
+instead of opening the shared database. Every MCP client sharing the same data
+directory must run a runtime that supports the current schema before writing
+live review-session state.
 
 ## Boundaries
 

@@ -24,6 +24,7 @@ export const REVIEW_ACTIVITY_LIST_MAX_LIMIT = 100;
 export const REVIEW_ACTIVITY_DETAIL_MAX_ITEMS = 100;
 export const EXTERNAL_ACTIVITY_SCAN_DEFAULT_LIMIT = 100;
 export const EXTERNAL_ACTIVITY_SCAN_MAX_LIMIT = 100;
+export const EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS = 100;
 
 export type AccountRecord = {
   id: number;
@@ -138,6 +139,60 @@ export type ExternalActivitySummaryFilter = {
   limit?: number | undefined;
 };
 
+export type ExternalActivityCoverageFilter = {
+  account?: string | undefined;
+  from: string;
+  to: string;
+};
+
+export type ExternalActivityTransactionStreamFilter = {
+  account?: string | undefined;
+  from: string;
+  to: string;
+  limit?: number | undefined;
+};
+
+export type ExternalActivityCoverageStatus =
+  | "complete"
+  | "partial"
+  | "no_stored_scans";
+
+export type ExternalActivityCoverageLimitation =
+  | "no_stored_activity_scans"
+  | "no_complete_affected_account_scan"
+  | "sent_only_scan_not_full_account_coverage"
+  | "scan_window_incomplete"
+  | "scan_window_unbounded"
+  | "scan_records_truncated";
+
+export type ExternalActivityCoverageResult = {
+  dataScope: ReviewActivityDataScope;
+  accountSource: ReviewActivityAccountSource;
+  accountKnown: boolean;
+  requestedRange: {
+    from: string;
+    to: string;
+  };
+  coverageStatus: ExternalActivityCoverageStatus;
+  scanCount: number;
+  returnedScanCount: number;
+  scansTruncated: boolean;
+  storedTransactionCount: number;
+  storedTransactionRange?: {
+    earliestTimestamp?: string | undefined;
+    latestTimestamp?: string | undefined;
+    earliestCheckpoint?: string | undefined;
+    latestCheckpoint?: string | undefined;
+  } | undefined;
+  coverageEvidence: {
+    completeAffectedAccountScanIds: string[];
+    incompleteScanIds: string[];
+    sentOnlyScanIds: string[];
+  };
+  limitations: ExternalActivityCoverageLimitation[];
+  scans: ExternalActivityScanRecord[];
+};
+
 export type ExternalActivitySummaryResult = {
   dataScope: ReviewActivityDataScope;
   accountSource: ReviewActivityAccountSource;
@@ -151,6 +206,15 @@ export type ExternalActivitySummaryResult = {
     earliestTimestamp?: string | undefined;
     latestTimestamp?: string | undefined;
   };
+  transactions: ExternalActivityTransactionRecord[];
+};
+
+export type ExternalActivityTransactionStreamResult = {
+  dataScope: ReviewActivityDataScope;
+  accountSource: ReviewActivityAccountSource;
+  accountKnown: boolean;
+  truncated: boolean;
+  transactionCount: number;
   transactions: ExternalActivityTransactionRecord[];
 };
 
@@ -363,5 +427,7 @@ export interface ActivityStore {
   summarizeReviewFunnel(filter: ReviewActivityFilter): Promise<ReviewFunnelSummaryResult>;
   getReviewSessionDetail(input: ReviewSessionDetailInput): Promise<ReviewSessionDetailResult>;
   recordExternalActivityScan(input: ExternalActivityScanInput): Promise<ExternalActivityScanRecord>;
+  getExternalActivityCoverage(filter: ExternalActivityCoverageFilter): Promise<ExternalActivityCoverageResult>;
+  listExternalActivityEffectTransactions(filter: ExternalActivityTransactionStreamFilter): Promise<ExternalActivityTransactionStreamResult>;
   summarizeExternalActivity(filter: ExternalActivitySummaryFilter): Promise<ExternalActivitySummaryResult>;
 }

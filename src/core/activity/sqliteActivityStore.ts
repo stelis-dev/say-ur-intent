@@ -33,16 +33,25 @@ import type {
   CoinMetadataCacheRecord
 } from "../read/coinMetadata.js";
 import { SqliteLocalDataService, type SqliteLocalDataServiceOptions } from "./localDataService.js";
+import { buildExternalActivityCoverageResult } from "./externalActivityCoverage.js";
+import {
+  buildExternalActivityTransactionStreamResult,
+  canonicalExternalActivityTransactions
+} from "./externalActivityTransactionStream.js";
 import type {
   AccountRecord,
   AccountSource,
   ActiveAccountRecord,
   ActivityStore,
+  ExternalActivityCoverageFilter,
+  ExternalActivityCoverageResult,
   ExternalActivityScanInput,
   ExternalActivityScanRecord,
   ExternalActivityRelationship,
   ExternalActivitySummaryFilter,
   ExternalActivitySummaryResult,
+  ExternalActivityTransactionStreamFilter,
+  ExternalActivityTransactionStreamResult,
   ExternalActivityTransactionRecord,
   ExternalActivityTransactionStatus,
   ReviewActivityFilter,
@@ -64,6 +73,7 @@ import type {
 } from "./activityStore.js";
 import {
   ActivityStoreReadError,
+  EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS,
   REVIEW_ACTIVITY_DETAIL_MAX_ITEMS,
   REVIEW_ACTIVITY_LOW_SAMPLE_THRESHOLD
 } from "./activityStore.js";
@@ -1014,6 +1024,107 @@ export class SqliteActivityStore implements ActivityStore {
     return record;
   }
 
+  async getExternalActivityCoverage(filter: ExternalActivityCoverageFilter): Promise<ExternalActivityCoverageResult> {
+    const from = parseIsoTimestamp(filter.from, "from");
+    const to = parseIsoTimestamp(filter.to, "to");
+    assertDateRange(from, to);
+    assertNonEmptyHalfOpenRange(from, to);
+    const scope = this.resolveReviewActivityScope(filter);
+
+    if (scope.accountId === undefined) {
+      return buildExternalActivityCoverageResult({
+        scope,
+        from,
+        to,
+        scans: [],
+        scanCount: 0,
+        storedTransactionCount: 0
+      });
+    }
+
+    const scanWhereSql = `
+      WHERE eas.account_id = ?
+        AND (eas.from_timestamp IS NULL OR eas.from_timestamp < ?)
+        AND (eas.to_timestamp IS NULL OR eas.to_timestamp > ?)`;
+    const scanParams = [scope.accountId, to, from] as const;
+    const scanCount = (this.db
+      .prepare(`SELECT COUNT(*) AS count FROM external_activity_scans eas ${scanWhereSql}`)
+      .get(...scanParams) as CountRow).count;
+    const scanRows = this.db
+      .prepare(
+        `SELECT eas.scan_id, eas.kind, eas.account_id, a.sui_address AS account, eas.relationship,
+                eas.input_digest, eas.from_checkpoint, eas.to_checkpoint, eas.from_timestamp,
+                eas.to_timestamp, eas.limit_count, eas.request_cursor, eas.response_cursor,
+                eas.endpoint_host, eas.chain_identifier, eas.fetched_at, eas.stored_count,
+                eas.skipped_count, eas.has_more, eas.window_complete, eas.incomplete_reason
+         FROM external_activity_scans eas
+         JOIN accounts a ON a.id = eas.account_id
+         ${scanWhereSql}
+         ORDER BY eas.fetched_at DESC, eas.scan_id DESC
+         LIMIT ?`
+      )
+      .all(...scanParams, EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS + 1) as ExternalActivityScanRow[];
+    const scansTruncated = scanRows.length > EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS;
+    const scans = scanRows
+      .slice(0, EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS)
+      .map(externalActivityScanFromRow);
+
+    const transactionWhereSql = "WHERE eat.account_id = ? AND eat.timestamp >= ? AND eat.timestamp < ?";
+    const transactionParams = [scope.accountId, from, to] as const;
+    const canonicalTransactions = canonicalExternalActivityTransactions(this.externalActivityTransactions(transactionWhereSql, [...transactionParams]));
+    const storedTransactionCount = canonicalTransactions.length;
+    const storedTransactionRange = canonicalTransactions.length === 0
+      ? undefined
+      : externalActivityTransactionRangeFromRecords(canonicalTransactions);
+
+    return buildExternalActivityCoverageResult({
+      scope,
+      from,
+      to,
+      scans,
+      scanCount,
+      storedTransactionCount,
+      storedTransactionRange,
+      scansTruncated
+    });
+  }
+
+  async listExternalActivityEffectTransactions(
+    filter: ExternalActivityTransactionStreamFilter
+  ): Promise<ExternalActivityTransactionStreamResult> {
+    const from = parseIsoTimestamp(filter.from, "from");
+    const to = parseIsoTimestamp(filter.to, "to");
+    assertDateRange(from, to);
+    assertNonEmptyHalfOpenRange(from, to);
+    const limit = normalizeExternalActivityLimit(filter.limit);
+    const scope = this.resolveReviewActivityScope(filter);
+
+    if (scope.accountId === undefined) {
+      return buildExternalActivityTransactionStreamResult({
+        scope,
+        from,
+        to,
+        transactions: [],
+        truncated: false,
+        transactionCount: 0
+      });
+    }
+
+    const whereSql = "WHERE eat.account_id = ? AND eat.timestamp >= ? AND eat.timestamp < ?";
+    const canonicalTransactions = canonicalExternalActivityTransactions(
+      this.externalActivityTransactions(whereSql, [scope.accountId, from, to])
+    );
+
+    return buildExternalActivityTransactionStreamResult({
+      scope,
+      from,
+      to,
+      transactions: canonicalTransactions.slice(0, limit),
+      truncated: canonicalTransactions.length > limit,
+      transactionCount: canonicalTransactions.length
+    });
+  }
+
   async summarizeExternalActivity(filter: ExternalActivitySummaryFilter): Promise<ExternalActivitySummaryResult> {
     const from = parseOptionalIsoTimestamp(filter.from, "from");
     const to = parseOptionalIsoTimestamp(filter.to, "to");
@@ -1291,6 +1402,31 @@ export class SqliteActivityStore implements ActivityStore {
     return row ? externalActivityScanFromRow(row) : undefined;
   }
 
+  private externalActivityTransactions(
+    whereSql: string,
+    params: unknown[]
+  ): ExternalActivityTransactionRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT eat.account_id, a.sui_address AS account, eat.digest, eat.relationship,
+                eat.checkpoint, eat.timestamp, eat.status, eat.known_sender_account_id,
+                eat.first_scan_id, eat.last_scan_id, eat.first_fetched_at, eat.last_fetched_at,
+                last_scan.incomplete_reason AS last_scan_incomplete_reason,
+                eat.detail_json
+         FROM external_activity_transactions eat
+         JOIN accounts a ON a.id = eat.account_id
+         LEFT JOIN external_activity_scans last_scan ON last_scan.scan_id = eat.last_scan_id
+         ${whereSql}
+         ORDER BY
+           CASE WHEN eat.checkpoint IS NULL THEN 0 ELSE 1 END DESC,
+           CAST(eat.checkpoint AS INTEGER) DESC,
+           COALESCE(eat.timestamp, '') DESC,
+           eat.digest DESC`
+      )
+      .all(...params) as ExternalActivityTransactionRow[];
+    return rows.map(externalActivityTransactionFromRow);
+  }
+
   private insertReviewTransition(input: ReviewTransitionInput & { accountId?: number | null }): void {
     this.db
       .prepare(
@@ -1380,6 +1516,35 @@ export class SqliteActivityStore implements ActivityStore {
       throw new ActivityStoreError(`Review session active account changed before commit: ${reviewSessionId}`);
     }
   }
+}
+
+function assertNonEmptyHalfOpenRange(from: string, to: string): void {
+  if (from >= to) {
+    throw new ActivityStoreReadError("input_invalid", "from must be before to for a non-empty half-open range", {
+      from,
+      to
+    });
+  }
+}
+
+function externalActivityTransactionRangeFromRecords(
+  rows: ExternalActivityTransactionRecord[]
+): NonNullable<ExternalActivityCoverageResult["storedTransactionRange"]> {
+  const timestamps = rows.flatMap((row) => row.timestamp ?? []).sort();
+  const checkpoints = rows.flatMap((row) => row.checkpoint ?? []).sort(compareIntegerStrings);
+  return {
+    earliestTimestamp: timestamps[0],
+    latestTimestamp: timestamps.at(-1),
+    earliestCheckpoint: checkpoints[0],
+    latestCheckpoint: checkpoints.at(-1)
+  };
+}
+
+function compareIntegerStrings(a: string, b: string): number {
+  const delta = BigInt(a) - BigInt(b);
+  if (delta < 0n) return -1;
+  if (delta > 0n) return 1;
+  return 0;
 }
 
 class SqliteCoinMetadataCache implements CoinMetadataCache {

@@ -1,0 +1,569 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildAccountAssetTimeline,
+  type AccountAssetTimelineBucketMinutes
+} from "../src/core/activity/accountAssetTimeline.js";
+import {
+  attachDeepbookUsdcReferencesToTimeline,
+  type AccountAssetTimelineUsdcPriceHistoryReader
+} from "../src/core/activity/accountAssetTimelineUsdcReferences.js";
+import type {
+  ExternalActivityScanRecord,
+  ExternalActivityTransactionRecord
+} from "../src/core/activity/activityStore.js";
+import { buildExternalActivityCoverageResult } from "../src/core/activity/externalActivityCoverage.js";
+import type { DeepbookUsdcPriceHistorySummary } from "../src/core/read/readServiceTypes.js";
+import { deepbookUsdcPriceHistoryQuantitySemantics, deepbookUsdcPriceHistoryResponseSummary } from "../src/core/read/deepbookReadHelpers.js";
+import { deepbookUsdcPriceHistoryUserAnswerUse } from "../src/core/read/readResponseGuidance.js";
+import type { ExternalActivityTransactionDetail } from "../src/core/activity/transactionActivityDetails.js";
+
+const account = `0x${"a".repeat(64)}`;
+
+describe("account asset timeline builder", () => {
+  it("builds UTC net-flow bars per coin type without producing balance bars", () => {
+    const result = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T00:30:00.000Z",
+      bucketMinutes: 10,
+      coverage: completeCoverage(),
+      transactions: [
+        transaction({
+          digest: "a".repeat(44),
+          timestamp: "2026-05-11T00:05:00.000Z",
+          changes: [
+            { coinType: "0x2::sui::SUI", amountRaw: "100" },
+            { coinType: "0xusdc::coin::USDC", amountRaw: "-50" }
+          ]
+        }),
+        transaction({
+          digest: "b".repeat(44),
+          timestamp: "2026-05-11T00:09:59.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "-30" }]
+        }),
+        transaction({
+          digest: "c".repeat(44),
+          timestamp: "2026-05-11T00:10:00.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "0" }]
+        })
+      ]
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.balanceStatus).toBe("unavailable_no_balance_anchor");
+    expect(result.balanceBars).toEqual([]);
+    expect(result.quantitySemantics).toEqual({
+      netFlowBars: "observed_account_scoped_raw_token_balance_changes",
+      balanceBars: "unavailable_without_balance_anchor"
+    });
+    expect(result.limitations).toEqual(["no_balance_anchor"]);
+    expect(result.netFlowBars).toEqual([
+      {
+        bucketStart: "2026-05-11T00:00:00.000Z",
+        bucketEnd: "2026-05-11T00:10:00.000Z",
+        coinType: "0x2::sui::SUI",
+        increaseRaw: "100",
+        decreaseRaw: "30",
+        netRaw: "70",
+        transactionCount: 2
+      },
+      {
+        bucketStart: "2026-05-11T00:00:00.000Z",
+        bucketEnd: "2026-05-11T00:10:00.000Z",
+        coinType: "0xusdc::coin::USDC",
+        increaseRaw: "0",
+        decreaseRaw: "50",
+        netRaw: "-50",
+        transactionCount: 1
+      },
+      {
+        bucketStart: "2026-05-11T00:10:00.000Z",
+        bucketEnd: "2026-05-11T00:20:00.000Z",
+        coinType: "0x2::sui::SUI",
+        increaseRaw: "0",
+        decreaseRaw: "0",
+        netRaw: "0",
+        transactionCount: 1
+      }
+    ]);
+  });
+
+  it("returns scan-needed status without inferring zero activity when no scans are stored", () => {
+    const result = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T00:30:00.000Z",
+      bucketMinutes: 10,
+      coverage: noScanCoverage(),
+      transactions: []
+    });
+
+    expect(result.status).toBe("scan_needed");
+    expect(result.netFlowBars).toEqual([]);
+    expect(result.balanceBars).toEqual([]);
+    expect(result.limitations).toEqual([
+      "no_balance_anchor",
+      "no_complete_affected_account_scan",
+      "no_observed_account_balance_changes",
+      "no_stored_activity_scans"
+    ]);
+  });
+
+  it("keeps partial coverage, missing detail, and truncated detail limitations visible", () => {
+    const result = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T01:00:00.000Z",
+      bucketMinutes: 30,
+      coverage: partialCoverage(),
+      transactions: [
+        transaction({
+          digest: "d".repeat(44),
+          timestamp: "2026-05-11T00:05:00.000Z",
+          changes: undefined
+        }),
+        transaction({
+          digest: "e".repeat(44),
+          timestamp: "2026-05-11T00:35:00.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "9" }],
+          balanceChangesTruncated: true
+        })
+      ],
+      transactionsTruncated: true
+    });
+
+    expect(result.status).toBe("partial_coverage");
+    expect(result.analyzedTransactionCount).toBe(2);
+    expect(result.netFlowBars).toEqual([
+      {
+        bucketStart: "2026-05-11T00:30:00.000Z",
+        bucketEnd: "2026-05-11T01:00:00.000Z",
+        coinType: "0x2::sui::SUI",
+        increaseRaw: "9",
+        decreaseRaw: "0",
+        netRaw: "9",
+        transactionCount: 1
+      }
+    ]);
+    expect(result.limitations).toEqual([
+      "no_balance_anchor",
+      "no_complete_affected_account_scan",
+      "provider_balance_changes_truncated",
+      "scan_window_incomplete",
+      "sent_only_scan_not_full_account_coverage",
+      "source_transactions_truncated",
+      "transaction_details_unavailable"
+    ]);
+  });
+
+  it("skips rows outside the requested timestamp range without using them as zero-flow evidence", () => {
+    const result = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T00:30:00.000Z",
+      bucketMinutes: 10,
+      coverage: completeCoverage(),
+      transactions: [
+        transaction({
+          digest: "f".repeat(44),
+          timestamp: undefined,
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "1" }]
+        }),
+        transaction({
+          digest: "1".repeat(44),
+          timestamp: "2026-05-11T00:31:00.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "2" }]
+        })
+      ]
+    });
+
+    expect(result.sourceTransactionCount).toBe(2);
+    expect(result.analyzedTransactionCount).toBe(0);
+    expect(result.skippedTransactionCount).toBe(2);
+    expect(result.netFlowBars).toEqual([]);
+    expect(result.limitations).toEqual([
+      "no_balance_anchor",
+      "no_observed_account_balance_changes",
+      "transaction_timestamp_unavailable"
+    ]);
+  });
+
+  it("rejects unsupported bucket sizes", () => {
+    expect(() =>
+      buildAccountAssetTimeline({
+        account,
+        from: "2026-05-11T00:00:00.000Z",
+        to: "2026-05-11T00:30:00.000Z",
+        bucketMinutes: 15 as AccountAssetTimelineBucketMinutes,
+        coverage: completeCoverage(),
+        transactions: []
+      })
+    ).toThrow("Unsupported account asset timeline bucket size");
+  });
+
+  it("attaches DeepBook USDC references for supported 10-minute timeline buckets", async () => {
+    const timeline = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T00:20:00.000Z",
+      bucketMinutes: 10,
+      coverage: completeCoverage(),
+      transactions: [
+        transaction({
+          digest: "2".repeat(44),
+          timestamp: "2026-05-11T00:05:00.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "100" }]
+        }),
+        transaction({
+          digest: "3".repeat(44),
+          timestamp: "2026-05-11T00:15:00.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "-20" }]
+        })
+      ]
+    });
+    const calls: unknown[] = [];
+    const withReferences = await attachDeepbookUsdcReferencesToTimeline({
+      timeline,
+      getPriceHistory: async (input) => {
+        calls.push(input);
+        return okHistory([
+          candle({
+            start: "2026-05-11T00:00:00.000Z",
+            end: "2026-05-11T00:10:00.000Z",
+            close: "3.25"
+          })
+        ]);
+      }
+    });
+
+    expect(calls).toEqual([
+      {
+        coinType: "0x2::sui::SUI",
+        start: "2026-05-11T00:00:00.000Z",
+        end: "2026-05-11T00:20:00.000Z"
+      }
+    ]);
+    expect(withReferences.usdcReferences.status).toBe("partial");
+    expect(withReferences.usdcReferences.usdcIsFiatUsd).toBe(false);
+    expect(withReferences.usdcReferences.usdPegGuaranteeAvailable).toBe(false);
+    expect(withReferences.usdcReferences.responseSummary.usdcDisclaimer).toBe(
+      "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+    );
+    expect(withReferences.usdcReferences.coinReferences).toEqual([
+      expect.objectContaining({
+        coinType: "0x2::sui::SUI",
+        status: "partial",
+        barReferences: [
+          expect.objectContaining({
+            bucketStart: "2026-05-11T00:00:00.000Z",
+            bucketEnd: "2026-05-11T00:10:00.000Z",
+            status: "filled",
+            candle: expect.objectContaining({ close: "3.25" })
+          }),
+          {
+            bucketStart: "2026-05-11T00:10:00.000Z",
+            bucketEnd: "2026-05-11T00:20:00.000Z",
+            status: "missing_candle"
+          }
+        ]
+      })
+    ]);
+  });
+
+  it("keeps unsupported and unavailable DeepBook USDC references separate from net-flow bars", async () => {
+    const timeline = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T00:10:00.000Z",
+      bucketMinutes: 10,
+      coverage: completeCoverage(),
+      transactions: [
+        transaction({
+          digest: "4".repeat(44),
+          timestamp: "2026-05-11T00:05:00.000Z",
+          changes: [
+            { coinType: "0xunsupported::coin::COIN", amountRaw: "1" },
+            { coinType: "0xsource::coin::DOWN", amountRaw: "1" }
+          ]
+        })
+      ]
+    });
+    const reader: AccountAssetTimelineUsdcPriceHistoryReader = async (input) =>
+      input.coinType === "0xunsupported::coin::COIN"
+        ? unsupportedPairHistory()
+        : sourceUnavailableHistory();
+
+    const withReferences = await attachDeepbookUsdcReferencesToTimeline({ timeline, getPriceHistory: reader });
+
+    expect(withReferences.netFlowBars).toHaveLength(2);
+    expect(withReferences.usdcReferences.status).toBe("unavailable");
+    expect(withReferences.usdcReferences.coinReferences).toEqual([
+      {
+        coinType: "0xsource::coin::DOWN",
+        status: "source_unavailable",
+        reason: "weekly_files_missing",
+        pair: undefined,
+        source: undefined
+      },
+      {
+        coinType: "0xunsupported::coin::COIN",
+        status: "unsupported_asset",
+        reason: "selector_not_in_index_registry",
+        matchingPairIds: [],
+        availablePairIds: ["SUI_USDC"]
+      }
+    ]);
+  });
+
+  it("does not request DeepBook USDC references for non-10-minute timeline buckets", async () => {
+    const timeline = buildAccountAssetTimeline({
+      account,
+      from: "2026-05-11T00:00:00.000Z",
+      to: "2026-05-11T01:00:00.000Z",
+      bucketMinutes: 30,
+      coverage: completeCoverage(),
+      transactions: [
+        transaction({
+          digest: "5".repeat(44),
+          timestamp: "2026-05-11T00:05:00.000Z",
+          changes: [{ coinType: "0x2::sui::SUI", amountRaw: "1" }]
+        })
+      ]
+    });
+    const calls: unknown[] = [];
+    const withReferences = await attachDeepbookUsdcReferencesToTimeline({
+      timeline,
+      getPriceHistory: async (input) => {
+        calls.push(input);
+        return okHistory([]);
+      }
+    });
+
+    expect(calls).toEqual([]);
+    expect(withReferences.usdcReferences.status).toBe("unsupported_bucket_size");
+    expect(withReferences.usdcReferences.coinReferences).toEqual([]);
+  });
+});
+
+function completeCoverage() {
+  return buildExternalActivityCoverageResult({
+    scope: { account, accountId: 1, accountSource: "explicit_filter" },
+    from: "2026-05-11T00:00:00.000Z",
+    to: "2026-05-11T01:00:00.000Z",
+    scans: [scan({ scanId: "complete_scan", relationship: "affected", windowComplete: true })],
+    scanCount: 1,
+    storedTransactionCount: 0
+  });
+}
+
+function noScanCoverage() {
+  return buildExternalActivityCoverageResult({
+    scope: { account, accountId: 1, accountSource: "explicit_filter" },
+    from: "2026-05-11T00:00:00.000Z",
+    to: "2026-05-11T01:00:00.000Z",
+    scans: [],
+    scanCount: 0,
+    storedTransactionCount: 0
+  });
+}
+
+function partialCoverage() {
+  return buildExternalActivityCoverageResult({
+    scope: { account, accountId: 1, accountSource: "explicit_filter" },
+    from: "2026-05-11T00:00:00.000Z",
+    to: "2026-05-11T01:00:00.000Z",
+    scans: [
+      scan({ scanId: "sent_scan", relationship: "sent", windowComplete: true }),
+      scan({
+        scanId: "incomplete_scan",
+        relationship: "affected",
+        windowComplete: false,
+        incompleteReason: "limit_reached"
+      })
+    ],
+    scanCount: 2,
+    storedTransactionCount: 1
+  });
+}
+
+function scan(input: {
+  scanId: string;
+  relationship: "affected" | "sent";
+  windowComplete: boolean;
+  incompleteReason?: "limit_reached" | undefined;
+}): ExternalActivityScanRecord {
+  return {
+    scanId: input.scanId,
+    kind: "account_scan",
+    accountId: 1,
+    account,
+    relationship: input.relationship,
+    fromTimestamp: "2026-05-11T00:00:00.000Z",
+    toTimestamp: "2026-05-11T01:00:00.000Z",
+    limit: 100,
+    endpointHost: "graphql.mainnet.sui.io",
+    chainIdentifier: "mainnet-chain",
+    fetchedAt: "2026-05-11T01:00:01.000Z",
+    storedCount: 0,
+    skippedCount: 0,
+    hasMore: false,
+    windowComplete: input.windowComplete,
+    incompleteReason: input.incompleteReason
+  };
+}
+
+function transaction(input: {
+  digest: string;
+  timestamp: string | undefined;
+  changes: Array<{ coinType: string; amountRaw: string }> | undefined;
+  balanceChangesTruncated?: boolean | undefined;
+}): ExternalActivityTransactionRecord {
+  return {
+    accountId: 1,
+    account,
+    digest: input.digest,
+    relationship: "affected",
+    checkpoint: "100",
+    timestamp: input.timestamp,
+    status: "success",
+    firstScanId: "scan",
+    lastScanId: "scan",
+    firstFetchedAt: "2026-05-11T01:00:01.000Z",
+    lastFetchedAt: "2026-05-11T01:00:01.000Z",
+    details: input.changes === undefined
+      ? undefined
+      : details(input.changes, input.balanceChangesTruncated === true)
+  };
+}
+
+function details(
+  changes: Array<{ coinType: string; amountRaw: string }>,
+  balanceChangesTruncated: boolean
+): ExternalActivityTransactionDetail {
+  return {
+    moveCalls: [],
+    balanceChanges: changes.map((change, index) => ({
+      index,
+      owner: account,
+      coinType: change.coinType,
+      amountRaw: change.amountRaw,
+      direction: directionForRaw(change.amountRaw)
+    })),
+    objectChanges: [],
+    events: [],
+    truncation: {
+      moveCalls: false,
+      balanceChanges: balanceChangesTruncated,
+      objectChanges: false,
+      events: false
+    }
+  };
+}
+
+function directionForRaw(raw: string): "increase" | "decrease" | "zero" {
+  const value = BigInt(raw);
+  if (value > 0n) return "increase";
+  if (value < 0n) return "decrease";
+  return "zero";
+}
+
+function okHistory(bars: Extract<DeepbookUsdcPriceHistorySummary, { status: "ok" }>["bars"]): DeepbookUsdcPriceHistorySummary {
+  return {
+    status: "ok",
+    fetchedAt: "2026-05-11T00:20:01.000Z",
+    requested: {
+      selector: { kind: "coin_type", value: "0x2::sui::SUI" },
+      range: {
+        start: "2026-05-11T00:00:00.000Z",
+        end: "2026-05-11T00:20:00.000Z",
+        timeZone: "UTC",
+        barIntervalMinutes: 10,
+        maxBars: 1008,
+        requestedBarSlots: 2
+      }
+    },
+    pair: {
+      pairId: "SUI_USDC",
+      poolId: `0x${"1".repeat(64)}`,
+      baseAsset: {
+        symbol: "SUI",
+        coinType: "0x2::sui::SUI",
+        decimals: 9
+      },
+      quoteAsset: {
+        symbol: "USDC",
+        coinType: "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+        decimals: 6
+      },
+      priceConvention: "USDC_PER_BASE",
+      barIntervalMinutes: 10
+    },
+    coverageStatus: "complete",
+    barCount: bars.length,
+    bars,
+    source: {
+      kind: "external_precomputed_deepbook_usdc_index",
+      repositoryUrl: "https://github.com/stelis-dev/deepbook-usdc-index",
+      baseUrl: "https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main",
+      sourceRef: "main",
+      registry: {
+        path: "registry/pairs.json",
+        url: "https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main/registry/pairs.json",
+        fetchedAt: "2026-05-11T00:20:01.000Z"
+      },
+      weeklyFiles: {
+        requested: [],
+        found: [],
+        missing: []
+      },
+      chainRecomputedBySayUrIntent: false
+    },
+    userAnswerUse: deepbookUsdcPriceHistoryUserAnswerUse(),
+    quantitySemantics: deepbookUsdcPriceHistoryQuantitySemantics(),
+    responseSummary: deepbookUsdcPriceHistoryResponseSummary(),
+    unsupportedClaims: [...deepbookUsdcPriceHistoryResponseSummary().excludedFromConclusion]
+  };
+}
+
+function unsupportedPairHistory(): DeepbookUsdcPriceHistorySummary {
+  return {
+    status: "unsupported_pair",
+    fetchedAt: "2026-05-11T00:20:01.000Z",
+    requested: okHistory([]).requested,
+    reason: "selector_not_in_index_registry",
+    matchingPairIds: [],
+    availablePairIds: ["SUI_USDC"],
+    userAnswerUse: deepbookUsdcPriceHistoryUserAnswerUse(),
+    quantitySemantics: deepbookUsdcPriceHistoryQuantitySemantics(),
+    responseSummary: deepbookUsdcPriceHistoryResponseSummary(),
+    unsupportedClaims: [...deepbookUsdcPriceHistoryResponseSummary().excludedFromConclusion]
+  };
+}
+
+function sourceUnavailableHistory(): DeepbookUsdcPriceHistorySummary {
+  return {
+    status: "source_unavailable",
+    fetchedAt: "2026-05-11T00:20:01.000Z",
+    requested: okHistory([]).requested,
+    reason: "weekly_files_missing",
+    userAnswerUse: deepbookUsdcPriceHistoryUserAnswerUse(),
+    quantitySemantics: deepbookUsdcPriceHistoryQuantitySemantics(),
+    responseSummary: deepbookUsdcPriceHistoryResponseSummary(),
+    unsupportedClaims: [...deepbookUsdcPriceHistoryResponseSummary().excludedFromConclusion]
+  };
+}
+
+function candle(input: { start: string; end: string; close: string }): Extract<DeepbookUsdcPriceHistorySummary, { status: "ok" }>["bars"][number] {
+  return {
+    start: input.start,
+    end: input.end,
+    status: "filled",
+    eventCount: 1,
+    open: input.close,
+    high: input.close,
+    low: input.close,
+    close: input.close,
+    baseVolumeRaw: "100",
+    quoteVolumeRaw: "325"
+  };
+}

@@ -25,6 +25,7 @@ export const TOOL_NAMES = {
   readScanSuiFunctionActivity: "read.scan_sui_function_activity",
   readSummarizeSuiFunctionActivityScan: "read.summarize_sui_function_activity_scan",
   readSummarizeSuiAccountActivity: "read.summarize_sui_account_activity",
+  readGetAccountAssetTimeline: "read.get_account_asset_timeline",
   settingsCreateLocalSettingsSession: "settings.create_local_settings_session",
   settingsGetLocalSettings: "settings.get_local_settings",
   actionPrepareSuiActionReview: "action.prepare_sui_action_review",

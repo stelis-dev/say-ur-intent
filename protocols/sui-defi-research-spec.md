@@ -52,8 +52,8 @@ Every protocol must move through this order:
    one. Resolve the name through the pinned Sui SDK or the mainnet MVR endpoint
    and keep the name and resolved current package address together. MVR is the
    preferred source for the current package address when a verified name exists.
-   Keep package history separately because historical transactions can call
-   older package versions.
+   Keep package records for transaction interpretation separate from current
+   package claims.
 3. Fit the protocol into the normalized research record in this spec.
 4. Compare it against at least two different activity categories to avoid a
    protocol-specific data model disguised as a generic one.
@@ -113,15 +113,13 @@ Research can be promoted only when the target product behavior is explicit.
 If a protocol record cannot pass the gate for the intended behavior, keep it as
 research only.
 
-## Current Promotion Decision
+## Current Promotion Boundary
 
-Decision date: 2026-05-14.
+The product behavior promoted from this research is transaction activity
+labeling through `compact.protocolMatches`. This research is not a runtime
+registry and not a protocol position read tool.
 
-The first product behavior promoted from this research is transaction activity
-labeling through `compact.protocolMatches`, not a runtime registry and not a
-protocol position read tool.
-
-Reason:
+Current scope constraints:
 
 - The immediate user problem is interpreting recent Sui DeFi transactions:
   called contracts, transaction type, asset flow, gas, failures, and candidate
@@ -132,8 +130,8 @@ Reason:
 - A registry would be local policy and could imply support before matching rules
   are proven.
 - A read tool for positions would require protocol-specific live state reads,
-  ownership proofs, pagination rules, and financial unit boundaries. That is a
-  later account-bound inventory task, not the first promotion target.
+  ownership proofs, pagination rules, and financial unit boundaries. Those
+  requirements are not closed by this research spec.
 
 External ecosystem ranking sources such as DeFiLlama can be used only as a
 prioritization signal. They are not authority for package IDs, object IDs, Move
@@ -141,16 +139,16 @@ interfaces, wallet ownership, balances, liquidity, or execution semantics.
 
 ### Diversity-First Selection Rule
 
-Do not pick the first protocols only by popularity or by how much prior research
-already exists. For classifier and research-model validation, choose protocols
-that stress different data shapes:
+Do not choose protocols only by popularity or by how much source material is
+already recorded. For classifier and research-model validation, choose
+protocols that stress different data shapes:
 
 - one CLOB / order book surface,
 - one CLMM / AMM surface,
 - one lending market surface,
 - one liquid staking surface,
-- then one wrapper or advanced trading surface only after the first four prove
-  the model.
+- then one wrapper or advanced trading surface only when the baseline surfaces
+  prove the model.
 
 This selection is meant to reduce model bias. A classifier that starts with only
 trading protocols can accidentally encode "DeFi activity" as swaps and orders.
@@ -165,10 +163,10 @@ Source signals used for the current selection:
 - Existing transaction detail facts in this repository: Move call targets,
   object changes, event types, raw balance changes, gas, and execution errors.
 
-Strategic protocol relationships can change priority, but they do not change the
-evidence bar. When a strategic protocol overlaps an already selected surface
-assetGroup, include it as a named fixture and keep the overlap explicit instead of
-pretending it adds a new DeFi assetGroup.
+Strategic protocol relationships do not change the evidence bar. When a
+strategic protocol overlaps a selected surface assetGroup, include it as a
+named fixture and keep the overlap explicit instead of pretending it adds a new
+DeFi assetGroup.
 
 ### First Promotion Target
 
@@ -180,7 +178,7 @@ signing readiness.
 Current classifier design and implementation boundary note:
 `protocols/sui-defi-activity-classifier-spec.md`.
 
-Initial diversity seed set plus one strategic fixture:
+Current diversity seed set plus one strategic fixture:
 
 1. DeepBook V3:
    CLOB/order-book baseline. Existing product work already has read-only DeepBook context.
@@ -204,39 +202,39 @@ Initial diversity seed set plus one strategic fixture:
    Promotion target: classifier rules for DeepTrade package calls, fee manager calls, Treasury/TradingFeeConfig objects, reserve coverage, and loyalty/fee signals.
    Not promoted yet: Margin/Earn support, live fee quote, signable adapter, and protocol relationship claims.
 
-Follow-up classifier candidates after the diversity seed:
+Additional classifier candidates:
 
-| Priority | Protocol / surface | Why not in the first four | Promotion target |
+| Priority | Protocol / surface | Current prerequisite | Promotion target |
 | --- | --- | --- | --- |
-| 6 | Bluefin Spot | Trading relevance is high, but it is another spot trading surface. It needs a focused pass for function/event/object signals before classifier promotion. | Classifier rules for spot package calls and event/object signals. |
-| 7 | Turbos CLMM/Vault | Similar CLMM assetGroup to Cetus, with vault/rewarder overlay. Use after Cetus to test additional vault state without shaping the first AMM model around vaults. | Classifier rules for Turbos package calls, vault/rewarder object use, CLMM position activity. |
+| 6 | Bluefin Spot | Focused function, event, and object signal evidence. | Classifier rules for spot package calls and event/object signals. |
+| 7 | Turbos CLMM/Vault | CLMM plus vault/rewarder evidence that stays separate from the baseline AMM model. | Classifier rules for Turbos package calls, vault/rewarder object use, CLMM position activity. |
 
-### Second Promotion Target
+### Account-Bound Position Inventory Research
 
-After the first classifier spec is stable, the next candidate is account-bound
-position inventory research, not registry policy.
+Account-bound position inventory research is separate from registry policy and
+separate from transaction activity labeling.
 
-Initial candidate set:
+Current candidate set:
 
-| Priority | Protocol / surface | Why second | Required before read tool |
+| Priority | Protocol / surface | Current prerequisite | Required before read tool |
 | --- | --- | --- | --- |
-| 1 | Suilend | Lending positions are directly user-relevant, and the survey has main market object/type facts. | Obligation ownership model, reserve state reads, cToken/share units, interest/price source, pagination. |
-| 2 | NAVI Lending | Major lending surface, but package API and SDK config package conflict must be resolved first. | Canonical package decision, account/obligation state model, oracle and reserve source, reward units. |
+| 1 | Suilend | Main market object/type facts are recorded. | Obligation ownership model, reserve state reads, cToken/share units, interest/price source, pagination. |
+| 2 | NAVI Lending | Package API and SDK config package conflict remains open. | Canonical package decision, account/obligation state model, oracle and reserve source, reward units. |
 | 3 | Scallop Lending | Lending plus sCoin supplied-asset position model. | Obligation/sCoin ownership model, decimal registry source, market/query package read path. |
-| 4 | Aftermath afSUI / Haedal | Liquid staking is a distinct user asset question and tests receipt-token accounting. | Current staking package/object recheck, exchange-rate source, delayed unstake model, receipt token units. |
+| 4 | Aftermath afSUI / Haedal | Liquid-staking receipt-token accounting surface. | Current staking package/object recheck, exchange-rate source, delayed unstake model, receipt token units. |
 
-### Rejected Promotion Paths For This Pass
+### Unsupported Promotion Paths
 
-| Path | Decision |
+| Path | Current status |
 | --- | --- |
-| JSON registry | Reject for now. The matching rules are not proven, and registry data would look like product policy. |
-| New protocol-specific MCP read tool | Reject for now. No protocol-specific live read source, input schema, error mapping, or account-bound state model is closed. Existing transaction activity tools may expose `compact.protocolMatches` labels only. |
-| Runtime DB tables for protocol research | Reject. Static protocol research is not user-local data. |
-| Signable/review adapter | Reject. This work is read-only transaction interpretation and inventory planning. |
+| JSON registry | Unsupported by this research spec. Matching rules are not product policy. |
+| New protocol-specific MCP read tool | Unsupported by this research spec. Protocol-specific live read source, input schema, error mapping, and account-bound state model are not closed here. Existing transaction activity tools may expose `compact.protocolMatches` labels only. |
+| Runtime DB tables for protocol research | Unsupported. Static protocol research is not user-local data. |
+| Signable/review adapter | Unsupported. This research boundary is read-only transaction interpretation and inventory planning. |
 
-### Research Backlog Decision Matrix
+### Research Status Matrix
 
-| Protocol / surface | Current decision | Reason |
+| Protocol / surface | Current status | Current constraint |
 | --- | --- | --- |
 | DeepBook V3 | Diversity seed classifier candidate. | CLOB/order book baseline; existing product context and transaction-level facts can identify package/module/function and BalanceManager-related activity without new live position reads. |
 | Cetus CLMM | Diversity seed classifier candidate. | Different from CLOB: CLMM position/range/liquidity/fee concepts are required to avoid a swap-only classifier model. |
@@ -244,12 +242,12 @@ Initial candidate set:
 | Aftermath afSUI | Diversity seed classifier candidate and liquid-staking inventory research candidate. | Different from CLOB/CLMM/lending: receipt token and exchange-rate accounting tests a separate assetGroup. |
 | DeepTrade Core | Strategic fixture in the first classifier pass. | Deep-dive evidence already covers package, core objects, fees, and wrapper semantics. It overlaps the CLOB assetGroup, so the overlap must stay explicit. |
 | Bluefin Spot | Focused research, then classifier candidate. | Trading relevance is high, but the current survey only records the spot package and it overlaps the trading assetGroup. Function/event/object signals need a focused pass. |
-| Turbos CLMM/Vault | Research backlog after Cetus. | Similar CLMM assetGroup, but vault/rewarder surfaces add additional user-state concepts that should not shape the first classifier model. |
-| Kriya CLMM | Research backlog after Cetus/Turbos. | Current evidence is SDK-constant based; official contract source authority is weaker than the first CLMM candidate. |
-| NAVI Lending | Position-inventory research after canonical package conflict is resolved. | Package API and SDK config disagree, so it is not first despite lending relevance. |
-| Scallop Lending | Position-inventory research after Suilend/NAVI shape comparison. | sCoin and obligation state are useful but need a separate ownership/unit model. |
-| Aftermath AMM | Later classifier/position candidate. | AMM package and pool registry are recorded, but routing/farm/perp/dynamic gas surfaces remain separate. |
-| Haedal | Follow-up research only. | Current package/object IDs are not sufficiently verified in the survey. |
+| Turbos CLMM/Vault | Research backlog. | Similar CLMM assetGroup, with vault/rewarder surfaces that add separate user-state concepts. |
+| Kriya CLMM | Research backlog. | Current evidence is SDK-constant based; official contract source authority is weaker than the first CLMM candidate. |
+| NAVI Lending | Position-inventory research candidate with an open canonical package conflict. | Package API and SDK config disagree. |
+| Scallop Lending | Position-inventory research candidate. | sCoin and obligation state need a separate ownership/unit model. |
+| Aftermath AMM | Classifier/position candidate. | AMM package and pool registry are recorded, but routing/farm/perp/dynamic gas surfaces remain separate. |
+| Haedal | Research only. | Current package/object IDs are not sufficiently verified in the survey. |
 
 ## Normalized Research Record Contract
 
@@ -264,7 +262,7 @@ runtime use is considered.
 | `evidenceSources` | Official docs, dynamic endpoint, GitHub source, SDK constants, or onchain lookup. | Yes. |
 | `verificationStatus` | One of `research_snapshot`, `official_current`, `pinned_sdk_current`, `onchain_verified`, or `conflict_open`. | Yes. |
 | `mvrNames` | Verified Move Registry names and their resolved current package IDs, for example `@cetuspackages/clmm -> 0x...`. Keep absent names explicit as `not_verified`, not guessed. | When package names are relevant. |
-| `packages` | Current package IDs, published-at IDs, package history, and discrepancies. Current package records should reference the matching MVR name when one is verified; package history remains separate for older transactions. | When relevant. |
+| `packages` | Current package IDs, published-at IDs, package records for transaction interpretation, and discrepancies. Current package records should reference the matching MVR name when one is verified. Package records for transaction interpretation remain separate from current package claims. | When relevant. |
 | `sharedObjects` | Protocol config, registry, pool, market, oracle, version, cap, or vault objects. | When relevant. |
 | `activityCategories` | Functional asset groups such as order book, CLMM, lending, LST, margin, vault, fee, rewards. | Yes. |
 | `userStateModel` | How user state appears: coin, LP position, obligation, BalanceManager, FeeManager, vault share, sCoin, cToken, or object ownership. | Before any wallet inventory work. |
@@ -304,7 +302,7 @@ the spec shape, not accepted implementation records.
 | `protocolId` | `deepbook-v3` |
 | `activityCategories` | CLOB / order book, swap, pool creation, fee/rebate, governance/staking. |
 | `verificationStatus` | `conflict_open`: Sui docs list a newer package than the pinned SDK/local registry. |
-| `mvrNames` | `@deepbook/core -> 0xf48222c4e057fa468baf136bff8e12504209d43850c5778f76159292a96f621e` in the 2026-05-14 mainnet MVR probe. |
+| `mvrNames` | `@deepbook/core -> 0xf48222c4e057fa468baf136bff8e12504209d43850c5778f76159292a96f621e` from the recorded mainnet MVR source. |
 | `packages` | See `protocols/sui-defi-mainnet-survey.md`; do not resolve from memory. |
 | `sharedObjects` | Registry and pool objects through pinned SDK/local registry path for current tools. |
 | `userStateModel` | BalanceManager, open orders, settled balances, locked balances. |
@@ -319,8 +317,8 @@ the spec shape, not accepted implementation records.
 | `protocolId` | `deeptrade-core` |
 | `activityCategories` | DeepBook wrapper, order book, swap, fee, loyalty, pool creation, admin/versioning. |
 | `verificationStatus` | `research_snapshot`: package and core objects recorded from official source material plus direct mainnet object lookup; package also resolved through MVR. |
-| `mvrNames` | `@deeptrade/deeptrade-core -> 0xc10d536b6580d809711b9bb8eee3945d5e96f92a346c84d74ff7a0697e664695` in the 2026-05-14 mainnet MVR probe. |
-| `packages` | Core package and package history are in `protocols/deeptrade-core-research.md`. |
+| `mvrNames` | `@deeptrade/deeptrade-core -> 0xc10d536b6580d809711b9bb8eee3945d5e96f92a346c84d74ff7a0697e664695` from the recorded mainnet MVR source. |
+| `packages` | Core package records are in `protocols/deeptrade-core-research.md`. |
 | `sharedObjects` | Treasury, TradingFeeConfig, PoolCreationConfig, LoyaltyProgram, MultisigConfig. |
 | `userStateModel` | BalanceManager, Trade Cap, FeeManager, FeeManagerOwnerCap, unsettled fee objects. |
 | `transactionSignals` | DeepTrade package calls, DeepBook dependency calls, Treasury object, fee manager calls, loyalty/fee events, DEEP and SUI fee deltas. |
@@ -334,7 +332,7 @@ the spec shape, not accepted implementation records.
 | `protocolId` | `cetus-clmm` |
 | `activityCategories` | CLMM / AMM, swap, liquidity position, fee/reward collection. |
 | `verificationStatus` | `research_snapshot`: official docs and interface repositories recorded a package and global config objects; package also resolved through MVR. |
-| `mvrNames` | `@cetuspackages/clmm -> 0x25ebb9a7c50eb17b3fa9c5a30fb8b5ad8f97caaf4928943acbcff7153dfee5e3` in the 2026-05-14 mainnet MVR probe. |
+| `mvrNames` | `@cetuspackages/clmm -> 0x25ebb9a7c50eb17b3fa9c5a30fb8b5ad8f97caaf4928943acbcff7153dfee5e3` from the recorded mainnet MVR source. |
 | `packages` | CLMM published-at package in the survey, matching the verified MVR resolution. |
 | `sharedObjects` | Global config object, pools table object. |
 | `userStateModel` | CLMM position/liquidity object, coin deltas, fee/reward claim state. |

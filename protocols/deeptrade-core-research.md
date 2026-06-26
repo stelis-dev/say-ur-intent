@@ -1,7 +1,5 @@
 # DeepTrade Core Research Note
 
-Snapshot date: 2026-05-13.
-
 Status: GitHub-tracked protocol research note. This file is not an npm package
 document, not an MCP resource, not a registry allowlist, not a supported-protocol
 list, not a live liquidity source, not a quote source, not a route
@@ -65,17 +63,17 @@ The research pass did not confirm a separate official `profit-sharing-contract`
 repository in the DeeptradeProtocol organization. Do not treat search results
 alone as an official deployment surface.
 
-## Package History
+## Package Records
 
 The DeepTrade Core README lists multiple package IDs. The last address below was
 also present in examples/constants and was verified by direct mainnet object
 lookup during the research pass.
 
-2026-05-14 MVR check: `@deeptrade/deeptrade-core` resolved through
+Recorded MVR source: `@deeptrade/deeptrade-core` resolved through
 `https://mainnet.mvr.mystenlabs.com/v1/resolution/bulk` to
 `0xc10d536b6580d809711b9bb8eee3945d5e96f92a346c84d74ff7a0697e664695`. Use that
-MVR name as the current package lookup source. Keep the package history below
-for older transactions and upgrade analysis.
+MVR name as the current package lookup source. Keep the additional package
+records below only for transaction interpretation and upgrade analysis.
 
 | Label | Address |
 | --- | --- |

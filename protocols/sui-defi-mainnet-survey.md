@@ -1,7 +1,5 @@
 # Sui DeFi Mainnet Contract Survey
 
-Snapshot date: 2026-05-13. MVR update date: 2026-05-14.
-
 Status: GitHub-tracked protocol research note. This file is not an npm package
 document, not an MCP resource, not a registry allowlist, not a supported-protocol
 list, not a live liquidity source, not a quote source, not a route
@@ -47,9 +45,7 @@ verifiable source, this note marks the gap instead of filling it from memory.
 MVR resolves packages and types; it does not replace shared object verification
 for pools, vaults, market objects, registries, caps, or per-user state.
 
-## MVR Resolution Snapshot
-
-Snapshot time: 2026-05-14.
+## MVR Resolution Source
 
 Resolution source: direct POST to `https://mainnet.mvr.mystenlabs.com/v1/resolution/bulk`.
 
@@ -97,10 +93,10 @@ Mainnet addresses recorded in the research snapshot:
 
 | Surface | Address | Source note |
 | --- | --- | --- |
-| DeepBook V3 MVR current package | `0xf48222c4e057fa468baf136bff8e12504209d43850c5778f76159292a96f621e` | `@deepbook/core`, 2026-05-14 mainnet MVR resolution. |
-| DeepBook V3 current package, version 6 | `0x337f4f4f6567fcd778d5454f27c16c70e2f274cc6377ea6249ddf491482ef497` | Sui docs current version, dated 2026-01-07 in the research snapshot. |
+| DeepBook V3 MVR current package | `0xf48222c4e057fa468baf136bff8e12504209d43850c5778f76159292a96f621e` | `@deepbook/core`, recorded mainnet MVR resolution. |
+| DeepBook V3 current package, version 6 | `0x337f4f4f6567fcd778d5454f27c16c70e2f274cc6377ea6249ddf491482ef497` | Sui docs current version in the recorded source material. |
 | DeepBook V3 registry | `0xaf16199a2dff736e9f07a845f23c5da6df6f756eddb631aed9d24a93efc4549d` | Sui docs. |
-| DeepBook Margin current package, version 3 | `0xfbd322126f1452fd4c89aedbaeb9fd0c44df9b5cedbe70d76bf80dc086031377` | Sui docs current version, dated 2026-02-10 in the research snapshot. |
+| DeepBook Margin current package, version 3 | `0xfbd322126f1452fd4c89aedbaeb9fd0c44df9b5cedbe70d76bf80dc086031377` | Sui docs current version in the recorded source material. |
 | DeepBook Margin registry | `0x0e40998b359a9ccbab22a98ed21bd4346abf19158bc7980c8291908086b3a742` | Sui docs. |
 
 Important repository discrepancy: `registry/generated/deepbook-mainnet.json` and
@@ -137,7 +133,7 @@ Mainnet addresses recorded in the research snapshot:
 
 | Surface | Address | Source note |
 | --- | --- | --- |
-| DeepTrade Core current package | `0xc10d536b6580d809711b9bb8eee3945d5e96f92a346c84d74ff7a0697e664695` | `@deeptrade/deeptrade-core`, 2026-05-14 mainnet MVR resolution; official examples/constants and direct mainnet object lookup. |
+| DeepTrade Core current package | `0xc10d536b6580d809711b9bb8eee3945d5e96f92a346c84d74ff7a0697e664695` | `@deeptrade/deeptrade-core`, recorded mainnet MVR resolution; official examples/constants and direct mainnet object lookup. |
 | Treasury object | `0xb90e2d3de41817016b7d39f49c724c5b0616bd30f1d5e6383048efafabe6232b` | Shared `::treasury::Treasury`; `allowed_versions=[1]` at lookup time. |
 | AdminCap | `0xe92f79ac54409c9eecfd77ce1089edd9b424b87c6cba8aa99c8fedb64d0e0b8b` | README and direct object lookup. |
 | UpgradeCap | `0x331c41b3587619223c8ccf44b2aa9ad683fae7b536d6b5ed96fc94fe9a8d4278` | README and direct object lookup. |
@@ -178,7 +174,7 @@ Mainnet addresses recorded in the research snapshot:
 
 | Surface | Address | Source note |
 | --- | --- | --- |
-| CLMM current package | `0x25ebb9a7c50eb17b3fa9c5a30fb8b5ad8f97caaf4928943acbcff7153dfee5e3` | `@cetuspackages/clmm`, 2026-05-14 mainnet MVR resolution; Cetus CLMM docs, MVR version 14. |
+| CLMM current package | `0x25ebb9a7c50eb17b3fa9c5a30fb8b5ad8f97caaf4928943acbcff7153dfee5e3` | `@cetuspackages/clmm`, recorded mainnet MVR resolution; Cetus CLMM docs, MVR version 14. |
 | CLMM global config object | `0xdaa46292632c3c4d8f31f23ea0f9b36a28ff3677e9684980e4438403a67a3d8f` | Cetus getting-started docs. |
 | CLMM pools table object | `0xf699e7f2276f5c9a75944b37a0c5b5d9ddfd2471bf6242483b03ab2887d198d0` | Cetus getting-started docs, mainnet tab. |
 

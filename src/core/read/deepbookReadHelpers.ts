@@ -11,12 +11,14 @@ import {
   DEEPBOOK_MID_PRICE_SEMANTICS_KIND,
   DEEPBOOK_QUOTE_QUANTITY_KIND,
   DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND,
+  DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS,
   MAX_DEEPBOOK_ACCOUNT_OPEN_ORDER_IDS,
   ReadServiceInputError,
   type DeepbookAccountInventorySummary,
   type DeepbookAccountSummary,
   type DeepbookDisplayQuantitySemantics,
   type DeepbookUsdcPriceHistoryQuantitySemantics,
+  type DeepbookUsdcPriceHistoryResponseSummary,
   type DeepbookMidPriceSemantics,
   type DeepbookDisplayQuote,
   type DeepbookRawQuoteReturnValues,
@@ -173,6 +175,18 @@ export function deepbookUsdcPriceHistoryQuantitySemantics(): DeepbookUsdcPriceHi
       "profit_or_pnl",
       "cost_basis"
     ]
+  };
+}
+
+export function deepbookUsdcPriceHistoryResponseSummary(): DeepbookUsdcPriceHistoryResponseSummary {
+  return {
+    questionKind: "deepbook_usdc_price_history",
+    evidenceKind: "external_precomputed_deepbook_usdc_index_10m_candles",
+    sourceStatement:
+      "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.",
+    usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
+    candleMeaning: "Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket.",
+    excludedFromConclusion: [...DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS]
   };
 }
 

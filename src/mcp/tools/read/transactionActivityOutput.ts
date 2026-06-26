@@ -51,6 +51,37 @@ export function suiActivityQuantitySemantics(): SuiActivityQuantitySemantics {
   return SUI_ACTIVITY_QUANTITY_SEMANTICS;
 }
 
+export const ACCOUNT_ASSET_TIMELINE_QUANTITY_SEMANTICS = {
+  kind: "sui_account_asset_timeline_raw_net_flows",
+  rawAmountsOnly: true,
+  netFlowFields: [
+    "netFlowBars[].increaseRaw",
+    "netFlowBars[].decreaseRaw",
+    "netFlowBars[].netRaw"
+  ],
+  balanceBarsAvailable: false,
+  balanceStatusField: "balanceStatus",
+  balanceBarRule: "balanceBars are unavailable unless a stored balance anchor exists",
+  notFor: [
+    "held_balance_without_balance_anchor",
+    "complete_wallet_history",
+    "display_conversion_without_verified_decimals",
+    "fiat_usd_cash_out",
+    "usd_peg_assumption",
+    "profit_or_pnl",
+    "cost_basis",
+    "route_recommendation",
+    "transaction_building",
+    "signing_data_or_readiness"
+  ]
+} as const;
+
+export type AccountAssetTimelineQuantitySemantics = typeof ACCOUNT_ASSET_TIMELINE_QUANTITY_SEMANTICS;
+
+export function accountAssetTimelineQuantitySemantics(): AccountAssetTimelineQuantitySemantics {
+  return ACCOUNT_ASSET_TIMELINE_QUANTITY_SEMANTICS;
+}
+
 export type TransactionDetailAvailabilityStatus = "none" | "some" | "all";
 
 export type TransactionDetailAvailability = {
@@ -255,6 +286,57 @@ export function storedSuiActivityUserAnswerUse(
       answerFields: ["requestedAccountTransactionFacts", "analysis"],
       reason: "Use for recent live requested-account activity; stored summaries are local facts only."
     }
+  };
+}
+
+export function accountAssetTimelineUserAnswerUse(input: {
+  hasNetFlowBars: boolean;
+  hasUsdcReferenceCandles: boolean;
+  scanNeeded: boolean;
+  accountKnown: boolean;
+}): UserAnswerUse {
+  return {
+    canAnswer: [
+      "scan_coverage_status_for_requested_utc_range",
+      "balance_anchor_availability",
+      ...(input.hasNetFlowBars ? ["stored_account_asset_net_flow_timeline_for_selected_account"] : []),
+      ...(input.hasUsdcReferenceCandles ? ["deepbook_usdc_token_denominated_reference_candles_for_supported_assets"] : [])
+    ],
+    cannotAnswer: [
+      "live_latest_activity",
+      "complete_wallet_history",
+      "held_balances_without_balanceBars",
+      "wallet_total_value",
+      "fiat_usd_cash_out",
+      "usd_peg_assumption",
+      "profit_or_pnl",
+      "cost_basis",
+      "route_recommendation",
+      "best_route",
+      "transaction_building",
+      "signing_data_or_readiness"
+    ],
+    answerFields: [
+      "coverage",
+      "status",
+      "balanceStatus",
+      "balanceBars",
+      "quantitySemantics",
+      ...(input.hasNetFlowBars ? ["netFlowBars"] : []),
+      ...(input.hasUsdcReferenceCandles ? ["usdcReferences"] : [])
+    ],
+    conclusionRuleFields: ["coverage.coverageStatus", "balanceStatus", "limitations"],
+    diagnosticOnlyFields: ["source", "sourceTransactions"],
+    ...(input.scanNeeded && input.accountKnown
+      ? {
+          followUp: {
+            tool: TOOL_NAMES.readScanSuiAccountActivity,
+            inputFields: ["account", "requestedRange.from", "requestedRange.to"],
+            answerFields: ["requestedAccountTransactionFacts", "persistence.scan"],
+            reason: "Run a user-requested bounded account activity scan before using this timeline as activity evidence."
+          }
+        }
+      : {})
   };
 }
 

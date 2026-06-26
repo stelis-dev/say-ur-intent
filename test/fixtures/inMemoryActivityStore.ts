@@ -3,6 +3,8 @@ import { assertNoForbiddenMcpFields } from "../../src/core/action/forbiddenField
 import { actionPlanSchema } from "../../src/core/action/schemas.js";
 import {
   ActivityStoreReadError,
+  EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS,
+  EXTERNAL_ACTIVITY_SCAN_MAX_LIMIT,
   REVIEW_ACTIVITY_DETAIL_MAX_ITEMS,
   REVIEW_ACTIVITY_LIST_DEFAULT_LIMIT,
   REVIEW_ACTIVITY_LIST_MAX_LIMIT,
@@ -13,10 +15,14 @@ import type {
   AccountSource,
   ActiveAccountRecord,
   ActivityStore,
+  ExternalActivityCoverageFilter,
+  ExternalActivityCoverageResult,
   ExternalActivityScanInput,
   ExternalActivityScanRecord,
   ExternalActivitySummaryFilter,
   ExternalActivitySummaryResult,
+  ExternalActivityTransactionStreamFilter,
+  ExternalActivityTransactionStreamResult,
   ExternalActivityTransactionRecord,
   ReviewActivityFilter,
   ReviewActivityListFilter,
@@ -32,6 +38,16 @@ import type {
   ReviewStateSnapshotInput,
   ReviewTransitionInput
 } from "../../src/core/activity/activityStore.js";
+import {
+  buildExternalActivityCoverageResult,
+  scanOverlapsRequestedRange
+} from "../../src/core/activity/externalActivityCoverage.js";
+import {
+  buildExternalActivityTransactionStreamResult,
+  canonicalExternalActivityTransactions,
+  compareExternalActivityTransactionsDescending,
+  transactionTimestampInHalfOpenRange
+} from "../../src/core/activity/externalActivityTransactionStream.js";
 import type { ActionPlan, ExecutionResult, InternalSessionStatus, ReviewState } from "../../src/core/action/types.js";
 
 export class InMemoryActivityStore implements ActivityStore {
@@ -409,6 +425,81 @@ export class InMemoryActivityStore implements ActivityStore {
     return { ...record };
   }
 
+  async getExternalActivityCoverage(filter: ExternalActivityCoverageFilter): Promise<ExternalActivityCoverageResult> {
+    const from = parseRequiredIso(filter.from, "from");
+    const to = parseRequiredIso(filter.to, "to");
+    if (from >= to) {
+      throw new ActivityStoreReadError("input_invalid", "from must be before to for a non-empty half-open range", { from, to });
+    }
+    const scope = this.resolveScope(filter);
+    if (!scope.accountId) {
+      return buildExternalActivityCoverageResult({
+        scope,
+        from,
+        to,
+        scans: [],
+        scanCount: 0,
+        storedTransactionCount: 0
+      });
+    }
+
+    const relevantScans = this.externalActivityScans
+      .filter((scan) => scan.accountId === scope.accountId)
+      .filter((scan) => scanOverlapsRequestedRange(scan, from, to))
+      .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt) || b.scanId.localeCompare(a.scanId));
+    const scans = relevantScans.slice(0, EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS).map((scan) => ({ ...scan }));
+    const rows = this.externalActivityTransactions
+      .filter((row) => row.accountId === scope.accountId)
+      .filter((row) => transactionTimestampInHalfOpenRange(row, from, to));
+    const canonicalRows = canonicalExternalActivityTransactions(rows);
+    return buildExternalActivityCoverageResult({
+      scope,
+      from,
+      to,
+      scans,
+      scanCount: relevantScans.length,
+      storedTransactionCount: canonicalRows.length,
+      storedTransactionRange: canonicalRows.length === 0 ? undefined : inMemoryExternalActivityTransactionRange(canonicalRows),
+      scansTruncated: relevantScans.length > EXTERNAL_ACTIVITY_COVERAGE_SCAN_MAX_RECORDS
+    });
+  }
+
+  async listExternalActivityEffectTransactions(
+    filter: ExternalActivityTransactionStreamFilter
+  ): Promise<ExternalActivityTransactionStreamResult> {
+    const from = parseRequiredIso(filter.from, "from");
+    const to = parseRequiredIso(filter.to, "to");
+    if (from >= to) {
+      throw new ActivityStoreReadError("input_invalid", "from must be before to for a non-empty half-open range", { from, to });
+    }
+    const limit = normalizeExternalActivityLimit(filter.limit);
+    const scope = this.resolveScope(filter);
+    if (!scope.accountId) {
+      return buildExternalActivityTransactionStreamResult({
+        scope,
+        from,
+        to,
+        transactions: [],
+        truncated: false,
+        transactionCount: 0
+      });
+    }
+
+    const rows = canonicalExternalActivityTransactions(
+      this.externalActivityTransactions
+        .filter((row) => row.accountId === scope.accountId)
+        .filter((row) => transactionTimestampInHalfOpenRange(row, from, to))
+    );
+    return buildExternalActivityTransactionStreamResult({
+      scope,
+      from,
+      to,
+      transactions: rows.slice(0, limit).map((row) => ({ ...row })),
+      truncated: rows.length > limit,
+      transactionCount: rows.length
+    });
+  }
+
   async summarizeExternalActivity(filter: ExternalActivitySummaryFilter): Promise<ExternalActivitySummaryResult> {
     const { from, to } = parseDateRange(filter);
     const limit = normalizeLimit(filter.limit);
@@ -418,7 +509,7 @@ export class InMemoryActivityStore implements ActivityStore {
           .filter((row) => row.accountId === scope.accountId)
           .filter((row) => !from || (row.timestamp !== undefined && row.timestamp >= from))
           .filter((row) => !to || (row.timestamp !== undefined && row.timestamp <= to))
-          .sort(compareExternalActivityRecordsDescending)
+          .sort(compareExternalActivityTransactionsDescending)
       : [];
     const statusCounts = { success: 0, failure: 0, unknown: 0 };
     const relationshipCounts = { affected: 0, sent: 0 };
@@ -552,11 +643,47 @@ function parseIso(value: string | undefined, field: "from" | "to"): string | und
   return value;
 }
 
+function parseRequiredIso(value: string, field: "from" | "to"): string {
+  const parsed = parseIso(value, field);
+  if (parsed === undefined) {
+    throw new ActivityStoreReadError("input_invalid", `${field} must be an ISO 8601 UTC timestamp`, { field });
+  }
+  return parsed;
+}
+
+function inMemoryExternalActivityTransactionRange(
+  rows: ExternalActivityTransactionRecord[]
+): NonNullable<ExternalActivityCoverageResult["storedTransactionRange"]> {
+  const timestamps = rows.flatMap((row) => row.timestamp ?? []).sort();
+  const checkpoints = rows.flatMap((row) => row.checkpoint ?? []).sort((a, b) => {
+    const delta = BigInt(a) - BigInt(b);
+    if (delta < 0n) return -1;
+    if (delta > 0n) return 1;
+    return 0;
+  });
+  return {
+    earliestTimestamp: timestamps[0],
+    latestTimestamp: timestamps.at(-1),
+    earliestCheckpoint: checkpoints[0],
+    latestCheckpoint: checkpoints.at(-1)
+  };
+}
+
 function normalizeLimit(limit: number | undefined): number {
   if (limit === undefined) {
     return REVIEW_ACTIVITY_LIST_DEFAULT_LIMIT;
   }
   if (!Number.isInteger(limit) || limit < 1 || limit > REVIEW_ACTIVITY_LIST_MAX_LIMIT) {
+    throw new ActivityStoreReadError("input_invalid", "limit must be an integer from 1 to 100", { limit });
+  }
+  return limit;
+}
+
+function normalizeExternalActivityLimit(limit: number | undefined): number {
+  if (limit === undefined) {
+    return EXTERNAL_ACTIVITY_SCAN_MAX_LIMIT;
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > EXTERNAL_ACTIVITY_SCAN_MAX_LIMIT) {
     throw new ActivityStoreReadError("input_invalid", "limit must be an integer from 1 to 100", { limit });
   }
   return limit;
@@ -731,35 +858,6 @@ function canAdvanceReviewExecution(
 
 function nullableString(value: string | null | undefined): string | null {
   return value ?? null;
-}
-
-function compareStringsDescending(a: string, b: string): number {
-  if (a > b) return -1;
-  if (a < b) return 1;
-  return 0;
-}
-
-function compareExternalActivityRecordsDescending(
-  a: ExternalActivityTransactionRecord,
-  b: ExternalActivityTransactionRecord
-): number {
-  const checkpointComparison = compareCheckpointsDescending(a.checkpoint, b.checkpoint);
-  if (checkpointComparison !== 0) {
-    return checkpointComparison;
-  }
-  return compareStringsDescending(a.digest, b.digest);
-}
-
-function compareCheckpointsDescending(a: string | undefined, b: string | undefined): number {
-  if (a !== undefined && b !== undefined) {
-    const delta = BigInt(a) - BigInt(b);
-    if (delta > 0n) return -1;
-    if (delta < 0n) return 1;
-    return 0;
-  }
-  if (a !== undefined) return -1;
-  if (b !== undefined) return 1;
-  return 0;
 }
 
 function reasonForReviewState(state: ReviewState): string | undefined {

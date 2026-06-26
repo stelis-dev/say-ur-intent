@@ -38,6 +38,7 @@ Tool names use dot prefixes and avoid arbitrary shell, arbitrary Move calls, and
 | `read.scan_sui_function_activity` | Implemented | Runs a bounded GraphQL scan for transactions the account sent that called one full `package::module::function`. |
 | `read.summarize_sui_function_activity_scan` | Implemented | Runs the sent-function activity scan and returns requested-account facts plus deterministic normalized-fact analysis without full details. |
 | `read.summarize_sui_account_activity` | Implemented | Summarizes stored normalized Sui activity facts from local SQLite. |
+| `read.get_account_asset_timeline` | Implemented | Builds stored local account asset net-flow bars from normalized activity facts and optional DeepBook USDC token-denominated candle references. Not held balances or complete wallet history. |
 
 Read-only tools split by address requirement.
 
@@ -324,7 +325,7 @@ Direct pool quote evidence for a selected target is supported only when the same
 
 This tool does not silently choose USDC, USDT, or any settlement token for the user. It uses selected-target evidence only when the response has explicit selection provenance. It does not rank venues, choose routes, evaluate gas reserve, create review sessions, return transaction bytes, produce signing material, estimate fiat USD cash-out, or compute P&L.
 
-Gas reserve remains outside the current evidence boundary. If any older fixture or utility output contains `gas_reserve_not_evaluated`, treat it only as an explicit non-evaluation marker, not as gas readiness or a policy result.
+Gas reserve remains outside the current evidence boundary. `gas_reserve_not_evaluated` is an explicit non-evaluation marker, not gas readiness or a policy result.
 
 Review activity tools read only local Say Ur Intent review evidence.
 
@@ -553,8 +554,32 @@ Tool source comparison:
 - The summary tools also return deterministic `analysis`.
 - `read.inspect_sui_transaction` is the full normalized detail path for a specific digest.
 - `read.summarize_sui_account_activity` reads only stored normalized facts from local SQLite.
+- `read.get_account_asset_timeline` reads only stored normalized facts from local SQLite, then can attach external precomputed DeepBook USDC candle references for supported indexed assets.
 
 If stored or summary details are missing or capped, use the digest metadata with `read.inspect_sui_transaction` instead of inferring missing calls, balances, objects, events, gas, or errors.
+
+### Stored Account Asset Timeline
+
+`read.get_account_asset_timeline` returns a stored local account asset-flow timeline for one account and UTC range.
+
+Inputs:
+
+- `account` is optional. If omitted, the tool uses active account context. Supplying an explicit public account does not create active account context or prove ownership.
+- `start` and `end` are ISO 8601 UTC timestamps. The requested range is half-open: `start` is included and `end` is excluded.
+- `bucketMinutes` must be one of the supported bucket sizes returned by the tool schema.
+
+Output fields:
+
+- `coverage` describes whether stored scan rows prove the requested range is complete, partial, or absent.
+- `status: "account_not_known"` means the explicit account is not a known local wallet in the local activity store. In that status the tool does not return `scanNeeded`.
+- `scanNeeded`, when present, names `read.scan_sui_account_activity` as the bounded scan tool that can gather local evidence for a known account.
+- `netFlowBars` are observed account-scoped raw token balance-change bars from stored normalized activity rows.
+- `balanceStatus` is currently `unavailable_no_balance_anchor`, and `balanceBars` is empty. Do not present net-flow bars as held balances.
+- `sourceTransactions` reports how many stored rows were read, returned, truncated, and detail-covered.
+- `quantitySemantics` marks raw integer net-flow fields and unsupported uses.
+- `usdcReferences` can attach DeepBook USDC token-denominated 10-minute UTC candle references for supported indexed assets. These references are not fiat USD value, not a USDC/USD peg guarantee, not P&L, not cost basis, not route advice, and not signing readiness.
+
+This tool does not run scans, start a background indexer, create a price cache, prove complete wallet history, compute held balances, calculate portfolio value, compute P&L, compute tax, compute cost basis, recommend routes, build transactions, return signing data, or provide signing readiness.
 
 ## Action Tools
 

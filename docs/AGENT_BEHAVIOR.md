@@ -189,8 +189,8 @@ signing readiness, not wallet handoff, not execution readiness, not execution
 receipt evidence, and not proof that a wallet signed or submitted a transaction.
 
 `reviewState.walletReviewAdapterContract` is present only on a
-`ready_for_wallet_review` state (or a stored legacy
-`wallet_handoff_not_implemented` record), after every review evidence stage
+`ready_for_wallet_review` state or on a stored
+`wallet_handoff_not_implemented` record, after every review evidence stage
 completed and contract assembly passed schema validation. Use it only as
 pre-signing review evidence that binds the human-readable review and the
 review-time simulation to one transaction commitment hash. It is not
@@ -350,6 +350,7 @@ Use the summary path first:
 - `read.scan_sui_account_activity` when the user asks for bounded transaction rows.
 - `read.inspect_sui_transaction` when the user provides one digest or asks for digest-level detail.
 - `read.summarize_sui_account_activity` only for stored local activity facts.
+- `read.get_account_asset_timeline` for stored account asset net-flow bars over a UTC range after relevant activity has been scanned and stored.
 
 Important scan boundaries:
 
@@ -414,6 +415,16 @@ Explicit-address wallet asset reads are live read snapshots only. They do not pr
 
 Do not call stored Sui activity complete wallet history, P&L, balance history, complete gas history, portfolio analysis, tax data, or proof of ownership.
 
+For account asset timeline questions:
+
+- Use `read.get_account_asset_timeline` only for stored local account activity evidence.
+- If the response status is `scan_needed`, explain that no stored account activity scan proves the requested range yet, and use `userAnswerUse.followUp.tool` or `scanNeeded.tool` before claiming a timeline.
+- If the response status is `account_not_known`, say the explicit account is not a known local wallet in the activity store. Do not tell the user to run `read.scan_sui_account_activity` from that response unless `scanNeeded` or `userAnswerUse.followUp` is present.
+- Use `netFlowBars` as observed raw integer token inflow/outflow bars only.
+- Do not call `netFlowBars` held balances, current balances, wallet total value, complete wallet history, P&L, tax, or cost basis.
+- `balanceStatus: "unavailable_no_balance_anchor"` means held-balance bars are not available. Say that explicitly if the user asks for balances over time.
+- Use `usdcReferences` only as DeepBook USDC token-denominated candle references for supported indexed assets. State that USDC is not fiat USD and not a USDC/USD peg guarantee. Do not turn those references into portfolio value, P&L, tax, cost basis, route advice, or signing readiness.
+
 If the user wants a time range, explain that the tool requests bounded recent-to-older pages and can continue page by page.
 
 Do not claim a time window is complete unless `windowComplete: true`.
@@ -457,7 +468,7 @@ Do not silently turn vague words into amounts.
 | "Tell me when the price drops." | Say alerts are unsupported. Offer a one-time price or quote check. |
 | "Let's buy Bitcoin too." | Say this toolkit only exposes Sui mainnet surfaces. |
 | "Am I connected? / Am I logged in?" | Say the toolkit has active wallet-account read context for the address, not a login. Use `account.get_active_account` to confirm the address. Do not say the user is connected to DeepBook or signed in. |
-| "Show my balances over time." | Balance history and P&L are not tool surfaces. `read.summarize_wallet_assets` returns a snapshot at `fetchedAt`. Each call is independent. |
+| "Show my balances over time." | Held-balance history and P&L are not tool surfaces. Use `read.get_account_asset_timeline` only for stored raw net-flow bars over a UTC range; if `balanceStatus` is `unavailable_no_balance_anchor`, say held balances are unavailable. `read.summarize_wallet_assets` returns a current snapshot at `fetchedAt`. |
 | "How much profit did I make?" | Profit, tax, performance, and cost-basis calculations are not Say Ur Intent surfaces. Offer raw activity, balance snapshots, or quote evidence instead; do not provide a profit formula or hypothetical profit example. |
 | "Can you calculate my profit if I bought 10 SUI for 10 USDC?" | An assumed acquisition price does not change the boundary. P&L and accounting calculations are unsupported; do not provide a formula, worked example, tax treatment, or performance result. |
 | "Did my swap go through?" | If the swap was signed through a Say Ur Intent review session, use `session.get_review_status` or `session.wait_execution_result`: `success` with `executionResult.chainReceipt` is server-read chain receipt evidence for that review session, and `failure` carries the failure reason. Offer Sui Explorer for the digest. For transactions signed outside a review session, use `read.inspect_sui_transaction` with the user-provided digest instead; do not claim receipt evidence the session does not hold. |

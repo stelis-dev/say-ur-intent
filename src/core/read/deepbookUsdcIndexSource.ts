@@ -113,8 +113,7 @@ export const deepbookUsdcIndexBarSchema = z.object({
   low: decimalStringSchema.nullable(),
   close: decimalStringSchema.nullable(),
   baseVolumeRaw: nonNegativeIntegerStringSchema,
-  quoteVolumeRaw: nonNegativeIntegerStringSchema,
-  raw: z.string().min(1).nullable()
+  quoteVolumeRaw: nonNegativeIntegerStringSchema
 }).strict().superRefine((bar, context) => {
   if (Date.parse(bar.end) <= Date.parse(bar.start)) {
     context.addIssue({
@@ -133,9 +132,6 @@ export const deepbookUsdcIndexBarSchema = z.object({
         context.addIssue({ code: "custom", message: "filled bars must include OHLC values", path: [field] });
       }
     }
-    if (bar.raw === null) {
-      context.addIssue({ code: "custom", message: "filled bars must reference a raw shard", path: ["raw"] });
-    }
     return;
   }
 
@@ -153,10 +149,33 @@ export const deepbookUsdcIndexBarSchema = z.object({
   if (bar.quoteVolumeRaw !== "0") {
     context.addIssue({ code: "custom", message: `${bar.status} bars must have zero quote volume`, path: ["quoteVolumeRaw"] });
   }
-  if (bar.raw !== null) {
-    context.addIssue({ code: "custom", message: `${bar.status} bars must not reference a raw shard`, path: ["raw"] });
-  }
 });
+
+const deepbookUsdcIndexWireBarSchema = z.object({
+  start: isoDateStringSchema,
+  end: isoDateStringSchema,
+  status: z.enum(["filled", "empty", "missing"]),
+  eventCount: z.number().int().min(0),
+  open: decimalStringSchema.nullable(),
+  high: decimalStringSchema.nullable(),
+  low: decimalStringSchema.nullable(),
+  close: decimalStringSchema.nullable(),
+  baseVolumeAtomic: nonNegativeIntegerStringSchema,
+  quoteVolumeAtomic: nonNegativeIntegerStringSchema
+}).strict().transform((bar) =>
+  deepbookUsdcIndexBarSchema.parse({
+    start: bar.start,
+    end: bar.end,
+    status: bar.status,
+    eventCount: bar.eventCount,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    baseVolumeRaw: bar.baseVolumeAtomic,
+    quoteVolumeRaw: bar.quoteVolumeAtomic
+  })
+);
 
 export const deepbookUsdcIndexWeeklyBarsSchema = z.object({
   schemaVersion: z.literal(1),
@@ -165,7 +184,7 @@ export const deepbookUsdcIndexWeeklyBarsSchema = z.object({
   barIntervalMinutes: z.literal(DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES),
   priceConvention: z.literal(DEEPBOOK_USDC_INDEX_PRICE_CONVENTION),
   disclaimer: z.string().min(1),
-  bars: z.array(deepbookUsdcIndexBarSchema)
+  bars: z.array(deepbookUsdcIndexWireBarSchema)
 }).strict().superRefine((payload, context) => {
   for (const [index, bar] of payload.bars.entries()) {
     const start = Date.parse(bar.start);

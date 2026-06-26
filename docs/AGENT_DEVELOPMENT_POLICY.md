@@ -71,6 +71,13 @@ categories under wording such as "not yet possible" or "planned boundary" when
 that wording could make a permanent no-goal sound like a roadmap item, or make a
 planned future capability sound permanently unsupported.
 
+Public and runtime-facing documents must describe current product behavior,
+current tool contracts, and current unsupported boundaries only. Do not include
+implementation history, prior states, migration history, decision history,
+planning rationale, or "why we changed this" notes in README, `docs/`,
+`protocols/`, runtime instructions, MCP resources, tool descriptions, or
+user-facing strings. Keep that history in ignored `.WORK` notes.
+
 If the intended meaning depends on prior chat, hidden context, vague shorthand,
 or local assumptions, rewrite it.
 

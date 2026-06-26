@@ -7,11 +7,11 @@ import {
   type DeepbookUsdcIndexWeeklyBars
 } from "../../src/core/read/deepbookUsdcIndexSource.js";
 
-export const PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF = "5213731e096a9e1c3b337fd4438b0d53242a1f43";
+export const PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF = "e47af4886ee835e0941e6af8d446a5473a6682a8";
 export const PUBLIC_DEEPBOOK_USDC_INDEX_REGISTRY_FIXTURE_SHA256 =
-  "09c1994fce793ba964a9888a6774c9fd99d1824a7772b21a20eac29c0880b9e6";
+  "47e73d0fe36241065439aff36e2b3905df3bc5e63e3233340c26788845c79c91";
 export const PUBLIC_DEEPBOOK_USDC_INDEX_SUI_W26_FIXTURE_SHA256 =
-  "a632fc6a83332650fbc74fd3fa2a8e3c586a20eb5bbbeb037924a31b958aeb9d";
+  "16fcf104bcee6bf203b37af3278888e004026e22f5f920c1953d54fe7a6f8440";
 
 export function publicDeepbookUsdcIndexRegistryJson(): unknown {
   return JSON.parse(publicDeepbookUsdcIndexRegistryText()) as unknown;
@@ -38,11 +38,11 @@ export function publicDeepbookUsdcIndexSuiW26FixtureSha256(): string {
 }
 
 function publicDeepbookUsdcIndexRegistryText(): string {
-  return readFileSync(new URL("./deepbook-usdc-index/5213731/registry/pairs.json", import.meta.url), "utf8");
+  return readFileSync(new URL("./deepbook-usdc-index/e47af4886ee835e0941e6af8d446a5473a6682a8/registry/pairs.json", import.meta.url), "utf8");
 }
 
 function publicDeepbookUsdcIndexSuiW26Text(): string {
-  return readFileSync(new URL("./deepbook-usdc-index/5213731/data/SUI_USDC/bars/2026/W26.json", import.meta.url), "utf8");
+  return readFileSync(new URL("./deepbook-usdc-index/e47af4886ee835e0941e6af8d446a5473a6682a8/data/SUI_USDC/bars/2026/W26.json", import.meta.url), "utf8");
 }
 
 function sha256(text: string): string {

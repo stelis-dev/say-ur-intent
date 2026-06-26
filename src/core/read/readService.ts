@@ -53,6 +53,7 @@ import {
   deepbookDisplayQuantitySemantics,
   deepbookMidPriceSemantics,
   deepbookUsdcPriceHistoryQuantitySemantics,
+  deepbookUsdcPriceHistoryResponseSummary,
   deepbookQuoteQuantitySemantics,
   normalizeManagerAddresses,
   normalizeOptionalManagerAddress,
@@ -188,13 +189,7 @@ type WalletBalanceClassificationScan = {
 const DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS = DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES * 60 * 1000;
 
 const DEEPBOOK_USDC_PRICE_HISTORY_RESPONSE_SUMMARY = {
-  questionKind: "deepbook_usdc_price_history",
-  evidenceKind: "external_precomputed_deepbook_usdc_index_10m_candles",
-  sourceStatement:
-    "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.",
-  usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
-  candleMeaning: "Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket.",
-  excludedFromConclusion: [...DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS]
+  ...deepbookUsdcPriceHistoryResponseSummary()
 } as const satisfies DeepbookUsdcPriceHistoryResponseSummary;
 
 function deepbookUsdcPriceHistorySelector(input: DeepbookUsdcPriceHistoryInput): DeepbookUsdcPriceHistorySelector {

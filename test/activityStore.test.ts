@@ -6,10 +6,12 @@ import { describe, expect, it } from "vitest";
 import { validateSupportedAdapterLifecycle } from "../src/adapters/adapterLifecycleValidators.js";
 import type { ActionPlan, ReviewState } from "../src/core/action/types.js";
 import {
+  type ActivityStore,
   ActivityStoreReadError,
   REVIEW_ACTIVITY_DETAIL_MAX_ITEMS
 } from "../src/core/activity/activityStore.js";
 import { EXTERNAL_ACTIVITY_TRANSACTION_DETAIL_JSON_MAX_BYTES } from "../src/core/activity/transactionActivityDetails.js";
+import type { ExternalActivityTransactionDetail } from "../src/core/activity/transactionActivityDetails.js";
 import {
   ACTIVITY_DATABASE_FILENAME,
   resolveActivityDatabasePath,
@@ -23,6 +25,7 @@ import { DB_USER_VERSION } from "../src/core/activity/schemaVersion.js";
 import { SuiEndpointError } from "../src/core/suiEndpoint.js";
 import { InMemorySessionStore } from "../src/core/session/sessionStore.js";
 import { chainReceiptFixture } from "./fixtures/chainReceipt.js";
+import { InMemoryActivityStore } from "./fixtures/inMemoryActivityStore.js";
 
 const walletAccount = `0x${"a".repeat(64)}`;
 const otherWalletAccount = `0x${"b".repeat(64)}`;
@@ -47,6 +50,33 @@ function iso(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
 }
 
+function externalActivityDetail(
+  amountRaw: string,
+  owner = walletAccount
+): ExternalActivityTransactionDetail {
+  return {
+    transactionKind: "ProgrammableTransaction",
+    moveCalls: [],
+    balanceChanges: [
+      {
+        index: 0,
+        owner,
+        coinType: "0x2::sui::SUI",
+        amountRaw,
+        direction: amountRaw.startsWith("-") ? "decrease" : "increase"
+      }
+    ],
+    objectChanges: [],
+    events: [],
+    truncation: {
+      moveCalls: false,
+      balanceChanges: false,
+      objectChanges: false,
+      events: false
+    }
+  };
+}
+
 function planFor(id: string, requestedIntent?: unknown): ActionPlan {
   return {
     ...plan,
@@ -64,6 +94,13 @@ function withTempDb<T>(fn: (store: SqliteActivityStore, dbPath: string) => Promi
     store.close();
     rmSync(dir, { recursive: true, force: true });
   });
+}
+
+async function withCoverageStores(fn: (store: ActivityStore) => Promise<void>): Promise<void> {
+  await withTempDb(async (store) => {
+    await fn(store);
+  });
+  await fn(new InMemoryActivityStore());
 }
 
 function newTestSqliteActivityStore(databasePath: string): SqliteActivityStore {
@@ -873,6 +910,310 @@ describe("SqliteActivityStore", () => {
           {
             digest: "8".repeat(44),
             checkpoint: "100"
+          }
+        ]
+      });
+    });
+  });
+
+  it("reports no stored external activity coverage for a known account with no scans", async () => {
+    await withCoverageStores(async (store) => {
+      await store.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
+
+      await expect(
+        store.getExternalActivityCoverage({
+          account: walletAccount,
+          from: "2026-05-11T00:00:00.000Z",
+          to: "2026-05-11T01:00:00.000Z"
+        })
+      ).resolves.toMatchObject({
+        accountKnown: true,
+        coverageStatus: "no_stored_scans",
+        scanCount: 0,
+        storedTransactionCount: 0,
+        limitations: ["no_complete_affected_account_scan", "no_stored_activity_scans"],
+        scans: []
+      });
+    });
+  });
+
+  it("treats an enclosing complete affected-account scan as complete coverage even when it found no transactions", async () => {
+    await withCoverageStores(async (store) => {
+      await store.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
+      await store.recordExternalActivityScan({
+        scanId: "scan_empty_complete",
+        kind: "account_scan",
+        account: walletAccount,
+        relationship: "affected",
+        fromTimestamp: "2026-05-11T00:00:00.000Z",
+        toTimestamp: "2026-05-11T02:00:00.000Z",
+        limit: 100,
+        endpointHost: "graphql.mainnet.sui.io",
+        chainIdentifier: "mainnet-chain",
+        fetchedAt: "2026-05-11T02:00:01.000Z",
+        hasMore: false,
+        windowComplete: true,
+        transactions: []
+      });
+
+      await expect(
+        store.getExternalActivityCoverage({
+          account: walletAccount,
+          from: "2026-05-11T00:30:00.000Z",
+          to: "2026-05-11T01:30:00.000Z"
+        })
+      ).resolves.toMatchObject({
+        coverageStatus: "complete",
+        scanCount: 1,
+        storedTransactionCount: 0,
+        coverageEvidence: {
+          completeAffectedAccountScanIds: ["scan_empty_complete"],
+          incompleteScanIds: [],
+          sentOnlyScanIds: []
+        },
+        limitations: []
+      });
+    });
+  });
+
+  it("keeps sent-only and incomplete scans as partial coverage while still reporting stored transactions", async () => {
+    await withCoverageStores(async (store) => {
+      const active = await store.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
+      await store.recordExternalActivityScan({
+        scanId: "scan_sent_only",
+        kind: "account_scan",
+        account: walletAccount,
+        relationship: "sent",
+        fromTimestamp: "2026-05-11T00:00:00.000Z",
+        toTimestamp: "2026-05-11T02:00:00.000Z",
+        limit: 100,
+        endpointHost: "graphql.mainnet.sui.io",
+        chainIdentifier: "mainnet-chain",
+        fetchedAt: "2026-05-11T02:00:01.000Z",
+        hasMore: false,
+        windowComplete: true,
+        transactions: [
+          {
+            digest: "a".repeat(44),
+            relationship: "sent",
+            checkpoint: "100",
+            timestamp: "2026-05-11T00:40:00.000Z",
+            status: "success",
+            knownSenderAccountId: active.accountId
+          }
+        ]
+      });
+      await store.recordExternalActivityScan({
+        scanId: "scan_affected_incomplete",
+        kind: "account_scan",
+        account: walletAccount,
+        relationship: "affected",
+        fromTimestamp: "2026-05-11T00:00:00.000Z",
+        toTimestamp: "2026-05-11T02:00:00.000Z",
+        limit: 100,
+        endpointHost: "graphql.mainnet.sui.io",
+        chainIdentifier: "mainnet-chain",
+        fetchedAt: "2026-05-11T02:00:02.000Z",
+        hasMore: true,
+        windowComplete: false,
+        incompleteReason: "limit_reached",
+        transactions: []
+      });
+
+      await expect(
+        store.getExternalActivityCoverage({
+          account: walletAccount,
+          from: "2026-05-11T00:30:00.000Z",
+          to: "2026-05-11T01:30:00.000Z"
+        })
+      ).resolves.toMatchObject({
+        coverageStatus: "partial",
+        scanCount: 2,
+        storedTransactionCount: 1,
+        storedTransactionRange: {
+          earliestTimestamp: "2026-05-11T00:40:00.000Z",
+          latestTimestamp: "2026-05-11T00:40:00.000Z",
+          earliestCheckpoint: "100",
+          latestCheckpoint: "100"
+        },
+        coverageEvidence: {
+          completeAffectedAccountScanIds: [],
+          incompleteScanIds: ["scan_affected_incomplete"],
+          sentOnlyScanIds: ["scan_sent_only"]
+        },
+        limitations: [
+          "no_complete_affected_account_scan",
+          "scan_window_incomplete",
+          "sent_only_scan_not_full_account_coverage"
+        ]
+      });
+    });
+  });
+
+  it("does not double-count a repeated stored digest when reporting coverage transaction count", async () => {
+    await withCoverageStores(async (store) => {
+      const active = await store.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
+      const repeatedDigest = "b".repeat(44);
+      const scanBase = {
+        kind: "account_scan" as const,
+        account: walletAccount,
+        relationship: "affected" as const,
+        fromTimestamp: "2026-05-11T00:00:00.000Z",
+        toTimestamp: "2026-05-11T02:00:00.000Z",
+        limit: 100,
+        endpointHost: "graphql.mainnet.sui.io",
+        chainIdentifier: "mainnet-chain",
+        hasMore: false,
+        windowComplete: true
+      };
+      await store.recordExternalActivityScan({
+        ...scanBase,
+        scanId: "scan_repeat_1",
+        fetchedAt: "2026-05-11T02:00:01.000Z",
+        transactions: [
+          {
+            digest: repeatedDigest,
+            relationship: "affected",
+            checkpoint: "100",
+            timestamp: "2026-05-11T00:40:00.000Z",
+            status: "success",
+            knownSenderAccountId: active.accountId
+          }
+        ]
+      });
+      await store.recordExternalActivityScan({
+        ...scanBase,
+        scanId: "scan_repeat_2",
+        fetchedAt: "2026-05-11T02:00:02.000Z",
+        transactions: [
+          {
+            digest: repeatedDigest,
+            relationship: "affected",
+            checkpoint: "101",
+            timestamp: "2026-05-11T00:41:00.000Z",
+            status: "failure",
+            knownSenderAccountId: active.accountId
+          }
+        ]
+      });
+
+      await expect(
+        store.getExternalActivityCoverage({
+          account: walletAccount,
+          from: "2026-05-11T00:30:00.000Z",
+          to: "2026-05-11T01:30:00.000Z"
+        })
+      ).resolves.toMatchObject({
+        coverageStatus: "complete",
+        scanCount: 2,
+        storedTransactionCount: 1,
+        storedTransactionRange: {
+          earliestTimestamp: "2026-05-11T00:41:00.000Z",
+          latestTimestamp: "2026-05-11T00:41:00.000Z",
+          earliestCheckpoint: "101",
+          latestCheckpoint: "101"
+        },
+        coverageEvidence: {
+          completeAffectedAccountScanIds: ["scan_repeat_2", "scan_repeat_1"]
+        }
+      });
+    });
+  });
+
+  it("returns canonical half-open effect transactions for account timelines", async () => {
+    await withCoverageStores(async (store) => {
+      const active = await store.setActiveAccount(walletAccount, "wallet_identity", new Date("2026-05-11T00:00:00.000Z"));
+      const sharedDigest = "c".repeat(44);
+      const endBoundaryDigest = "d".repeat(44);
+      const scanBase = {
+        kind: "account_scan" as const,
+        account: walletAccount,
+        fromTimestamp: "2026-05-11T00:00:00.000Z",
+        toTimestamp: "2026-05-11T01:00:00.000Z",
+        limit: 100,
+        endpointHost: "graphql.mainnet.sui.io",
+        chainIdentifier: "mainnet-chain",
+        hasMore: false,
+        windowComplete: true
+      };
+
+      await store.recordExternalActivityScan({
+        ...scanBase,
+        scanId: "scan_timeline_sent",
+        relationship: "sent",
+        fetchedAt: "2026-05-11T01:00:01.000Z",
+        transactions: [
+          {
+            digest: sharedDigest,
+            relationship: "sent",
+            checkpoint: "100",
+            timestamp: "2026-05-11T00:10:00.000Z",
+            status: "success",
+            knownSenderAccountId: active.accountId,
+            details: externalActivityDetail("-999")
+          },
+          {
+            digest: endBoundaryDigest,
+            relationship: "sent",
+            checkpoint: "101",
+            timestamp: "2026-05-11T00:20:00.000Z",
+            status: "success",
+            knownSenderAccountId: active.accountId,
+            details: externalActivityDetail("50")
+          }
+        ]
+      });
+      await store.recordExternalActivityScan({
+        ...scanBase,
+        scanId: "scan_timeline_affected",
+        relationship: "affected",
+        fetchedAt: "2026-05-11T01:00:02.000Z",
+        transactions: [
+          {
+            digest: sharedDigest,
+            relationship: "affected",
+            checkpoint: "100",
+            timestamp: "2026-05-11T00:10:00.000Z",
+            status: "success",
+            knownSenderAccountId: active.accountId,
+            details: externalActivityDetail("100")
+          }
+        ]
+      });
+
+      await expect(
+        store.getExternalActivityCoverage({
+          account: walletAccount,
+          from: "2026-05-11T00:00:00.000Z",
+          to: "2026-05-11T00:20:00.000Z"
+        })
+      ).resolves.toMatchObject({
+        storedTransactionCount: 1,
+        storedTransactionRange: {
+          earliestTimestamp: "2026-05-11T00:10:00.000Z",
+          latestTimestamp: "2026-05-11T00:10:00.000Z",
+          earliestCheckpoint: "100",
+          latestCheckpoint: "100"
+        }
+      });
+
+      await expect(
+        store.listExternalActivityEffectTransactions({
+          account: walletAccount,
+          from: "2026-05-11T00:00:00.000Z",
+          to: "2026-05-11T00:20:00.000Z"
+        })
+      ).resolves.toMatchObject({
+        accountKnown: true,
+        transactionCount: 1,
+        truncated: false,
+        transactions: [
+          {
+            digest: sharedDigest,
+            relationship: "affected",
+            details: {
+              balanceChanges: [{ amountRaw: "100" }]
+            }
           }
         ]
       });

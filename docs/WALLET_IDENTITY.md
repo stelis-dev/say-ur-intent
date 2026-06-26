@@ -75,7 +75,7 @@ The pinned `@mysten/dapp-kit-core` frontend connection store has `disconnected`,
 
 Those raw statuses are frontend internals and must be mapped into the product status model.
 
-`reconnecting` occurs when dapp-kit autoconnect restores a previously selected wallet on the same fixed-port origin; the frontend maps it to the `connecting` product status while the signer settles. dapp-kit storage holds the wallet autoconnect preference only, never keys.
+`reconnecting` occurs when dapp-kit autoconnect restores the selected wallet on the same fixed-port origin; the frontend maps it to the `connecting` product status while the signer settles. dapp-kit storage holds the wallet autoconnect preference only, never keys.
 
 ## Failure Reasons
 

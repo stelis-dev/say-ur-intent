@@ -82,7 +82,7 @@ Stored transaction rows include:
 
 It is not a stored function-history query, a function index, or authority to filter stored summaries by function.
 
-Legacy rows stored before this provenance existed can remain `account_scan`. Say Ur Intent does not backfill them because the stored scan row does not contain the function target needed to identify them safely.
+Rows without `function_scan` provenance remain `account_scan`. Stored summaries do not infer function targets from `account_scan` rows.
 
 Live scan and live-summary rows expose these fields for requested-account raw balance-change facts:
 
@@ -167,7 +167,15 @@ They do not create a function-specific stored history, global function index, af
 
 `read.summarize_sui_account_activity` summarizes account-level stored normalized facts only.
 
-It can include rows originally observed by account scans, digest lookups, or sent-function scans, and the scan kind remains provenance rather than a user query filter.
+It can include rows from account scans, digest lookups, or sent-function scans, and the scan kind remains provenance rather than a user query filter.
+
+`read.get_account_asset_timeline` builds stored account asset net-flow bars from the same local normalized facts. Its requested UTC range is half-open: the start timestamp is included and the end timestamp is excluded.
+
+It first checks stored scan coverage for the requested account and UTC range. If no stored scan can support the requested range for a known account, it returns `scan_needed` and points to `read.scan_sui_account_activity`; it does not start a scan by itself. If an explicit account is not a known local wallet in the activity store, it returns `account_not_known` and does not return `scanNeeded`.
+
+Timeline output uses account-scoped raw balance-change facts only. `netFlowBars` are observed inflow/outflow bars, not held balances. The storage model does not store balance snapshots or balance anchors. The timeline response returns `balanceStatus: "unavailable_no_balance_anchor"` and empty `balanceBars`.
+
+Optional `usdcReferences` read external precomputed DeepBook USDC candle evidence for supported indexed assets. Those references are token-denominated USDC evidence only. They are not fiat USD value, a USDC/USD peg guarantee, P&L, tax, cost basis, route advice, transaction-building input, signing data, or signing readiness.
 
 Provider retention and rate-limit behavior are endpoint/operator properties, not guarantees made by Say Ur Intent.
 
