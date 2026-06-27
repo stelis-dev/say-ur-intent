@@ -1,5 +1,6 @@
 import {
   DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL,
+  DEEPBOOK_OFFICIAL_INDEXER_INTERVALS,
   DeepbookOfficialIndexerSource,
   DeepbookOfficialIndexerSourceError,
   parseDeepbookOfficialIndexerInterval,
@@ -58,6 +59,8 @@ export type DeepbookUsdcChartPoolsResponse =
       status: "ok";
       poolCount: number;
       pools: DeepbookUsdcPriceHistoryPair[];
+      intervals: typeof DEEPBOOK_OFFICIAL_INDEXER_INTERVALS;
+      defaultInterval: typeof DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
       source: DeepbookOfficialIndexerFetchSource;
     } & DeepbookUsdcChartCommonFields)
   | ({
@@ -171,6 +174,8 @@ export function createDeepbookUsdcChartApi(options: DeepbookUsdcChartApiOptions 
       status: "ok",
       poolCount: pools.length,
       pools,
+      intervals: DEEPBOOK_OFFICIAL_INDEXER_INTERVALS,
+      defaultInterval: DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL,
       source: poolResult.source,
       ...chartCommonFields()
     });

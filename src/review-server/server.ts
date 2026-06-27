@@ -37,7 +37,7 @@ import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
 import { createDeepbookUsdcChartApi } from "./deepbookUsdcChartApi.js";
-import { analysisHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
+import { analysisHtml, deepbookUsdcChartHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
 import { routeSettingsApi } from "./settingsApi.js";
@@ -203,6 +203,7 @@ async function routeRequest(
   const apiSettingsLocalDataPreviewMatch = /^\/api\/settings\/([^/]+)\/local-data\/import\/preview$/.exec(url.pathname);
   const apiSettingsLocalDataImportMatch = /^\/api\/settings\/([^/]+)\/local-data\/import$/.exec(url.pathname);
   const apiSettingsLocalDataResetMatch = /^\/api\/settings\/([^/]+)\/local-data\/reset$/.exec(url.pathname);
+  const deepbookUsdcChartMatch = /^\/charts\/deepbook-usdc$/.exec(url.pathname);
   const apiDeepbookUsdcChartPoolsMatch = /^\/api\/charts\/deepbook-usdc\/pools$/.exec(url.pathname);
   const apiDeepbookUsdcChartCandlesMatch = /^\/api\/charts\/deepbook-usdc\/candles$/.exec(url.pathname);
   const reviewAssetMatch = /^\/review-assets\/(.+)$/.exec(url.pathname);
@@ -362,6 +363,25 @@ async function routeRequest(
         "script-src 'self'",
         // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
         "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "form-action 'none'"
+      ].join("; ")
+    });
+    return;
+  }
+
+  if (request.method === "GET" && deepbookUsdcChartMatch) {
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
+      return;
+    }
+    sendHtml(response, deepbookUsdcChartHtml(), {
+      "content-security-policy": [
+        "default-src 'none'",
+        "base-uri 'none'",
+        "connect-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
         "img-src 'self' data:",
         "form-action 'none'"
       ].join("; ")

@@ -74,6 +74,25 @@ export function settingsHtml(sessionId: string): string {
 </html>`;
 }
 
+export function deepbookUsdcChartHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeepBook USDC Candles</title>
+    <link rel="stylesheet" href="/review-assets/deepbookUsdcChart.css">
+  </head>
+  <body>
+    <main id="deepbook-usdc-chart-app">
+      <h1>DeepBook USDC candles</h1>
+      <p>Loading local chart page...</p>
+    </main>
+    <script type="module" src="/review-assets/deepbookUsdcChart.js"></script>
+  </body>
+</html>`;
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => {
     const replacements: Record<string, string> = {

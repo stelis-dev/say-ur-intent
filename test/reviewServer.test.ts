@@ -1015,6 +1015,44 @@ describe("review HTTP server", () => {
     }
   });
 
+  it("serves the token-free DeepBook USDC chart shell with same-origin CSP", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      deepbookOfficialIndexerSource: createChartRouteSource()
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const queryToken = await fetch(`${base}/charts/deepbook-usdc?token=secret`);
+      expect(queryToken.status).toBe(400);
+      expect(await queryToken.json()).toMatchObject({ error: "token_query_not_supported" });
+
+      const shell = await fetch(`${base}/charts/deepbook-usdc`, {
+        headers: { origin: base }
+      });
+      expect(shell.status).toBe(200);
+      const csp = shell.headers.get("content-security-policy") ?? "";
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("connect-src 'self'");
+      expect(csp).toContain("script-src 'self'");
+      expect(csp).toContain("style-src 'self'");
+      expect(csp).not.toContain("unsafe-inline");
+      expect(csp).not.toContain("deepbook-indexer.mainnet.mystenlabs.com");
+      const html = await shell.text();
+      expect(html).toContain("id=\"deepbook-usdc-chart-app\"");
+      expect(html).toContain("/review-assets/deepbookUsdcChart.js");
+      expect(html).toContain("/review-assets/deepbookUsdcChart.css");
+      expect(html).not.toContain("data-review-session-id");
+      expect(html).not.toContain("data-wallet-session-id");
+      expect(html).not.toContain("token");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves local settings status and creates wallet identity sessions through settings APIs", async () => {
     const { server, created } = await createSettingsServer();
     try {
@@ -1321,6 +1359,8 @@ describe("review HTTP server", () => {
     writeFileSync(join(assetsDir, "analysis.css"), ".wallet-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "settings.js"), "export const settings = true;\n", "utf8");
     writeFileSync(join(assetsDir, "settings.css"), ".settings-shell { color: #15201b; }\n", "utf8");
+    writeFileSync(join(assetsDir, "deepbookUsdcChart.js"), "export const deepbookUsdcChart = true;\n", "utf8");
+    writeFileSync(join(assetsDir, "deepbookUsdcChart.css"), ".chart-shell { color: #17211d; }\n", "utf8");
     const store = createSessionStore();
     const server = await createReviewHttpServer({
       host: "127.0.0.1",
@@ -1365,6 +1405,16 @@ describe("review HTTP server", () => {
       expect(settingsAsset.status).toBe(200);
       expect(settingsAsset.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
       expect(await settingsAsset.text()).toContain("settings = true");
+
+      const chartAsset = await fetch(`${base}/review-assets/deepbookUsdcChart.js`);
+      expect(chartAsset.status).toBe(200);
+      expect(chartAsset.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+      expect(await chartAsset.text()).toContain("deepbookUsdcChart = true");
+
+      const chartCss = await fetch(`${base}/review-assets/deepbookUsdcChart.css`);
+      expect(chartCss.status).toBe(200);
+      expect(chartCss.headers.get("content-type")).toBe("text/css; charset=utf-8");
+      expect(await chartCss.text()).toContain(".chart-shell");
 
       const missing = await fetch(`${base}/review-assets/missing.js`);
       expect(missing.status).toBe(404);

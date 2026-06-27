@@ -15,7 +15,8 @@ export default defineConfig({
         review: resolve("review-app/src/review.ts"),
         reviewExecutionAnalysis: resolve("review-app/src/reviewExecutionAnalysis.ts"),
         analysis: resolve("review-app/src/analysis.ts"),
-        settings: resolve("review-app/src/settings.ts")
+        settings: resolve("review-app/src/settings.ts"),
+        deepbookUsdcChart: resolve("review-app/src/deepbookUsdcChart.ts")
       },
       output: {
         entryFileNames: "[name].js",
@@ -24,7 +25,8 @@ export default defineConfig({
           assetInfo.name === "review.css" ||
           assetInfo.name === "reviewExecutionAnalysis.css" ||
           assetInfo.name === "analysis.css" ||
-          assetInfo.name === "settings.css"
+          assetInfo.name === "settings.css" ||
+          assetInfo.name === "deepbookUsdcChart.css"
             ? "[name][extname]"
             : "[name]-[hash][extname]"
       }
