@@ -7,7 +7,8 @@ import {
   DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
   DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE,
   DEEPBOOK_READ_RESPONSE_UNSUPPORTED,
-  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
+  DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING
 } from "../src/core/read/deepbookSourceOwners.js";
 
 const sourceFiles = [
@@ -74,6 +75,10 @@ function sourceFilePathsUnder(relativeDirectory: string): string[] {
     }
     return relativePath.endsWith(".ts") ? [relativePath] : [];
   });
+}
+
+function runtimeWordingReference(key: keyof typeof DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING): string {
+  return `DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.${key}`;
 }
 
 function constructorBlocksFor(source: string, marker: string, label: string): string[] {
@@ -734,7 +739,7 @@ describe("source policy", () => {
       `source.chainRecomputedBySayUrIntent: ${String(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent)}`
     );
     expect(docs).toMatch(/does not independently recompute/i);
-    expect(docs).toMatch(/USDC[\s\S]{0,120}not fiat USD[\s\S]{0,120}not a USDC\/USD peg guarantee/i);
+    expect(docs).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg);
     expect(docs).toMatch(/not[\s\S]{0,160}(live quote|historical mid price|global market price)/i);
     expect(docs).toMatch(/not[\s\S]{0,160}(P&L|cost basis|signing readiness)/i);
     expect(docs).toMatch(/not[\s\S]{0,160}(user-account transaction history|user-account balance history)/i);
@@ -778,16 +783,13 @@ describe("source policy", () => {
     const guidanceByFile = Object.fromEntries(
       publicAndRuntimeGuidanceFiles.map((file) => [file, readFileSync(join(process.cwd(), file), "utf8")])
     ) as Record<(typeof publicAndRuntimeGuidanceFiles)[number], string>;
-    const usdcNotFiatOrPeg = new RegExp(
-      `${DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.quoteAsset}[\\s\\S]{0,160}not fiat USD[\\s\\S]{0,160}not a USDC/USD peg guarantee`,
-      "i"
-    );
+    const usdcNotFiatAndNotPeg = DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg;
 
     expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind);
     expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse);
     expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
     expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention);
-    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(usdcNotFiatOrPeg);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(usdcNotFiatAndNotPeg);
     expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(/official Indexer[\s\S]{0,80}candle evidence/i);
     expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(
       /orderbook[\s\S]{0,160}pinned DeepBook SDK|pinned SDK[\s\S]{0,160}orderbook/i
@@ -797,16 +799,24 @@ describe("source policy", () => {
     );
 
     expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(/official Indexer candle evidence/i);
-    expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(usdcNotFiatOrPeg);
+    expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toContain(usdcNotFiatAndNotPeg);
     expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(/matchedCandle\.close/);
     expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(/not[\s\S]{0,160}(route choice|P&L|tax|signing readiness)/i);
 
     expect(guidanceByFile["docs/SDK_API.md"]).toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
     expect(guidanceByFile["protocols/deepbook-v3.md"]).toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
 
-    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain("DeepBookV3 official Indexer candle data");
-    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain("pinned-SDK snapshots");
-    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toMatch(/not fiat USD(?: values)?[\s\S]{0,80}USDC\/USD peg guarantee/i);
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain(
+      runtimeWordingReference("officialIndexerCandleData")
+    );
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain(
+      runtimeWordingReference("officialIndexerCandleReferences")
+    );
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain(
+      runtimeWordingReference("officialIndexerUsdcDenominatedCandles")
+    );
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain(runtimeWordingReference("pinnedSdkSnapshots"));
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain(runtimeWordingReference("usdcNotFiatUsdAndNotPeg"));
 
     for (const file of [
       "src/mcp/resources.ts",
@@ -891,6 +901,7 @@ describe("source policy", () => {
     expect(docs).toMatch(/not[\s\S]{0,160}(wallet|session token|review session|signing)/i);
     expect(docs).toMatch(/not[\s\S]{0,160}(route recommendation|best-price|trading interface)/i);
     expect(docs).toMatch(/not[\s\S]{0,160}(fiat USD|USD value|P&L|tax|cost basis|USDC\/USD peg guarantee)/i);
+    expect(docs).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg);
     expect(docs).not.toMatch(
       /\/charts\/deepbook-usdc[\s\S]{0,240}(is|as|provides?|supports?|enables?)\s+(a\s+)?(live price|live feed|auto-refresh|trading interface|order entry|P&L page|portfolio value)/i
     );
@@ -939,7 +950,7 @@ describe("source policy", () => {
     expect(docs).toMatch(/scan_needed[\s\S]{0,220}read\.scan_sui_account_activity/i);
     expect(docs).toMatch(/balanceStatus:\s*"unavailable_no_balance_anchor"|unavailable_no_balance_anchor/i);
     expect(docs).toMatch(/netFlowBars[\s\S]{0,220}(observed|raw)[\s\S]{0,220}(not held balances|held balances are unavailable)/i);
-    expect(docs).toMatch(/USDC[\s\S]{0,160}not fiat USD[\s\S]{0,160}not a USDC\/USD peg guarantee/i);
+    expect(docs).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg);
     expect(docs).toMatch(/not[\s\S]{0,220}(complete wallet history|P&L|cost basis|signing readiness)/i);
     expect(source).toMatch(/read\.get_account_asset_timeline/);
     expect(source).toMatch(/ACCOUNT_ASSET_TIMELINE_QUANTITY_SEMANTICS/);

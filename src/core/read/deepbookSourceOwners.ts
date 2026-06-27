@@ -76,9 +76,17 @@ export const DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE = {
   chainRecomputedBySayUrIntent: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent
 } as const;
 
+export const DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING = {
+  officialIndexerCandleData: "DeepBookV3 official Indexer candle data",
+  officialIndexerCandleReferences: "DeepBookV3 official Indexer candle references",
+  officialIndexerUsdcDenominatedCandles: "DeepBookV3 official Indexer USDC-denominated candles",
+  pinnedSdkSnapshots: "pinned-SDK snapshots",
+  usdcNotFiatUsdAndNotPeg: "not fiat USD and not a USDC/USD peg guarantee"
+} as const;
+
 export const DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT = {
   sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT,
-  usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+  usdcDisclaimer: `USDC is a token-denominated reference asset here, ${DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg}.`
 } as const;
 
 export const DEEPBOOK_READ_RESPONSE_UNSUPPORTED = {

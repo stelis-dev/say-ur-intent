@@ -22,7 +22,8 @@ import {
   DEEPBOOK_ANSWER_USE,
   DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
   DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
-  DEEPBOOK_PINNED_SDK_METADATA_SOURCE
+  DEEPBOOK_PINNED_SDK_METADATA_SOURCE,
+  DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING
 } from "../src/core/read/deepbookSourceOwners.js";
 import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../src/core/read/coinMetadata.js";
 import { TransactionActivityService, type SuiTransactionActivitySource } from "../src/core/activity/transactionActivityService.js";
@@ -631,9 +632,11 @@ describe("MCP discoverability", () => {
       };
       expect(payload.data.packageName).toBe(PACKAGE_NAME);
       const limitations = (payload.data.limitations as string[] | undefined)?.join("\n") ?? "";
-      expect(limitations).toContain("DeepBookV3 official Indexer candle data");
-      expect(limitations).toContain("pinned-SDK snapshots");
-      expect(limitations).toMatch(/not fiat USD(?: values)?[\s\S]{0,80}USDC\/USD peg guarantee/i);
+      expect(limitations).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.officialIndexerCandleData);
+      expect(limitations).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.officialIndexerCandleReferences);
+      expect(limitations).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.officialIndexerUsdcDenominatedCandles);
+      expect(limitations).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.pinnedSdkSnapshots);
+      expect(limitations).toContain(DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg);
       expect(limitations).not.toMatch(
         /official Indexer[\s\S]{0,120}(owns|provides|supports|returns|is used for)\s+(orderbook|mid-price|quote|account inventory)/i
       );

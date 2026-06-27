@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 import {
   DEEPBOOK_ANSWER_USE,
   DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
   DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
   DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
   DEEPBOOK_PINNED_SDK_METADATA_SOURCE,
   DEEPBOOK_READ_RESPONSE_UNSUPPORTED,
   DEEPBOOK_SOURCE_FIELD_VALUES,
-  DEEPBOOK_SOURCE_OWNER_GROUPS
+  DEEPBOOK_SOURCE_OWNER_GROUPS,
+  DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING
 } from "../src/core/read/deepbookSourceOwners.js";
 import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../src/core/read/coinMetadata.js";
 import {
@@ -63,6 +65,9 @@ describe("DeepBook source owner contract", () => {
       simulation: "client.core.simulateTransaction"
     });
     expect(DEEPBOOK_PINNED_SDK_METADATA_SOURCE.unitSource).toBe(DEEPBOOK_SCALAR_UNIT_SOURCE);
+    expect(DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer).toContain(
+      DEEPBOOK_SOURCE_OWNER_RUNTIME_WORDING.usdcNotFiatUsdAndNotPeg
+    );
     const source = readFileSync(join(process.cwd(), "src/core/read/deepbookSourceOwners.ts"), "utf8");
     expect(source).toContain("deepbook_v3_official_indexer");
     expect(source).toContain("deepbook_v3_sdk_mainnet_package_id");
