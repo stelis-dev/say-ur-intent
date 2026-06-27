@@ -22,6 +22,7 @@ import {
   DeepbookOfficialIndexerSourceError,
   deepbookOfficialIndexerIntervalDurationMs,
   isDeepbookOfficialIndexerCanonicalUsdcPool,
+  parseDeepbookOfficialIndexerInterval,
   type DeepbookOfficialIndexerCandle,
   type DeepbookOfficialIndexerFetchSource,
   type DeepbookOfficialIndexerInterval,
@@ -234,6 +235,31 @@ function normalizedHistoryCoinType(value: string): string {
   }
 }
 
+function parseDeepbookUsdcPriceHistoryInterval(
+  value: DeepbookOfficialIndexerInterval | undefined
+): DeepbookOfficialIndexerInterval {
+  if (value === undefined) {
+    return DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
+  }
+  if (typeof value !== "string") {
+    throw new ReadServiceInputError("input_invalid", "interval must be a supported DeepBook official Indexer interval", {
+      field: "interval",
+      value
+    });
+  }
+  try {
+    return parseDeepbookOfficialIndexerInterval(value);
+  } catch (error) {
+    if (error instanceof DeepbookOfficialIndexerSourceError && error.reason === "invalid_payload") {
+      throw new ReadServiceInputError("input_invalid", "interval must be a supported DeepBook official Indexer interval", {
+        field: "interval",
+        value
+      });
+    }
+    throw error;
+  }
+}
+
 function deepbookUsdcPriceHistoryRange(
   start: string,
   end: string,
@@ -248,7 +274,7 @@ function deepbookUsdcPriceHistoryRange(
       end
     });
   }
-  const selectedInterval = interval ?? DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
+  const selectedInterval = parseDeepbookUsdcPriceHistoryInterval(interval);
   const intervalDurationMs = deepbookOfficialIndexerIntervalDurationMs(selectedInterval);
   return {
     start: startDate.toISOString(),
@@ -270,7 +296,7 @@ function deepbookUsdcPriceAtTimeTarget(input: DeepbookUsdcPriceAtTimeInput): Dee
       value: input.maxDistanceMinutes
     });
   }
-  const interval = input.interval ?? DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
+  const interval = parseDeepbookUsdcPriceHistoryInterval(input.interval);
   const intervalDurationMs = deepbookOfficialIndexerIntervalDurationMs(interval);
   const intervalMinutes = intervalDurationMs / 60_000;
   const maxSearchMinutes = Math.floor(
@@ -407,21 +433,32 @@ function deepbookUsdcPriceAtTimeMatch(input: {
   }
 
   const candidates = input.bars
-    .map((candle) => {
+    .flatMap((candle): Array<{
+      candle: DeepbookOfficialIndexerCandle;
+      kind: "nearest_before" | "nearest_after";
+      distanceMinutes: number;
+    }> => {
       const startMs = Date.parse(candle.start);
       const endMs = Date.parse(candle.end);
-      const before = endMs <= targetMs;
-      const after = startMs > targetMs;
-      const distanceMinutes = before
-        ? (targetMs - endMs) / 60_000
-        : after
-          ? (startMs - targetMs) / 60_000
-          : 0;
-      return {
-        candle,
-        kind: before ? ("nearest_before" as const) : ("nearest_after" as const),
-        distanceMinutes
-      };
+      if (endMs <= targetMs) {
+        return [
+          {
+            candle,
+            kind: "nearest_before",
+            distanceMinutes: (targetMs - endMs) / 60_000
+          }
+        ];
+      }
+      if (startMs > targetMs) {
+        return [
+          {
+            candle,
+            kind: "nearest_after",
+            distanceMinutes: (startMs - targetMs) / 60_000
+          }
+        ];
+      }
+      return [];
     })
     .filter((candidate) => candidate.distanceMinutes <= input.target.searchWindow.maxDistanceMinutes)
     .sort((left, right) => {

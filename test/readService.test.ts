@@ -2307,6 +2307,76 @@ describe("SuiReadService", () => {
     });
   });
 
+  it("uses the nearest-after official candle when the target time is before the first candle", async () => {
+    const result = await createService({
+      deepbookOfficialIndexerSource: createDeepbookOfficialIndexerSourceFixture().source
+    }).getDeepbookUsdcPriceAtTime({
+      poolName: "SUI_USDC",
+      targetTime: "2026-06-26T16:45:00.000Z"
+    });
+
+    expect(result).toMatchObject({
+      status: "ok",
+      match: {
+        kind: "nearest_after",
+        distanceMinutes: 5,
+        representativePrice: { field: "matchedCandle.close", value: "0.69316" }
+      },
+      matchedCandle: {
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:05:00.000Z"
+      }
+    });
+  });
+
+  it("uses half-open official candle boundaries for target-time matching", async () => {
+    const service = createService({
+      deepbookOfficialIndexerSource: createDeepbookOfficialIndexerSourceFixture().source
+    });
+
+    await expect(
+      service.getDeepbookUsdcPriceAtTime({
+        poolName: "SUI_USDC",
+        targetTime: "2026-06-26T16:50:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "ok",
+      match: { kind: "exact_bucket", distanceMinutes: 0 },
+      matchedCandle: {
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:05:00.000Z"
+      }
+    });
+
+    await expect(
+      service.getDeepbookUsdcPriceAtTime({
+        poolName: "SUI_USDC",
+        targetTime: "2026-06-26T17:05:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "ok",
+      match: { kind: "nearest_before", distanceMinutes: 0 },
+      matchedCandle: {
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:05:00.000Z"
+      }
+    });
+
+    await expect(
+      service.getDeepbookUsdcPriceAtTime({
+        poolName: "SUI_USDC",
+        targetTime: "2026-06-26T17:20:00.000Z"
+      })
+    ).resolves.toMatchObject({
+      status: "ok",
+      match: { kind: "exact_bucket", distanceMinutes: 0 },
+      matchedCandle: {
+        start: "2026-06-26T17:20:00.000Z",
+        end: "2026-06-26T17:35:00.000Z"
+      }
+    });
+  });
+
   it("does not invent a price when no official candle is inside the search window", async () => {
     const result = await createService({
       deepbookOfficialIndexerSource: createDeepbookOfficialIndexerSourceFixture().source
@@ -2328,6 +2398,22 @@ describe("SuiReadService", () => {
         answerFields: expect.not.arrayContaining(["matchedCandle.close"])
       }
     });
+  });
+
+  it("rejects unsupported official candle intervals before reading the official source", async () => {
+    const { source, calls } = createDeepbookOfficialIndexerSourceFixture();
+    await expect(
+      createService({ deepbookOfficialIndexerSource: source }).getDeepbookUsdcPriceAtTime({
+        poolName: "SUI_USDC",
+        interval: "10m" as never,
+        targetTime: "2026-06-26T16:55:00.000Z"
+      })
+    ).rejects.toMatchObject({
+      kind: "input_invalid",
+      details: { field: "interval", value: "10m" }
+    });
+    expect(calls.pools).toBe(0);
+    expect(calls.candles).toEqual([]);
   });
 
   it("returns unsupported-range before reading the official source", async () => {
