@@ -19,8 +19,10 @@ const requiredFiles = [
   "README.md",
   "LICENSE",
   "dist/runtime/start.js",
-  "dist/review-app/analysis.js",
-  "dist/review-app/analysis.css",
+  "dist/review-app/connect.js",
+  "dist/review-app/connect.css",
+  "dist/review-app/analytics.js",
+  "dist/review-app/analytics.css",
   "docs/UTILITY_INDEX.md",
   ...MCP_RESOURCES.map((resource) => resource.path)
 ] as const;
@@ -94,11 +96,17 @@ function assertLocalFiles(): void {
   if (!existsSync("dist/runtime/start.js")) {
     throw new Error("dist/runtime/start.js is required before publishing.");
   }
-  if (!existsSync("dist/review-app/analysis.js")) {
-    throw new Error("dist/review-app/analysis.js is required before publishing.");
+  if (!existsSync("dist/review-app/connect.js")) {
+    throw new Error("dist/review-app/connect.js is required before publishing.");
   }
-  if (!existsSync("dist/review-app/analysis.css")) {
-    throw new Error("dist/review-app/analysis.css is required before publishing.");
+  if (!existsSync("dist/review-app/connect.css")) {
+    throw new Error("dist/review-app/connect.css is required before publishing.");
+  }
+  if (!existsSync("dist/review-app/analytics.js")) {
+    throw new Error("dist/review-app/analytics.js is required before publishing.");
+  }
+  if (!existsSync("dist/review-app/analytics.css")) {
+    throw new Error("dist/review-app/analytics.css is required before publishing.");
   }
 
   const startJs = readFileSync("dist/runtime/start.js", "utf8");

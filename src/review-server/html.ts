@@ -36,21 +36,40 @@ export function reviewExecutionAnalysisHtml(sessionId: string): string {
 </html>`;
 }
 
-export function analysisHtml(sessionId: string): string {
+export function connectHtml(sessionId: string): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Say Ur Intent Analysis</title>
-    <link rel="stylesheet" href="/review-assets/analysis.css">
+    <title>Say Ur Intent Connect</title>
+    <link rel="stylesheet" href="/review-assets/connect.css">
   </head>
   <body>
-    <main id="analysis-app" data-wallet-session-id="${escapeHtml(sessionId)}">
-      <h1>Say Ur Intent Analysis</h1>
-      <p>Connect a Sui mainnet wallet to provide an account address for account-bound checks.</p>
+    <main id="connect-app" data-wallet-session-id="${escapeHtml(sessionId)}">
+      <h1>Connect your Sui wallet</h1>
+      <p>Connect a Sui mainnet wallet to bind its address as the active account for account-bound review.</p>
     </main>
-    <script type="module" src="/review-assets/analysis.js"></script>
+    <script type="module" src="/review-assets/connect.js"></script>
+  </body>
+</html>`;
+}
+
+export function analyticsHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Say Ur Intent Analytics</title>
+    <link rel="stylesheet" href="/review-assets/analytics.css">
+  </head>
+  <body>
+    <main id="analytics-app">
+      <h1>Analytics</h1>
+      <p>Loading public on-chain asset analytics...</p>
+    </main>
+    <script type="module" src="/review-assets/analytics.js"></script>
   </body>
 </html>`;
 }

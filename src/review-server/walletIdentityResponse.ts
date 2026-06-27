@@ -4,7 +4,7 @@ import { walletIdentityPollingHint } from "../core/session/walletIdentity.js";
 export function walletIdentitySessionResponse(wallet: CreatedWalletIdentitySession, baseUrl: string) {
   return {
     walletSessionId: wallet.session.id,
-    walletUrl: `${baseUrl}/analysis/${wallet.session.id}#${wallet.token}`,
+    walletUrl: `${baseUrl}/connect/${wallet.session.id}#${wallet.token}`,
     status: wallet.session.status,
     expiresAt: wallet.session.expiresAt,
     lastActivityAt: wallet.session.lastActivityAt,

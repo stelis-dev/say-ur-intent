@@ -751,7 +751,7 @@ describe("review HTTP server", () => {
       expect(created.status).toBe(200);
       const walletJson = (await created.json()) as { walletSessionId: string; walletUrl: string; openTarget: string };
       expect(walletJson.openTarget).toBe("system_browser");
-      expect(walletJson.walletUrl).toContain(`/analysis/${walletJson.walletSessionId}#`);
+      expect(walletJson.walletUrl).toContain(`/connect/${walletJson.walletSessionId}#`);
 
       await store.recordWalletIdentityOpened(walletJson.walletSessionId);
       await store.recordWalletIdentityConnecting(walletJson.walletSessionId);
@@ -924,15 +924,19 @@ describe("review HTTP server", () => {
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const shell = await fetch(`${base}/analysis/${session.id}`);
+      const shell = await fetch(`${base}/connect/${session.id}`);
       expect(shell.status).toBe(200);
+      // A token in the URL query is rejected; the token rides in the fragment.
+      const connectQueryToken = await fetch(`${base}/connect/${session.id}?token=secret`);
+      expect(connectQueryToken.status).toBe(400);
+      expect((await connectQueryToken.json()).error).toBe("token_query_not_supported");
       expect(shell.headers.get("content-security-policy")).toContain("script-src 'self'");
       expect(shell.headers.get("content-security-policy")).toContain("style-src 'self' 'unsafe-inline'");
       expect(shell.headers.get("content-security-policy")).toContain("img-src 'self' data:");
       expect(shell.headers.get("content-security-policy")).not.toContain("script-src 'self' 'unsafe-inline'");
       const html = await shell.text();
-      expect(html).toContain("/review-assets/analysis.js");
-      expect(html).toContain("/review-assets/analysis.css");
+      expect(html).toContain("/review-assets/connect.js");
+      expect(html).toContain("/review-assets/connect.css");
       expect(html).not.toMatch(/sign/i);
 
       const missingToken = await fetch(`${base}/api/wallet/${session.id}/opened`, {
@@ -947,6 +951,16 @@ describe("review HTTP server", () => {
         body: "{}"
       });
       expect(queryToken.status).toBe(401);
+
+      // A present-but-wrong header token is rejected like a missing one, so the
+      // Connect page treats `opened` failure as an invalid token and shows no
+      // wallet controls.
+      const wrongToken = await fetch(`${base}/api/wallet/${session.id}/opened`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-say-ur-intent-token": "wrong-token", origin: base },
+        body: "{}"
+      });
+      expect(wrongToken.status).toBe(401);
 
       const opened = await fetch(`${base}/api/wallet/${session.id}/opened`, {
         method: "POST",
@@ -1084,7 +1098,7 @@ describe("review HTTP server", () => {
       expect(wallet.status).toBe(200);
       const walletJson = (await wallet.json()) as { walletSessionId: string; walletUrl: string; openTarget: string };
       expect(walletJson.openTarget).toBe("system_browser");
-      expect(walletJson.walletUrl).toContain(`/analysis/${walletJson.walletSessionId}#`);
+      expect(walletJson.walletUrl).toContain(`/connect/${walletJson.walletSessionId}#`);
     } finally {
       await server.close();
     }
@@ -1349,14 +1363,105 @@ describe("review HTTP server", () => {
     }
   });
 
+  it("serves the public analytics page and asset endpoint without a token", async () => {
+    const store = createSessionStore();
+    const validAddress = `0x${"0".repeat(63)}2`;
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      readService: {
+        summarizeWalletAssets: async ({ account }: { account?: string }) => ({
+          account,
+          fetchedAt: "2026-06-28T00:00:00.000Z",
+          balances: []
+        })
+      }
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+
+      // Public page: opens with no token, references its own bundle, and allows
+      // the Sui fullnode origin so the wallet re-connect can read mainnet state.
+      const page = await fetch(`${base}/analytics`);
+      expect(page.status).toBe(200);
+      const html = await page.text();
+      expect(html).toContain("/review-assets/analytics.js");
+      expect(html).toContain("/review-assets/analytics.css");
+      expect(html).toContain('id="analytics-app"');
+      expect(page.headers.get("content-security-policy")).toContain("https://fullnode.mainnet.sui.io");
+
+      // A token in the URL is rejected on the public page and endpoint.
+      const pageToken = await fetch(`${base}/analytics?token=secret`);
+      expect(pageToken.status).toBe(400);
+      const apiToken = await fetch(`${base}/api/analytics/assets?address=${validAddress}&token=secret`);
+      expect(apiToken.status).toBe(400);
+
+      // Missing or malformed address → 400; no token is involved.
+      const missing = await fetch(`${base}/api/analytics/assets`);
+      expect(missing.status).toBe(400);
+      const malformed = await fetch(`${base}/api/analytics/assets?address=not-an-address`);
+      expect(malformed.status).toBe(400);
+
+      // A valid address returns the public summary with no token.
+      const ok = await fetch(`${base}/api/analytics/assets?address=${validAddress}`);
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ balances: [] });
+
+      // A header token grants no privilege on the public endpoint: it is neither
+      // required nor rejected, so the read behaves the same as without it.
+      const withHeaderToken = await fetch(`${base}/api/analytics/assets?address=${validAddress}`, {
+        headers: { "x-say-ur-intent-token": "any-token" }
+      });
+      expect(withHeaderToken.status).toBe(200);
+
+      // The old analysis page and its API endpoints are gone with no alias.
+      const oldRoute = await fetch(`${base}/analysis/anything`);
+      expect(oldRoute.status).toBe(404);
+      const oldAssets = await fetch(`${base}/api/analysis/anything/assets`);
+      expect(oldAssets.status).toBe(404);
+      const oldActivity = await fetch(`${base}/api/analysis/anything/review-activity`);
+      expect(oldActivity.status).toBe(404);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns 502 when the public asset read fails upstream", async () => {
+    const store = createSessionStore();
+    const validAddress = `0x${"0".repeat(63)}2`;
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      readService: {
+        summarizeWalletAssets: async () => {
+          throw new Error("upstream read failed");
+        }
+      }
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const failed = await fetch(`${base}/api/analytics/assets?address=${validAddress}`);
+      expect(failed.status).toBe(502);
+      expect(await failed.json()).toMatchObject({ error: "wallet_read_failed" });
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves built review assets and rejects traversal paths", async () => {
     const assetsDir = mkdtempSync(join(tmpdir(), "say-ur-intent-assets-"));
     writeFileSync(join(assetsDir, "review.js"), "export const review = true;\n", "utf8");
     writeFileSync(join(assetsDir, "review.css"), ".review-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "reviewExecutionAnalysis.js"), "export const reviewAnalysis = true;\n", "utf8");
     writeFileSync(join(assetsDir, "reviewExecutionAnalysis.css"), ".analysis-shell { color: #15201b; }\n", "utf8");
-    writeFileSync(join(assetsDir, "analysis.js"), "export const wallet = true;\n", "utf8");
-    writeFileSync(join(assetsDir, "analysis.css"), ".wallet-shell { color: #15201b; }\n", "utf8");
+    writeFileSync(join(assetsDir, "connect.js"), "export const wallet = true;\n", "utf8");
+    writeFileSync(join(assetsDir, "connect.css"), ".wallet-shell { color: #15201b; }\n", "utf8");
+    writeFileSync(join(assetsDir, "analytics.js"), "export const analytics = true;\n", "utf8");
+    writeFileSync(join(assetsDir, "analytics.css"), ".analytics-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "settings.js"), "export const settings = true;\n", "utf8");
     writeFileSync(join(assetsDir, "settings.css"), ".settings-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "deepbookUsdcChart.js"), "export const deepbookUsdcChart = true;\n", "utf8");
@@ -1371,12 +1476,12 @@ describe("review HTTP server", () => {
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const asset = await fetch(`${base}/review-assets/analysis.js`);
+      const asset = await fetch(`${base}/review-assets/connect.js`);
       expect(asset.status).toBe(200);
       expect(asset.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
       expect(await asset.text()).toContain("wallet = true");
 
-      const css = await fetch(`${base}/review-assets/analysis.css`);
+      const css = await fetch(`${base}/review-assets/connect.css`);
       expect(css.status).toBe(200);
       expect(css.headers.get("content-type")).toBe("text/css; charset=utf-8");
       expect(await css.text()).toContain(".wallet-shell");

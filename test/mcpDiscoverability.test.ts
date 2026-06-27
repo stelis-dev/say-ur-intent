@@ -3685,7 +3685,7 @@ describe("MCP discoverability", () => {
       expect(createdPayload.data).not.toHaveProperty("nextTool");
       expect(createdPayload.data).not.toHaveProperty("activeAccountSet");
       expect(createdPayload.data.expiresAt).toEqual(expect.any(String));
-      expect(createdPayload.data.walletUrl).toContain(`/analysis/${createdPayload.data.walletSessionId}#`);
+      expect(createdPayload.data.walletUrl).toContain(`/connect/${createdPayload.data.walletSessionId}#`);
       expect(createdPayload.data.pollingHint.nonTerminalStatuses).toContain("connecting");
       expect(createdPayload.data.userAnswerUse).toMatchObject({
         cannotAnswer: expect.arrayContaining(["wallet_login_or_authentication", "signing_data_or_readiness"]),

@@ -37,7 +37,7 @@ import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
 import { createDeepbookUsdcChartApi } from "./deepbookUsdcChartApi.js";
-import { analysisHtml, deepbookUsdcChartHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
+import { analyticsHtml, connectHtml, deepbookUsdcChartHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
 import { routeSettingsApi } from "./settingsApi.js";
@@ -183,11 +183,11 @@ async function routeRequest(
   const apiReviewStateMatch = /^\/api\/review\/([^/]+)\/state$/.exec(url.pathname);
   const apiReviewResultMatch = /^\/api\/review\/([^/]+)\/result$/.exec(url.pathname);
   const apiResultMatch = /^\/api\/result\/([^/]+)$/.exec(url.pathname);
-  const walletMatch = /^\/analysis\/([^/]+)$/.exec(url.pathname);
+  const connectMatch = /^\/connect\/([^/]+)$/.exec(url.pathname);
+  const analyticsMatch = /^\/analytics$/.exec(url.pathname);
   const apiReviewHandoffMatch = /^\/api\/review\/([^/]+)\/handoff$/.exec(url.pathname);
   const apiReviewHandoffCancelMatch = /^\/api\/review\/([^/]+)\/handoff\/cancel$/.exec(url.pathname);
-  const analysisAssetsMatch = /^\/api\/analysis\/([^/]+)\/assets$/.exec(url.pathname);
-  const analysisActivityMatch = /^\/api\/analysis\/([^/]+)\/review-activity$/.exec(url.pathname);
+  const apiAnalyticsAssetsMatch = /^\/api\/analytics\/assets$/.exec(url.pathname);
   const apiWalletOpenedMatch = /^\/api\/wallet\/([^/]+)\/opened$/.exec(url.pathname);
   const apiWalletConnectingMatch = /^\/api\/wallet\/([^/]+)\/connecting$/.exec(url.pathname);
   const apiWalletResultMatch = /^\/api\/wallet\/([^/]+)\/result$/.exec(url.pathname);
@@ -246,8 +246,14 @@ async function routeRequest(
     return;
   }
 
-  if (request.method === "GET" && walletMatch?.[1]) {
-    sendHtml(response, analysisHtml(walletMatch[1]), {
+  if (request.method === "GET" && connectMatch?.[1]) {
+    // Token-gated page: the token rides in the URL fragment, never the query, so
+    // it never reaches the server or its logs. Reject a query token outright.
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
+      return;
+    }
+    sendHtml(response, connectHtml(connectMatch[1]), {
       "content-security-policy": [
         "default-src 'none'",
         "base-uri 'none'",
@@ -256,6 +262,28 @@ async function routeRequest(
         `connect-src 'self' ${SUI_BROWSER_EXECUTION_ORIGIN}`,
         "script-src 'self'",
         // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "form-action 'none'"
+      ].join("; ")
+    });
+    return;
+  }
+
+  if (request.method === "GET" && analyticsMatch) {
+    // Public page: no token ever appears in the URL.
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
+      return;
+    }
+    sendHtml(response, analyticsHtml(), {
+      "content-security-policy": [
+        "default-src 'none'",
+        "base-uri 'none'",
+        // 'self' for the public analytics asset API; the Sui fullnode origin so
+        // the dapp-kit chain client can read mainnet state on wallet re-connect.
+        `connect-src 'self' ${SUI_BROWSER_EXECUTION_ORIGIN}`,
+        "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "form-action 'none'"
@@ -309,43 +337,26 @@ async function routeRequest(
     return;
   }
 
-  if (request.method === "GET" && (analysisAssetsMatch?.[1] || analysisActivityMatch?.[1])) {
-    const sessionId = (analysisAssetsMatch?.[1] ?? analysisActivityMatch?.[1]) as string;
-    const token = await requireWalletIdentityToken(options.store, sessionId, request, response);
-    if (!token) {
+  if (request.method === "GET" && apiAnalyticsAssetsMatch) {
+    // Public endpoint: no token in the URL, and no privilege from a header token.
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
       return;
     }
-    const walletSession = await options.store.getWalletIdentitySession(sessionId);
-    const connectedAccount =
-      walletSession && walletSession.status === "connected" ? walletSession.account : undefined;
-    const active = options.activityStore ? await options.activityStore.getActiveAccount() : undefined;
-    const account = connectedAccount ?? active?.address;
-    if (!account) {
-      sendJson(response, 409, { error: "no_active_account" });
+    const address = parseSuiAddress(url.searchParams.get("address") ?? "");
+    if (!address) {
+      sendJson(response, 400, { error: "address_invalid" });
       return;
     }
-    if (analysisAssetsMatch?.[1]) {
-      if (!options.readService) {
-        sendJson(response, 503, { error: "analysis_data_unavailable" });
-        return;
-      }
-      try {
-        const summary = await options.readService.summarizeWalletAssets({ account });
-        sendJson(response, 200, summary as Record<string, unknown>);
-      } catch {
-        sendJson(response, 502, { error: "wallet_read_failed" });
-      }
-      return;
-    }
-    if (!options.activityStore) {
-      sendJson(response, 503, { error: "analysis_data_unavailable" });
+    if (!options.readService) {
+      sendJson(response, 503, { error: "analytics_data_unavailable" });
       return;
     }
     try {
-      const funnel = await options.activityStore.summarizeReviewFunnel({ account });
-      sendJson(response, 200, funnel as unknown as Record<string, unknown>);
+      const summary = await options.readService.summarizeWalletAssets({ account: address });
+      sendJson(response, 200, summary as Record<string, unknown>);
     } catch {
-      sendJson(response, 502, { error: "review_activity_read_failed" });
+      sendJson(response, 502, { error: "wallet_read_failed" });
     }
     return;
   }

@@ -128,6 +128,7 @@ async function main(): Promise<void> {
       localSettings,
       localData,
       chainReceiptVerifier,
+      readService,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
         adapters: buildSupportedReviewAdapters((() => {

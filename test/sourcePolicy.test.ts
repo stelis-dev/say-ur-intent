@@ -223,9 +223,9 @@ describe("source policy", () => {
 
     expect(publicAndRuntimeSurface).toMatch(/read-only review execution analysis page/i);
     expect(publicAndRuntimeSurface).toMatch(/stored review evidence[\s\S]{0,160}server-read (chain )?receipt facts/i);
-    expect(publicAndRuntimeSurface).toMatch(/wallet asset analysis page/i);
+    expect(publicAndRuntimeSurface).toMatch(/public Analytics page/i);
     expect(publicAndRuntimeSurface).toMatch(/review execution analysis page/i);
-    expect(publicAndRuntimeSurface).toMatch(/separate\s+from the wallet asset analysis page/i);
+    expect(publicAndRuntimeSurface).toMatch(/separate\s+from the Connect page/i);
     expect(publicAndRuntimeSurface).not.toMatch(/full analysis page is not implemented/i);
     expect(publicAndRuntimeSurface).not.toMatch(/review execution analysis page is not implemented/i);
     expect(publicAndRuntimeSurface).not.toMatch(/browser-owned chain truth/i);

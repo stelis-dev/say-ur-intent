@@ -175,7 +175,9 @@ choices.
 
 The review execution analysis page is served from a review-session route such
 as `/review/:id/analysis` with the review token in the fragment. It is separate
-from the wallet asset analysis page at `/analysis/:id`.
+from the Connect page at `/connect/:id`, which binds the active account, and the
+public Analytics page at `/analytics`, which reads public on-chain asset balances
+for an address.
 
 The page is read-only. It renders the server-owned
 `review_execution_analysis_v1` payload for reviewed request facts, reviewed
@@ -267,9 +269,11 @@ The frontend must not add:
 
 The exclusions above target automatic, background-indexed, or
 recommendation-style surfaces. User-requested local record views are allowed
-only inside their narrow surfaces: the wallet asset analysis page shows a wallet
-asset snapshot at a fetched timestamp plus summaries of locally stored review
-and activity records, and the review execution analysis page shows one review
-session's reviewed evidence beside server-read execution facts. These views
+only inside their narrow surfaces: the public Analytics page shows a wallet
+asset snapshot at a fetched timestamp for an address from public on-chain reads,
+and the review execution analysis page shows one review
+session's reviewed evidence beside server-read execution facts. Summaries of
+locally stored review and activity records are available only through the MCP
+read tools, not a browser page. These views
 must not add P&L, valuation, performance, tax claims, or route ranking. They
 must not add background indexing.

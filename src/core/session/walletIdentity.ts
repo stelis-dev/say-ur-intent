@@ -1,20 +1,20 @@
 import { z } from "zod";
 import { normalizedSuiAddressSchema } from "../suiAddress.js";
 import type { LocalSessionBase } from "./localSession.js";
+import {
+  WALLET_IDENTITY_STATUSES,
+  isTerminalWalletIdentityStatus,
+  type WalletIdentityNonTerminalStatus,
+  type WalletIdentityStatus,
+  type WalletIdentityTerminalStatus
+} from "./walletIdentityStatusContract.js";
+
+// Re-export the shared status contract so existing importers of this module are
+// unchanged; the literals, types, and terminal check live in the pure contract.
+export { WALLET_IDENTITY_STATUSES, isTerminalWalletIdentityStatus };
+export type { WalletIdentityNonTerminalStatus, WalletIdentityStatus, WalletIdentityTerminalStatus };
 
 export const SUI_MAINNET_WALLET_CHAIN = "sui:mainnet" as const;
-
-export const WALLET_IDENTITY_STATUSES = [
-  "pending",
-  "opened",
-  "connecting",
-  "connected",
-  "rejected",
-  "failed",
-  "expired"
-] as const;
-
-export type WalletIdentityStatus = (typeof WALLET_IDENTITY_STATUSES)[number];
 
 export const WALLET_IDENTITY_FAILURE_REASONS = [
   "user_rejected",
@@ -26,8 +26,6 @@ export const WALLET_IDENTITY_FAILURE_REASONS = [
 
 export type WalletIdentityFailureReason = (typeof WALLET_IDENTITY_FAILURE_REASONS)[number];
 export type NonUserWalletIdentityFailureReason = Exclude<WalletIdentityFailureReason, "user_rejected">;
-export type WalletIdentityNonTerminalStatus = "pending" | "opened" | "connecting";
-export type WalletIdentityTerminalStatus = "connected" | "rejected" | "failed" | "expired";
 
 type WalletIdentityBase = LocalSessionBase & {
   status: WalletIdentityStatus;
@@ -185,9 +183,6 @@ export const walletIdentityResultInputSchema: z.ZodType<WalletIdentityResultInpu
   ]
 );
 
-export function isTerminalWalletIdentityStatus(status: WalletIdentityStatus): status is WalletIdentityTerminalStatus {
-  return status === "connected" || status === "rejected" || status === "failed" || status === "expired";
-}
 
 export const WALLET_IDENTITY_POLLING_INTERVAL_SECONDS = 5;
 

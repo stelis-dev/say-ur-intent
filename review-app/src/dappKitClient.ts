@@ -15,10 +15,10 @@ export function createLocalDAppKit() {
   return createDAppKit({
     networks: ["mainnet"],
     defaultNetwork: "mainnet",
-    // Reconnect silently within the same loopback origin so the account
-    // captured on the analysis page carries into the review page signing
-    // section without a second wallet prompt. Storage holds the wallet
-    // autoconnect preference only, never keys.
+    // Reconnect silently within the same loopback origin so the account bound on
+    // the Connect page carries into the Review & Execution signing section
+    // without a second wallet prompt. Storage holds the wallet autoconnect
+    // preference only, never keys.
     autoConnect: true,
     slushWalletConfig: null,
     walletInitializers: [createAgentQSuiWalletInitializer({ provider: agentQProvider })],
@@ -26,21 +26,22 @@ export function createLocalDAppKit() {
   });
 }
 
-// Shared mainnet client: dapp-kit reads through it, and the review page submits
-// signed transaction bytes through it directly. Submission stays on the page
-// because not every wallet exposes sign-and-execute (Agent-Q signs only).
-// The base URL host is allowlisted in the review/analysis page CSP connect-src
-// (src/review-server/reviewServerPolicy.ts SUI_BROWSER_EXECUTION_ORIGIN); keep
-// the two in sync or the browser submission is blocked by CSP.
+// Shared mainnet client: dapp-kit reads through it, and the Review & Execution
+// page submits signed transaction bytes through it directly. Submission stays on
+// the page because not every wallet exposes sign-and-execute (Agent-Q signs only).
+// The base URL host is allowlisted in the wallet pages' CSP connect-src (Connect,
+// Review & Execution, Analytics; src/review-server/reviewServerPolicy.ts
+// SUI_BROWSER_EXECUTION_ORIGIN); keep the two in sync or the browser submission
+// is blocked by CSP.
 export const suiMainnetClient = new SuiGrpcClient({
   network: "mainnet",
   baseUrl: "https://fullnode.mainnet.sui.io:443"
 });
 
 // localStorage key dapp-kit uses to remember the selected wallet+address for
-// per-origin autoConnect. Both the analysis and review pages read it to show a
-// "reconnecting" placeholder until autoConnect settles, instead of flashing the
-// wallet picker first.
+// per-origin autoConnect. The Connect, Review & Execution, and Analytics pages
+// read it to show a "reconnecting" placeholder until autoConnect settles, instead
+// of flashing the wallet picker first.
 export const WALLET_SELECTION_STORAGE_KEY = "mysten-dapp-kit:selected-wallet-and-address";
 
 export function hasStoredWalletSelection(): boolean {
@@ -48,5 +49,21 @@ export function hasStoredWalletSelection(): boolean {
     return window.localStorage.getItem(WALLET_SELECTION_STORAGE_KEY) !== null;
   } catch {
     return false;
+  }
+}
+
+// Parse the stored selection the same way dapp-kit's autoConnect does: the value
+// is "<walletId>:<address>:<intents>". The public Analytics page (which has no
+// server session to read a bound wallet from) uses the walletId to offer a
+// reconnect of that one stored wallet, never a wallet picker.
+export function getStoredWalletSelection(): { walletId: string; address: string } | null {
+  try {
+    const raw = window.localStorage.getItem(WALLET_SELECTION_STORAGE_KEY);
+    if (!raw) return null;
+    const [walletId, address] = raw.split(":");
+    if (!walletId || !address) return null;
+    return { walletId, address };
+  } catch {
+    return null;
   }
 }

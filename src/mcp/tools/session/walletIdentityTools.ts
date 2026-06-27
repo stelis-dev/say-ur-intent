@@ -49,7 +49,7 @@ export function registerWalletIdentityTools(server: McpServer, deps: McpServerDe
         const created = await deps.sessions.createWalletIdentitySession();
         return okToolResult({
           walletSessionId: created.session.id,
-          walletUrl: `${deps.reviewBaseUrl}/analysis/${created.session.id}#${created.token}`,
+          walletUrl: `${deps.reviewBaseUrl}/connect/${created.session.id}#${created.token}`,
           openTarget: "system_browser",
           accessScope: "same_machine_loopback",
           status: created.session.status,
