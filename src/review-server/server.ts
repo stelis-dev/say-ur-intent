@@ -23,6 +23,10 @@ import { SessionStoreError, type SessionStore } from "../core/session/sessionSto
 import { buildReviewExecutionAnalysisPayload } from "../core/session/reviewExecutionAnalysis.js";
 import { getExecutionPollingStatus } from "../core/session/status.js";
 import {
+  DeepbookOfficialIndexerSource,
+  type DeepbookOfficialIndexerSourceClient
+} from "../core/read/deepbookOfficialIndexerSource.js";
+import {
   walletIdentityResultInputSchema,
   walletIdentityPollingHint,
   type WalletIdentitySession
@@ -32,6 +36,7 @@ import type { Logger } from "../runtime/logger.js";
 import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
+import { createDeepbookUsdcChartApi } from "./deepbookUsdcChartApi.js";
 import { analysisHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
@@ -47,6 +52,7 @@ type ReviewHttpServerOptions = {
   readService?: { summarizeWalletAssets(input: { account?: string }): Promise<unknown> } | undefined;
   localSettings?: LocalSettingsService | undefined;
   localData?: LocalDataService | undefined;
+  deepbookOfficialIndexerSource?: DeepbookOfficialIndexerSourceClient | undefined;
   chainReceiptVerifier?: ChainReceiptVerifier | undefined;
   reviewComputationDeps?: ReviewComputationDeps | undefined;
   serverInfo?: {
@@ -71,9 +77,12 @@ const REVIEW_WALLET_IDENTITY_STATUSES = new Set<InternalSessionStatus>([
 ]);
 
 export function createReviewHttpServer(options: ReviewHttpServerOptions) {
+  const deepbookUsdcChartApi = createDeepbookUsdcChartApi({
+    source: options.deepbookOfficialIndexerSource ?? new DeepbookOfficialIndexerSource()
+  });
   const server = createServer(async (request, response) => {
     try {
-      await routeRequest(request, response, options);
+      await routeRequest(request, response, options, deepbookUsdcChartApi);
     } catch (error) {
       if (error instanceof HttpError) {
         sendJson(response, error.status, { error: error.code });
@@ -138,7 +147,8 @@ async function requireReviewSessionToken(
 async function routeRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  options: ReviewHttpServerOptions
+  options: ReviewHttpServerOptions,
+  deepbookUsdcChartApi: ReturnType<typeof createDeepbookUsdcChartApi>
 ): Promise<void> {
   // Structural guard: every request to this server passes the Host/Origin
   // policy once, so a new route cannot accidentally skip it.
@@ -193,6 +203,8 @@ async function routeRequest(
   const apiSettingsLocalDataPreviewMatch = /^\/api\/settings\/([^/]+)\/local-data\/import\/preview$/.exec(url.pathname);
   const apiSettingsLocalDataImportMatch = /^\/api\/settings\/([^/]+)\/local-data\/import$/.exec(url.pathname);
   const apiSettingsLocalDataResetMatch = /^\/api\/settings\/([^/]+)\/local-data\/reset$/.exec(url.pathname);
+  const apiDeepbookUsdcChartPoolsMatch = /^\/api\/charts\/deepbook-usdc\/pools$/.exec(url.pathname);
+  const apiDeepbookUsdcChartCandlesMatch = /^\/api\/charts\/deepbook-usdc\/candles$/.exec(url.pathname);
   const reviewAssetMatch = /^\/review-assets\/(.+)$/.exec(url.pathname);
 
   if (request.method === "GET" && reviewMatch?.[1]) {
@@ -359,6 +371,18 @@ async function routeRequest(
 
   if (request.method === "GET" && reviewAssetMatch?.[1]) {
     await serveReviewAsset(response, options.reviewAssetsDir ?? defaultReviewAssetsDir(), reviewAssetMatch[1]);
+    return;
+  }
+
+  if (request.method === "GET" && apiDeepbookUsdcChartPoolsMatch) {
+    const result = await deepbookUsdcChartApi.getPools(url.searchParams);
+    sendJson(response, result.httpStatus, result.body);
+    return;
+  }
+
+  if (request.method === "GET" && apiDeepbookUsdcChartCandlesMatch) {
+    const result = await deepbookUsdcChartApi.getCandles(url.searchParams);
+    sendJson(response, result.httpStatus, result.body);
     return;
   }
 

@@ -368,6 +368,12 @@ export function isDeepbookOfficialIndexerCanonicalUsdcPool(pool: DeepbookOfficia
   return normalizeCoinType(pool.quote_asset_id) === normalizeCoinType(DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE);
 }
 
+export function selectDeepbookOfficialIndexerCanonicalUsdcPools(
+  pools: DeepbookOfficialIndexerPool[]
+): DeepbookOfficialIndexerPool[] {
+  return pools.filter(isDeepbookOfficialIndexerCanonicalUsdcPool);
+}
+
 function officialWireCandleToCandle(
   [timestampMs, open, high, low, close, volume]: z.infer<typeof deepbookOfficialIndexerWireCandleSchema>,
   interval: DeepbookOfficialIndexerInterval

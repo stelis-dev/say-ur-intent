@@ -3,9 +3,14 @@ import type {
   AccountInfo,
   LockedBalances,
 } from "@mysten/deepbook-v3";
-import { formatRawAmount, parseDisplayAmountToRaw } from "./coinMetadata.js";
+import { formatRawAmount, normalizeCoinType, parseDisplayAmountToRaw } from "./coinMetadata.js";
 import { MAX_RAW_U64, parseRawU64 } from "../numeric/rawU64.js";
 import { parseSuiAddress } from "../suiAddress.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
+  DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION,
+  type DeepbookOfficialIndexerPool
+} from "./deepbookOfficialIndexerSource.js";
 import {
   DEEPBOOK_ACCOUNT_QUANTITY_KIND,
   DEEPBOOK_MID_PRICE_SEMANTICS_KIND,
@@ -17,6 +22,7 @@ import {
   type DeepbookAccountInventorySummary,
   type DeepbookAccountSummary,
   type DeepbookDisplayQuantitySemantics,
+  type DeepbookUsdcPriceHistoryPair,
   type DeepbookUsdcPriceHistoryQuantitySemantics,
   type DeepbookUsdcPriceHistoryResponseSummary,
   type DeepbookMidPriceSemantics,
@@ -185,6 +191,26 @@ export function deepbookUsdcPriceHistoryResponseSummary(): DeepbookUsdcPriceHist
     usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
     candleMeaning: "Each candle is returned by the DeepBookV3 official Indexer for the requested interval.",
     excludedFromConclusion: [...DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS]
+  };
+}
+
+export function deepbookUsdcPriceHistoryPairFromOfficialPool(
+  pool: DeepbookOfficialIndexerPool
+): DeepbookUsdcPriceHistoryPair {
+  return {
+    poolName: pool.pool_name,
+    poolId: pool.pool_id,
+    baseAsset: {
+      symbol: pool.base_asset_symbol,
+      coinType: normalizeCoinType(pool.base_asset_id),
+      decimals: pool.base_asset_decimals
+    },
+    quoteAsset: {
+      symbol: "USDC",
+      coinType: normalizeCoinType(DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE),
+      decimals: pool.quote_asset_decimals
+    },
+    priceConvention: DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION
   };
 }
 

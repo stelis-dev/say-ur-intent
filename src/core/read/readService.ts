@@ -17,12 +17,10 @@ import {
 import { createDeepBookReadClient } from "./deepbookRawQuoteClient.js";
 import {
   DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL,
-  DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
-  DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION,
   DeepbookOfficialIndexerSourceError,
   deepbookOfficialIndexerIntervalDurationMs,
-  isDeepbookOfficialIndexerCanonicalUsdcPool,
   parseDeepbookOfficialIndexerInterval,
+  selectDeepbookOfficialIndexerCanonicalUsdcPools,
   type DeepbookOfficialIndexerCandle,
   type DeepbookOfficialIndexerFetchSource,
   type DeepbookOfficialIndexerInterval,
@@ -57,6 +55,7 @@ import {
   deepbookAccountInventorySource,
   deepbookDisplayQuantitySemantics,
   deepbookMidPriceSemantics,
+  deepbookUsdcPriceHistoryPairFromOfficialPool,
   deepbookUsdcPriceHistoryQuantitySemantics,
   deepbookUsdcPriceHistoryResponseSummary,
   deepbookQuoteQuantitySemantics,
@@ -352,26 +351,6 @@ function deepbookUsdcPriceHistoryMatchingPairs(
     case "coin_type":
       return usdcPools.filter((pool) => normalizeCoinType(pool.base_asset_id) === selector.value);
   }
-}
-
-function deepbookUsdcPriceHistoryPair(
-  pool: DeepbookOfficialIndexerPool
-): DeepbookUsdcPriceHistoryPair {
-  return {
-    poolName: pool.pool_name,
-    poolId: pool.pool_id,
-    baseAsset: {
-      symbol: pool.base_asset_symbol,
-      coinType: normalizeCoinType(pool.base_asset_id),
-      decimals: pool.base_asset_decimals
-    },
-    quoteAsset: {
-      symbol: "USDC",
-      coinType: normalizeCoinType(DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE),
-      decimals: pool.quote_asset_decimals
-    },
-    priceConvention: DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION
-  };
 }
 
 function deepbookUsdcPriceHistorySource(input: {
@@ -1070,7 +1049,7 @@ export class SuiReadService {
       };
     }
 
-    const usdcPools = poolResult.pools.filter(isDeepbookOfficialIndexerCanonicalUsdcPool);
+    const usdcPools = selectDeepbookOfficialIndexerCanonicalUsdcPools(poolResult.pools);
     const matchingPools = deepbookUsdcPriceHistoryMatchingPairs(usdcPools, selector);
     if (matchingPools.length !== 1) {
       return {
@@ -1086,7 +1065,7 @@ export class SuiReadService {
     }
 
     const pool = matchingPools[0]!;
-    const outputPair = deepbookUsdcPriceHistoryPair(pool);
+    const outputPair = deepbookUsdcPriceHistoryPairFromOfficialPool(pool);
     let candleResult: Awaited<ReturnType<DeepbookOfficialIndexerSourceClient["fetchCandles"]>>;
     try {
       candleResult = await this.#deepbookOfficialIndexerSource.fetchCandles({

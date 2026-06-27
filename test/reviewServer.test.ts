@@ -26,6 +26,14 @@ import {
   chainReceiptFixture,
   otherChainReceiptDigest
 } from "./fixtures/chainReceipt.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT,
+  type DeepbookOfficialIndexerCandle,
+  type DeepbookOfficialIndexerFetchSource,
+  type DeepbookOfficialIndexerPool,
+  type DeepbookOfficialIndexerSourceClient
+} from "../src/core/read/deepbookOfficialIndexerSource.js";
 
 const logger: Logger = {
   info() {},
@@ -211,6 +219,88 @@ async function createSettingsServer(options: { localSettings?: InMemoryLocalSett
     serverInfo: { name: "say-ur-intent", version: "0.0.0-test", network: "mainnet" }
   }).start(0);
   return { server, store, activityStore, localSettings, created };
+}
+
+function createChartRouteSource(): DeepbookOfficialIndexerSourceClient {
+  return {
+    async fetchPools() {
+      return {
+        source: chartRouteSourceMetadata("get_pools", "https://deepbook-indexer.mainnet.mystenlabs.com/get_pools"),
+        pools: chartRoutePools()
+      };
+    },
+    async fetchCandles(input) {
+      return {
+        source: chartRouteSourceMetadata(
+          "ohclv",
+          `https://deepbook-indexer.mainnet.mystenlabs.com/ohclv/${input.poolName}?interval=${input.interval}`,
+          input
+        ),
+        candles: chartRouteCandles()
+      };
+    }
+  };
+}
+
+function chartRouteSourceMetadata(
+  endpoint: DeepbookOfficialIndexerFetchSource["endpoint"],
+  url: string,
+  input: Partial<{
+    poolName: string;
+    interval: "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w";
+    limit: number | undefined;
+    startTimeMs: number | undefined;
+    endTimeMs: number | undefined;
+  }> = {}
+): DeepbookOfficialIndexerFetchSource {
+  return {
+    baseUrl: "https://deepbook-indexer.mainnet.mystenlabs.com",
+    endpoint,
+    url,
+    fetchedAt: "2026-06-27T00:00:00.000Z",
+    sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT,
+    ...input
+  };
+}
+
+function chartRoutePools(): DeepbookOfficialIndexerPool[] {
+  return [
+    {
+      pool_id: `0x${"1".repeat(64)}`,
+      pool_name: "SUI_USDC",
+      base_asset_id: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+      base_asset_symbol: "SUI",
+      base_asset_decimals: 9,
+      quote_asset_id: DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
+      quote_asset_symbol: "USDC",
+      quote_asset_decimals: 6
+    },
+    {
+      pool_id: `0x${"2".repeat(64)}`,
+      pool_name: "NS_SUI",
+      base_asset_id: `0x${"3".repeat(64)}::ns::NS`,
+      base_asset_symbol: "NS",
+      base_asset_decimals: 6,
+      quote_asset_id: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+      quote_asset_symbol: "SUI",
+      quote_asset_decimals: 9
+    }
+  ];
+}
+
+function chartRouteCandles(): DeepbookOfficialIndexerCandle[] {
+  return [
+    {
+      timestampMs: 1_782_541_800_000,
+      start: "2026-06-27T06:30:00.000Z",
+      end: "2026-06-27T06:45:00.000Z",
+      open: "0.71174",
+      high: "0.71427",
+      low: "0.71158",
+      close: "0.71404",
+      volume: "59357.2"
+    }
+  ];
 }
 
 describe("review HTTP server", () => {
@@ -957,6 +1047,80 @@ describe("review HTTP server", () => {
       const walletJson = (await wallet.json()) as { walletSessionId: string; walletUrl: string; openTarget: string };
       expect(walletJson.openTarget).toBe("system_browser");
       expect(walletJson.walletUrl).toContain(`/analysis/${walletJson.walletSessionId}#`);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves token-free DeepBook USDC chart APIs without wallet review or signing state", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger,
+      deepbookOfficialIndexerSource: createChartRouteSource()
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const badOrigin = await fetch(`${base}/api/charts/deepbook-usdc/pools`, {
+        headers: { origin: "http://evil.example" }
+      });
+      expect(badOrigin.status).toBe(403);
+
+      const pools = await fetch(`${base}/api/charts/deepbook-usdc/pools`, {
+        headers: { origin: base }
+      });
+      expect(pools.status).toBe(200);
+      const poolsText = await pools.text();
+      const poolsJson = JSON.parse(poolsText) as {
+        status: string;
+        poolCount: number;
+        pools: Array<{ poolName: string }>;
+        quantitySemantics: { usdcIsFiatUsd: boolean; chainRecomputedBySayUrIntent: boolean };
+      };
+      expect(poolsJson).toMatchObject({
+        status: "ok",
+        poolCount: 1,
+        pools: [{ poolName: "SUI_USDC" }],
+        quantitySemantics: {
+          usdcIsFiatUsd: false,
+          chainRecomputedBySayUrIntent: false
+        }
+      });
+      expect(poolsText).not.toContain("reviewSessionId");
+      expect(poolsText).not.toContain("walletSessionId");
+      expect(poolsText).not.toContain("activeAccount");
+      expect(poolsText).not.toContain("x-say-ur-intent-token");
+
+      const candles = await fetch(`${base}/api/charts/deepbook-usdc/candles?poolName=SUI_USDC&interval=15m&limit=1`, {
+        headers: { origin: base }
+      });
+      expect(candles.status).toBe(200);
+      const candlesText = await candles.text();
+      const candlesJson = JSON.parse(candlesText) as {
+        status: string;
+        query: { poolName: string; interval: string; limit: number };
+        candleCount: number;
+        candles: Array<{ close: string }>;
+      };
+      expect(candlesJson).toMatchObject({
+        status: "ok",
+        query: { poolName: "SUI_USDC", interval: "15m", limit: 1 },
+        candleCount: 1,
+        candles: [{ close: "0.71404" }]
+      });
+      expect(candlesText).not.toContain("reviewSessionId");
+      expect(candlesText).not.toContain("walletSessionId");
+      expect(candlesText).not.toContain("activeAccount");
+      expect(candlesText).not.toContain("transactionBytes");
+
+      const overLimit = await fetch(`${base}/api/charts/deepbook-usdc/candles?poolName=SUI_USDC&limit=10001`);
+      expect(overLimit.status).toBe(400);
+      await expect(overLimit.json()).resolves.toMatchObject({
+        status: "over_limit",
+        reason: "limit_exceeds_chart_cap"
+      });
     } finally {
       await server.close();
     }
