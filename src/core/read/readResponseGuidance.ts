@@ -4,6 +4,10 @@ import type {
   IntentEvidenceResponseEvidence,
   IntentEvidenceSettlementAssetCoverage
 } from "./readServiceTypes.js";
+import {
+  DEEPBOOK_ANSWER_USE,
+  DEEPBOOK_READ_RESPONSE_UNSUPPORTED
+} from "./deepbookSourceOwners.js";
 
 const intentEvidenceConclusionRuleFields = [
   "responseSummary.doNotCallQuoteToolsForThisQuestion",
@@ -242,19 +246,7 @@ export function deepbookOrderbookUserAnswerUse(): UserAnswerUse {
       "deepbook_pool_orderbook_context_at_fetchedAt",
       "deepbook_pool_mid_price_context_returned_with_the_orderbook_snapshot"
     ],
-    cannotAnswer: [
-      "live_orderbook_stream",
-      "global_market_price",
-      "indicative_quote_for_a_source_amount",
-      "payment_coverage_or_shortfall",
-      "liquidity_verdict",
-      "price_impact",
-      "venue_comparison",
-      "route_recommendation",
-      "transaction_building",
-      "signing_data_or_readiness",
-      "profit_or_pnl"
-    ],
+    cannotAnswer: [...DEEPBOOK_READ_RESPONSE_UNSUPPORTED.orderbook],
     answerFields: [
       "poolKey",
       "ticks",
@@ -276,21 +268,7 @@ export function deepbookOrderbookUserAnswerUse(): UserAnswerUse {
 export function deepbookMidPriceUserAnswerUse(): UserAnswerUse {
   return {
     canAnswer: ["deepbook_pool_mid_price_context"],
-    cannotAnswer: [
-      "global_market_price",
-      "fiat_usd_cash_out",
-      "external_market_price_conversion",
-      "usd_peg_assumption",
-      "payment_coverage_or_shortfall",
-      "price_impact",
-      "quote_slippage",
-      "venue_comparison",
-      "route_recommendation",
-      "transaction_building",
-      "signing_data_or_readiness",
-      "profit_or_pnl",
-      "cost_basis"
-    ],
+    cannotAnswer: [...DEEPBOOK_READ_RESPONSE_UNSUPPORTED.midPrice],
     answerFields: ["poolKey", "base", "quote", "price", "priceDirection", "priceType", "fetchedAt"],
     diagnosticOnlyFields: ["source", "priceSemantics"],
     followUp: {
@@ -304,22 +282,10 @@ export function deepbookMidPriceUserAnswerUse(): UserAnswerUse {
 export function deepbookUsdcPriceHistoryUserAnswerUse(): UserAnswerUse {
   return {
     canAnswer: [
-      "official_deepbook_usdc_candle_history",
-      "official_candle_availability_for_the_requested_utc_range"
+      DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory,
+      DEEPBOOK_ANSWER_USE.officialCandleAvailabilityForRequestedUtcRange
     ],
-    cannotAnswer: [
-      "fiat_usd_cash_out",
-      "usd_peg_assumption",
-      "global_market_price",
-      "historical_mid_price",
-      "live_quote",
-      "route_recommendation",
-      "best_route",
-      "transaction_building",
-      "signing_data_or_readiness",
-      "profit_or_pnl",
-      "cost_basis"
-    ],
+    cannotAnswer: [...DEEPBOOK_READ_RESPONSE_UNSUPPORTED.officialUsdcCandles],
     answerFields: [
       "pair",
       "requested.range",
@@ -337,22 +303,10 @@ export function deepbookUsdcPriceHistoryUserAnswerUse(): UserAnswerUse {
 export function deepbookUsdcPriceAtTimeUserAnswerUse(matchAvailable: boolean): UserAnswerUse {
   return {
     canAnswer: [
-      "official_deepbook_usdc_candle_for_requested_time",
-      ...(matchAvailable ? ["representative_close_price_for_the_matched_candle"] : [])
+      DEEPBOOK_ANSWER_USE.officialUsdcCandleForRequestedTime,
+      ...(matchAvailable ? [DEEPBOOK_ANSWER_USE.representativeClosePriceForMatchedCandle] : [])
     ],
-    cannotAnswer: [
-      "fiat_usd_cash_out",
-      "usd_peg_assumption",
-      "global_market_price",
-      "historical_mid_price",
-      "live_quote",
-      "route_recommendation",
-      "best_route",
-      "transaction_building",
-      "signing_data_or_readiness",
-      "profit_or_pnl",
-      "cost_basis"
-    ],
+    cannotAnswer: [...DEEPBOOK_READ_RESPONSE_UNSUPPORTED.officialUsdcCandles],
     answerFields: [
       "target.targetTime",
       "target.searchWindow",
@@ -387,26 +341,7 @@ export function deepbookQuoteUserAnswerUse(summaryKind: "raw" | "display"): User
       "indicative_deepbook_pool_quote_for_explicit_source_input",
       "raw_sdk_quote_return_values_before_slippage_policy"
     ],
-    cannotAnswer: [
-      "payment_coverage",
-      "payment_shortfall",
-      "funding_source",
-      "route_dependent_payment_support",
-      "final_min_out",
-      "liquidity_verdict",
-      "price_impact",
-      "quote_vs_mid_slippage",
-      "effective_price",
-      "venue_comparison",
-      "route_recommendation",
-      "fiat_usd_cash_out",
-      "external_market_price_conversion",
-      "usd_peg_assumption",
-      "transaction_building",
-      "signing_data_or_readiness",
-      "profit_or_pnl",
-      "cost_basis"
-    ],
+    cannotAnswer: [...DEEPBOOK_READ_RESPONSE_UNSUPPORTED.quote],
     answerFields:
       summaryKind === "raw"
         ? [
@@ -486,16 +421,7 @@ export function deepbookAccountInventoryUserAnswerUse(detailStatus: DeepbookAcco
     ],
     cannotAnswer: [
       ...detailUnavailableCannotAnswer,
-      "current_wallet_coin_balance",
-      "wallet_transaction_history",
-      "funding_source",
-      "route_liquidity",
-      "withdrawal_readiness",
-      "payment_coverage_or_shortfall",
-      "transaction_building",
-      "signing_data_or_readiness",
-      "profit_or_pnl",
-      "cost_basis"
+      ...DEEPBOOK_READ_RESPONSE_UNSUPPORTED.accountInventory
     ],
     answerFields: [
       "account",

@@ -1,0 +1,116 @@
+export const DEEPBOOK_SOURCE_OWNER_GROUPS = {
+  pinnedSdkMetadata: {
+    label: "pinned DeepBook SDK metadata",
+    owns: ["token metadata", "pool metadata", "scalar metadata", "symbol metadata", "package metadata"]
+  },
+  sdkSimulation: {
+    label: "DeepBook SDK simulation through Sui gRPC",
+    owns: ["orderbook snapshots", "mid-price snapshots", "raw quote evidence", "display quote evidence", "account inventory"]
+  },
+  directSuiGrpcAndLocalMaterial: {
+    label: "direct Sui gRPC plus local material stores",
+    owns: ["wallet balances", "object facts", "transaction material", "review-time simulation", "receipt reads"]
+  },
+  officialIndexerRest: {
+    label: "DeepBookV3 official Indexer REST",
+    owns: ["USDC-quoted candle history", "price-at-time candles", "chart candles", "account-timeline USDC candle references"]
+  },
+  localTransactionActivity: {
+    label: "local SQLite transaction activity plus local protocol rules",
+    owns: ["account net-flow bars", "protocolMatches"]
+  },
+  guidanceOnly: {
+    label: "guidance and test enforcement only",
+    owns: ["runtime source wording", "unsupported-use wording", "source-policy tests"]
+  }
+} as const;
+
+export const DEEPBOOK_ANSWER_USE = {
+  officialUsdcCandleHistory: "official_deepbook_usdc_candle_history",
+  officialCandleAvailabilityForRequestedUtcRange: "official_candle_availability_for_the_requested_utc_range",
+  officialUsdcCandleForRequestedTime: "official_deepbook_usdc_candle_for_requested_time",
+  representativeClosePriceForMatchedCandle: "representative_close_price_for_the_matched_candle"
+} as const;
+
+export const DEEPBOOK_READ_RESPONSE_UNSUPPORTED = {
+  orderbook: [
+    "live_orderbook_stream",
+    "global_market_price",
+    "indicative_quote_for_a_source_amount",
+    "payment_coverage_or_shortfall",
+    "liquidity_verdict",
+    "price_impact",
+    "venue_comparison",
+    "route_recommendation",
+    "transaction_building",
+    "signing_data_or_readiness",
+    "profit_or_pnl"
+  ],
+  midPrice: [
+    "global_market_price",
+    "fiat_usd_cash_out",
+    "external_market_price_conversion",
+    "usd_peg_assumption",
+    "payment_coverage_or_shortfall",
+    "price_impact",
+    "quote_slippage",
+    "venue_comparison",
+    "route_recommendation",
+    "transaction_building",
+    "signing_data_or_readiness",
+    "profit_or_pnl",
+    "cost_basis"
+  ],
+  officialUsdcCandles: [
+    "fiat_usd_cash_out",
+    "usd_peg_assumption",
+    "global_market_price",
+    "historical_mid_price",
+    "live_quote",
+    "route_recommendation",
+    "best_route",
+    "transaction_building",
+    "signing_data_or_readiness",
+    "profit_or_pnl",
+    "cost_basis"
+  ],
+  quote: [
+    "payment_coverage",
+    "payment_shortfall",
+    "funding_source",
+    "route_dependent_payment_support",
+    "final_min_out",
+    "liquidity_verdict",
+    "price_impact",
+    "quote_vs_mid_slippage",
+    "effective_price",
+    "venue_comparison",
+    "route_recommendation",
+    "fiat_usd_cash_out",
+    "external_market_price_conversion",
+    "usd_peg_assumption",
+    "transaction_building",
+    "signing_data_or_readiness",
+    "profit_or_pnl",
+    "cost_basis"
+  ],
+  accountInventory: [
+    "current_wallet_coin_balance",
+    "wallet_transaction_history",
+    "funding_source",
+    "route_liquidity",
+    "withdrawal_readiness",
+    "payment_coverage_or_shortfall",
+    "transaction_building",
+    "signing_data_or_readiness",
+    "profit_or_pnl",
+    "cost_basis"
+  ],
+  protocolMatches: [
+    "market_data",
+    "route_support",
+    "inventory_evidence",
+    "signing_readiness",
+    "official_indexer_replacement_evidence"
+  ]
+} as const;

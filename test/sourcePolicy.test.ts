@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { DEEPBOOK_READ_RESPONSE_UNSUPPORTED } from "../src/core/read/deepbookSourceOwners.js";
+
 const sourceFiles = [
   "src/runtime/start.ts",
   "src/runtime/logger.ts",
@@ -743,6 +745,43 @@ describe("source policy", () => {
     expect(source).toMatch(/profitAndLossAvailable:\s*false/);
     expect(source).toMatch(/costBasisAvailable:\s*false/);
     expect(source).toMatch(/independent_chain_recomputation/);
+  });
+
+  it("keeps DeepBook source-owner unsupported-use rules explicit in the contract", () => {
+    expect(DEEPBOOK_READ_RESPONSE_UNSUPPORTED.officialUsdcCandles).toEqual(
+      expect.arrayContaining([
+        "fiat_usd_cash_out",
+        "usd_peg_assumption",
+        "route_recommendation",
+        "best_route",
+        "transaction_building",
+        "signing_data_or_readiness",
+        "profit_or_pnl",
+        "cost_basis"
+      ])
+    );
+    expect(DEEPBOOK_READ_RESPONSE_UNSUPPORTED.quote).toEqual(
+      expect.arrayContaining([
+        "payment_coverage",
+        "payment_shortfall",
+        "funding_source",
+        "route_dependent_payment_support",
+        "final_min_out",
+        "price_impact",
+        "route_recommendation",
+        "transaction_building",
+        "signing_data_or_readiness"
+      ])
+    );
+    expect(DEEPBOOK_READ_RESPONSE_UNSUPPORTED.protocolMatches).toEqual(
+      expect.arrayContaining([
+        "market_data",
+        "route_support",
+        "inventory_evidence",
+        "signing_readiness",
+        "official_indexer_replacement_evidence"
+      ])
+    );
   });
 
   it("documents the DeepBook USDC candle chart page as local read-only display", () => {
