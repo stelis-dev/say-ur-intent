@@ -19,6 +19,7 @@ Tool names use dot prefixes and avoid arbitrary shell, arbitrary Move calls, and
 | `read.inspect_deepbook_orderbook` | Implemented | Uses pinned DeepBook SDK read methods over Sui gRPC simulation reads with an internal sender placeholder; `ticks` is capped at 50. |
 | `read.get_deepbook_mid_price` | Implemented | Returns a DeepBook pool mid price snapshot from pinned SDK simulation reads. |
 | `read.get_deepbook_usdc_price_history` | Implemented | Returns external precomputed DeepBook USDC 10-minute UTC candle evidence from `deepbook-usdc-index`. |
+| `read.get_deepbook_usdc_price_at_time` | Implemented | Returns the filled external DeepBook USDC 10-minute UTC candle for or nearest to one target UTC time. |
 | `read.quote_deepbook_action` | Implemented | Quotes raw integer DeepBook quantities through pinned SDK transaction builders and raw `u64` simulation return values with an internal sender placeholder. |
 | `read.quote_deepbook_display_amount` | Implemented | Converts an explicit display source amount through pinned DeepBook token units, then returns scoped display quote facts plus raw quote evidence. |
 | `read.list_flowx_pools` | Implemented | Lists pinned FlowX CLMM mainnet pools for supported pairs from the chain-verified pinned registry. |
@@ -122,6 +123,20 @@ Supported successful responses return:
 USDC in this tool is the indexed token-denominated quote asset. It is not fiat USD and not a USDC/USD peg guarantee.
 
 This output is not a live quote, execution price, historical mid price, global market price, fiat USD cash-out estimate, external market-price conversion, USDC/USD peg assumption, route recommendation, best route, transaction-building input, signing data, signing readiness, P&L, tax evidence, cost basis, user-account transaction history, or user-account balance history.
+
+`read.get_deepbook_usdc_price_at_time` uses the same external precomputed candle source and selector rules, but accepts one `targetTime` instead of a range. Optional `maxDistanceMinutes` limits how far from the target time the tool may select a filled candle.
+
+Successful at-time responses return:
+
+- `status: "ok"`;
+- `target`, including `targetTime` and the UTC search window;
+- `match.kind`, which can be `exact_bucket`, `nearest_before`, or `nearest_after`;
+- `match.distanceMinutes`;
+- `match.representativePrice`, whose `field` is `matchedBar.close`;
+- `matchedBar`, a filled 10-minute UTC candle;
+- the same `pair`, `coverageStatus`, `source`, `quantitySemantics`, `responseSummary`, and `unsupportedClaims` boundaries as the range-history tool.
+
+`status: "no_price_in_search_window"` means no filled candle was available inside the bounded search window. The tool does not synthesize a price from empty or missing candles, interpolate, carry forward a previous candle outside the search window, or perform an on-demand chain-history scan.
 
 `read.quote_deepbook_action` and `read.quote_deepbook_display_amount` use the pinned DeepBook transaction builder quote functions.
 

@@ -2425,6 +2425,96 @@ describe("SuiReadService", () => {
     });
   });
 
+  it("returns a target-time DeepBook USDC candle with close as the representative price", async () => {
+    const result = await createService({
+      deepbookUsdcIndexSource: createDeepbookUsdcIndexSourceFixture().source
+    }).getDeepbookUsdcPriceAtTime({
+      pairId: "SUI_USDC",
+      targetTime: "2026-06-26T16:55:00.000Z"
+    });
+
+    expect(result).toMatchObject({
+      status: "ok",
+      target: {
+        targetTime: "2026-06-26T16:55:00.000Z",
+        searchWindow: { maxDistanceMinutes: 360 }
+      },
+      pair: { pairId: "SUI_USDC", priceConvention: "USDC_PER_BASE" },
+      match: {
+        kind: "exact_bucket",
+        distanceMinutes: 0,
+        representativePrice: {
+          field: "matchedBar.close",
+          value: "0.69316",
+          quoteAsset: "USDC",
+          baseAssetSymbol: "SUI",
+          priceConvention: "USDC_PER_BASE"
+        }
+      },
+      matchedBar: {
+        status: "filled",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z",
+        close: "0.69316"
+      },
+      userAnswerUse: {
+        answerFields: expect.arrayContaining(["match.representativePrice", "matchedBar.close", "responseSummary"]),
+        cannotAnswer: expect.arrayContaining(["fiat_usd_cash_out", "global_market_price", "profit_or_pnl"])
+      },
+      quantitySemantics: {
+        allowedUse: "observed_deepbook_usdc_fill_candle_history",
+        usdcIsFiatUsd: false,
+        chainRecomputedBySayUrIntent: false
+      }
+    });
+  });
+
+  it("uses the nearest filled candle when the target bucket has no price", async () => {
+    const result = await createService({
+      deepbookUsdcIndexSource: createDeepbookUsdcIndexSourceFixture().source
+    }).getDeepbookUsdcPriceAtTime({
+      pairId: "SUI_USDC",
+      targetTime: "2026-06-26T17:05:00.000Z"
+    });
+
+    expect(result).toMatchObject({
+      status: "ok",
+      match: {
+        kind: "nearest_before",
+        distanceMinutes: 5,
+        representativePrice: { field: "matchedBar.close", value: "0.69316" }
+      },
+      matchedBar: {
+        status: "filled",
+        start: "2026-06-26T16:50:00.000Z",
+        end: "2026-06-26T17:00:00.000Z"
+      }
+    });
+  });
+
+  it("does not invent a price when no filled candle is inside the search window", async () => {
+    const result = await createService({
+      deepbookUsdcIndexSource: createDeepbookUsdcIndexSourceFixture().source
+    }).getDeepbookUsdcPriceAtTime({
+      pairId: "SUI_USDC",
+      targetTime: "2026-06-26T17:05:00.000Z",
+      maxDistanceMinutes: 1
+    });
+
+    expect(result).toMatchObject({
+      status: "no_price_in_search_window",
+      target: {
+        targetTime: "2026-06-26T17:05:00.000Z",
+        searchWindow: { maxDistanceMinutes: 1 }
+      },
+      pair: { pairId: "SUI_USDC" },
+      userAnswerUse: {
+        canAnswer: expect.not.arrayContaining(["representative_close_price_for_the_matched_candle"]),
+        answerFields: expect.not.arrayContaining(["matchedBar.close"])
+      }
+    });
+  });
+
   it("returns unsupported-range before reading the index source", async () => {
     const { source, calls } = createDeepbookUsdcIndexSourceFixture();
     const result = await createService({ deepbookUsdcIndexSource: source }).getDeepbookUsdcPriceHistory({

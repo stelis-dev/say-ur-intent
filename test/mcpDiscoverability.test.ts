@@ -1716,6 +1716,58 @@ describe("MCP discoverability", () => {
         open: "0.69846"
       });
 
+      const priceAtTime = await client.callTool({
+        name: TOOL_NAMES.readGetDeepbookUsdcPriceAtTime,
+        arguments: {
+          pairId: "SUI_USDC",
+          targetTime: "2026-06-26T19:45:00.000Z"
+        }
+      });
+      expect(textPayload(priceAtTime)).toMatchObject({
+        ok: true,
+        data: {
+          status: "ok",
+          target: {
+            targetTime: "2026-06-26T19:45:00.000Z",
+            searchWindow: { maxDistanceMinutes: 360 }
+          },
+          pair: { pairId: "SUI_USDC", priceConvention: "USDC_PER_BASE" },
+          match: {
+            kind: "exact_bucket",
+            distanceMinutes: 0,
+            representativePrice: {
+              field: "matchedBar.close",
+              value: "0.7006",
+              quoteAsset: "USDC",
+              baseAssetSymbol: "SUI",
+              priceConvention: "USDC_PER_BASE"
+            }
+          },
+          matchedBar: {
+            status: "filled",
+            start: "2026-06-26T19:40:00.000Z",
+            end: "2026-06-26T19:50:00.000Z",
+            close: "0.7006"
+          },
+          userAnswerUse: {
+            canAnswer: expect.arrayContaining(["representative_close_price_for_the_matched_candle"]),
+            cannotAnswer: expect.arrayContaining(["global_market_price", "profit_or_pnl", "signing_data_or_readiness"]),
+            answerFields: expect.arrayContaining(["match.representativePrice", "matchedBar.close", "responseSummary"])
+          },
+          quantitySemantics: {
+            kind: "deepbook_usdc_indexed_10m_bars",
+            usdcIsFiatUsd: false,
+            chainRecomputedBySayUrIntent: false,
+            liveQuoteAvailable: false,
+            globalMarketPriceAvailable: false
+          },
+          responseSummary: {
+            usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+          },
+          unsupportedClaims: expect.arrayContaining(["fiat_usd_cash_out", "usd_peg_assumption"])
+        }
+      });
+
       const orderbook = await client.callTool({
         name: TOOL_NAMES.readInspectDeepbookOrderbook,
         arguments: { poolKey: "DEEP_SUI", ticks: 5 }

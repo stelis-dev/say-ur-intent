@@ -75,6 +75,7 @@ import {
   deepbookAccountInventoryUserAnswerUse,
   deepbookMidPriceUserAnswerUse,
   deepbookOrderbookUserAnswerUse,
+  deepbookUsdcPriceAtTimeUserAnswerUse,
   deepbookUsdcPriceHistoryUserAnswerUse,
   deepbookQuoteUserAnswerUse,
   flowxQuoteUserAnswerUse,
@@ -127,8 +128,13 @@ import {
   type DeepbookRawQuoteReturnValues,
   type DeepbookQuoteSummary,
   type DeepbookUsdcIndexSourceClient,
+  type DeepbookUsdcPriceAtTimeInput,
+  type DeepbookUsdcPriceAtTimeMatch,
+  type DeepbookUsdcPriceAtTimeSummary,
+  type DeepbookUsdcPriceAtTimeTarget,
   type DeepbookUsdcPriceHistoryFileReference,
   type DeepbookUsdcPriceHistoryFoundFileReference,
+  type DeepbookUsdcPriceHistoryBar,
   type DeepbookUsdcPriceHistoryInput,
   type DeepbookUsdcPriceHistoryPair,
   type DeepbookUsdcPriceHistoryQuantitySemantics,
@@ -187,6 +193,7 @@ type WalletBalanceClassificationScan = {
 };
 
 const DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS = DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES * 60 * 1000;
+const DEFAULT_DEEPBOOK_USDC_PRICE_AT_TIME_MAX_DISTANCE_MINUTES = 360;
 
 const DEEPBOOK_USDC_PRICE_HISTORY_RESPONSE_SUMMARY = {
   ...deepbookUsdcPriceHistoryResponseSummary()
@@ -247,7 +254,42 @@ function deepbookUsdcPriceHistoryRange(start: string, end: string): DeepbookUsdc
   };
 }
 
-function parseUtcIsoHistoryDate(value: string, field: "start" | "end"): Date {
+function deepbookUsdcPriceAtTimeTarget(input: DeepbookUsdcPriceAtTimeInput): DeepbookUsdcPriceAtTimeTarget {
+  const target = parseUtcIsoHistoryDate(input.targetTime, "targetTime");
+  const maxDistanceMinutes = input.maxDistanceMinutes ?? DEFAULT_DEEPBOOK_USDC_PRICE_AT_TIME_MAX_DISTANCE_MINUTES;
+  if (!Number.isInteger(maxDistanceMinutes) || maxDistanceMinutes <= 0) {
+    throw new ReadServiceInputError("input_invalid", "maxDistanceMinutes must be a positive integer", {
+      field: "maxDistanceMinutes",
+      value: input.maxDistanceMinutes
+    });
+  }
+  const maxSearchMinutes = Math.floor(
+    (MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS * DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES -
+      DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES) /
+      2
+  );
+  if (maxDistanceMinutes > maxSearchMinutes) {
+    throw new ReadServiceInputError("input_invalid", "maxDistanceMinutes exceeds the supported DeepBook USDC search window", {
+      field: "maxDistanceMinutes",
+      maxDistanceMinutes,
+      maxSupportedMinutes: maxSearchMinutes
+    });
+  }
+
+  const targetMs = target.getTime();
+  const start = new Date(targetMs - maxDistanceMinutes * 60 * 1000);
+  const end = new Date(targetMs + maxDistanceMinutes * 60 * 1000 + DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS);
+  return {
+    targetTime: target.toISOString(),
+    searchWindow: {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      maxDistanceMinutes
+    }
+  };
+}
+
+function parseUtcIsoHistoryDate(value: string, field: "start" | "end" | "targetTime"): Date {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
     throw new ReadServiceInputError("input_invalid", `${field} must be an ISO UTC timestamp`, { field, value });
@@ -343,6 +385,103 @@ function deepbookUsdcPriceHistorySource(input: {
     },
     weeklyFiles: { requested, found, missing },
     chainRecomputedBySayUrIntent: false
+  };
+}
+
+type FilledDeepbookUsdcHistoryBar = DeepbookUsdcPriceHistoryBar & {
+  status: "filled";
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+};
+
+function deepbookUsdcPriceAtTimeMatch(input: {
+  target: DeepbookUsdcPriceAtTimeTarget;
+  pair: DeepbookUsdcPriceHistoryPair;
+  bars: DeepbookUsdcPriceHistoryBar[];
+}): { bar: FilledDeepbookUsdcHistoryBar; match: DeepbookUsdcPriceAtTimeMatch } | undefined {
+  const targetMs = Date.parse(input.target.targetTime);
+  const filledBars = input.bars.filter((bar): bar is FilledDeepbookUsdcHistoryBar =>
+    bar.status === "filled" && bar.open !== null && bar.high !== null && bar.low !== null && bar.close !== null
+  );
+  const exact = filledBars.find((bar) => {
+    const startMs = Date.parse(bar.start);
+    const endMs = Date.parse(bar.end);
+    return targetMs >= startMs && targetMs < endMs;
+  });
+  if (exact !== undefined) {
+    return {
+      bar: exact,
+      match: deepbookUsdcPriceAtTimeMatchFromBar({
+        kind: "exact_bucket",
+        distanceMinutes: 0,
+        pair: input.pair,
+        bar: exact
+      })
+    };
+  }
+
+  const candidates = filledBars
+    .map((bar) => {
+      const startMs = Date.parse(bar.start);
+      const endMs = Date.parse(bar.end);
+      const before = endMs <= targetMs;
+      const after = startMs > targetMs;
+      const distanceMinutes = before
+        ? (targetMs - endMs) / 60_000
+        : after
+          ? (startMs - targetMs) / 60_000
+          : 0;
+      return {
+        bar,
+        kind: before ? ("nearest_before" as const) : ("nearest_after" as const),
+        distanceMinutes
+      };
+    })
+    .filter((candidate) => candidate.distanceMinutes <= input.target.searchWindow.maxDistanceMinutes)
+    .sort((left, right) => {
+      const byDistance = left.distanceMinutes - right.distanceMinutes;
+      if (byDistance !== 0) {
+        return byDistance;
+      }
+      if (left.kind !== right.kind) {
+        return left.kind === "nearest_before" ? -1 : 1;
+      }
+      return Date.parse(left.bar.start) - Date.parse(right.bar.start);
+    });
+
+  const best = candidates[0];
+  if (best === undefined) {
+    return undefined;
+  }
+  return {
+    bar: best.bar,
+    match: deepbookUsdcPriceAtTimeMatchFromBar({
+      kind: best.kind,
+      distanceMinutes: best.distanceMinutes,
+      pair: input.pair,
+      bar: best.bar
+    })
+  };
+}
+
+function deepbookUsdcPriceAtTimeMatchFromBar(input: {
+  kind: DeepbookUsdcPriceAtTimeMatch["kind"];
+  distanceMinutes: number;
+  pair: DeepbookUsdcPriceHistoryPair;
+  bar: FilledDeepbookUsdcHistoryBar;
+}): DeepbookUsdcPriceAtTimeMatch {
+  return {
+    kind: input.kind,
+    distanceMinutes: Number(input.distanceMinutes.toFixed(6)),
+    representativePrice: {
+      field: "matchedBar.close",
+      value: input.bar.close,
+      quoteAsset: "USDC",
+      baseAssetSymbol: input.pair.baseAsset.symbol,
+      priceConvention: "USDC_PER_BASE"
+    }
   };
 }
 
@@ -1002,6 +1141,81 @@ export class SuiReadService {
       barCount: bars.length,
       bars,
       source
+    };
+  }
+
+  async getDeepbookUsdcPriceAtTime(input: DeepbookUsdcPriceAtTimeInput): Promise<DeepbookUsdcPriceAtTimeSummary> {
+    const target = deepbookUsdcPriceAtTimeTarget(input);
+    const history = await this.getDeepbookUsdcPriceHistory({
+      pairId: input.pairId,
+      assetSymbol: input.assetSymbol,
+      coinType: input.coinType,
+      start: target.searchWindow.start,
+      end: target.searchWindow.end
+    });
+    const common = {
+      fetchedAt: history.fetchedAt,
+      target,
+      requested: history.requested,
+      quantitySemantics: history.quantitySemantics,
+      responseSummary: history.responseSummary,
+      unsupportedClaims: history.unsupportedClaims
+    };
+
+    if (history.status === "unsupported_pair") {
+      return {
+        status: "unsupported_pair",
+        ...common,
+        reason: history.reason,
+        matchingPairIds: history.matchingPairIds,
+        availablePairIds: history.availablePairIds,
+        userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(false)
+      };
+    }
+    if (history.status === "unsupported_range") {
+      return {
+        status: "unsupported_range",
+        ...common,
+        reason: history.reason,
+        userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(false)
+      };
+    }
+    if (history.status === "source_unavailable") {
+      return {
+        status: "source_unavailable",
+        ...common,
+        reason: history.reason,
+        pair: history.pair,
+        source: history.source,
+        userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(false)
+      };
+    }
+
+    const matched = deepbookUsdcPriceAtTimeMatch({
+      target,
+      pair: history.pair,
+      bars: history.bars
+    });
+    if (matched === undefined) {
+      return {
+        status: "no_price_in_search_window",
+        ...common,
+        pair: history.pair,
+        coverageStatus: history.coverageStatus,
+        source: history.source,
+        userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(false)
+      };
+    }
+
+    return {
+      status: "ok",
+      ...common,
+      pair: history.pair,
+      match: matched.match,
+      matchedBar: matched.bar,
+      coverageStatus: history.coverageStatus,
+      source: history.source,
+      userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(true)
     };
   }
 

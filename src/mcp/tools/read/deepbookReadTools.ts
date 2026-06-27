@@ -272,6 +272,73 @@ const deepbookUsdcPriceHistoryOutputSchema = z.object({
   ])
 }).strict();
 
+const deepbookUsdcPriceAtTimeTargetSchema = z.object({
+  targetTime: fetchedAtSchema,
+  searchWindow: z.object({
+    start: fetchedAtSchema,
+    end: fetchedAtSchema,
+    maxDistanceMinutes: z.number().int().positive()
+  }).strict()
+}).strict();
+
+const deepbookUsdcPriceAtTimeMatchSchema = z.object({
+  kind: z.enum(["exact_bucket", "nearest_before", "nearest_after"]),
+  distanceMinutes: z.number().nonnegative(),
+  representativePrice: z.object({
+    field: z.literal("matchedBar.close"),
+    value: z.string().regex(/^\d+(?:\.\d+)?$/),
+    quoteAsset: z.literal("USDC"),
+    baseAssetSymbol: z.string().min(1),
+    priceConvention: z.literal(DEEPBOOK_USDC_INDEX_PRICE_CONVENTION)
+  }).strict()
+}).strict();
+
+const deepbookUsdcPriceAtTimeCommonOutputSchema = deepbookUsdcPriceHistoryCommonOutputSchema.extend({
+  target: deepbookUsdcPriceAtTimeTargetSchema
+}).strict();
+
+const deepbookUsdcPriceAtTimeMatchedBarSchema = deepbookUsdcIndexBarSchema.superRefine((bar, context) => {
+  if (bar.status !== "filled") {
+    context.addIssue({ code: "custom", message: "matchedBar must be a filled bar", path: ["status"] });
+  }
+});
+
+const deepbookUsdcPriceAtTimeOutputSchema = z.object({
+  ok: z.literal(true),
+  data: z.discriminatedUnion("status", [
+    deepbookUsdcPriceAtTimeCommonOutputSchema.extend({
+      status: z.literal("ok"),
+      pair: deepbookUsdcPriceHistoryPairSchema,
+      match: deepbookUsdcPriceAtTimeMatchSchema,
+      matchedBar: deepbookUsdcPriceAtTimeMatchedBarSchema,
+      coverageStatus: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_COVERAGE_STATUSES),
+      source: deepbookUsdcPriceHistorySourceSchema
+    }).strict(),
+    deepbookUsdcPriceAtTimeCommonOutputSchema.extend({
+      status: z.literal("no_price_in_search_window"),
+      pair: deepbookUsdcPriceHistoryPairSchema,
+      coverageStatus: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_COVERAGE_STATUSES),
+      source: deepbookUsdcPriceHistorySourceSchema
+    }).strict(),
+    deepbookUsdcPriceAtTimeCommonOutputSchema.extend({
+      status: z.literal("unsupported_pair"),
+      reason: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_PAIR_REASONS),
+      matchingPairIds: z.array(z.string()),
+      availablePairIds: z.array(z.string())
+    }).strict(),
+    deepbookUsdcPriceAtTimeCommonOutputSchema.extend({
+      status: z.literal("unsupported_range"),
+      reason: z.literal("requested_range_exceeds_max_bars")
+    }).strict(),
+    deepbookUsdcPriceAtTimeCommonOutputSchema.extend({
+      status: z.literal("source_unavailable"),
+      reason: z.enum(DEEPBOOK_USDC_PRICE_HISTORY_SOURCE_UNAVAILABLE_REASONS),
+      pair: deepbookUsdcPriceHistoryPairSchema.optional(),
+      source: deepbookUsdcPriceHistorySourceSchema.optional()
+    }).strict()
+  ])
+}).strict();
+
 const deepbookQuoteQuantitySemanticsSchema = z.object({
   kind: z.literal(DEEPBOOK_QUOTE_QUANTITY_KIND),
   inputAmountKind: z.enum(["raw_u64", "display_source_amount_converted_to_raw_u64"]),
@@ -563,6 +630,39 @@ export function registerDeepbookReadTools(server: McpServer, deps: McpServerDeps
             coinType,
             start,
             end
+          })
+        );
+      } catch (error) {
+        return readServiceError(error, deps);
+      }
+    }
+  );
+
+  server.registerTool(
+    TOOL_NAMES.readGetDeepbookUsdcPriceAtTime,
+    {
+      title: "Get DeepBook USDC price at time",
+      description:
+        "Return the filled DeepBook USDC 10-minute UTC candle closest to a target UTC time, using close as the representative price.",
+      inputSchema: {
+        pairId: z.string().min(1).optional(),
+        assetSymbol: z.string().min(1).optional(),
+        coinType: z.string().min(1).optional(),
+        targetTime: fetchedAtSchema,
+        maxDistanceMinutes: z.number().int().positive().optional()
+      },
+      outputSchema: deepbookUsdcPriceAtTimeOutputSchema,
+      annotations: { readOnlyHint: true, openWorldHint: false }
+    },
+    async ({ pairId, assetSymbol, coinType, targetTime, maxDistanceMinutes }) => {
+      try {
+        return okToolResult(
+          await deps.readService.getDeepbookUsdcPriceAtTime({
+            pairId,
+            assetSymbol,
+            coinType,
+            targetTime,
+            maxDistanceMinutes
           })
         );
       } catch (error) {

@@ -334,6 +334,53 @@ export function deepbookUsdcPriceHistoryUserAnswerUse(): UserAnswerUse {
   };
 }
 
+export function deepbookUsdcPriceAtTimeUserAnswerUse(matchAvailable: boolean): UserAnswerUse {
+  return {
+    canAnswer: [
+      "observed_deepbook_usdc_10m_candle_for_requested_time_from_external_index",
+      ...(matchAvailable ? ["representative_close_price_for_the_matched_candle"] : [])
+    ],
+    cannotAnswer: [
+      "fiat_usd_cash_out",
+      "usd_peg_assumption",
+      "global_market_price",
+      "historical_mid_price",
+      "live_quote",
+      "route_recommendation",
+      "best_route",
+      "transaction_building",
+      "signing_data_or_readiness",
+      "profit_or_pnl",
+      "cost_basis"
+    ],
+    answerFields: [
+      "target.targetTime",
+      "target.searchWindow",
+      "status",
+      "pair",
+      ...(matchAvailable
+        ? [
+            "match.kind",
+            "match.distanceMinutes",
+            "match.representativePrice",
+            "matchedBar.start",
+            "matchedBar.end",
+            "matchedBar.open",
+            "matchedBar.high",
+            "matchedBar.low",
+            "matchedBar.close"
+          ]
+        : []),
+      "coverageStatus",
+      "source.weeklyFiles",
+      "responseSummary",
+      "unsupportedClaims"
+    ],
+    conclusionRuleFields: ["responseSummary", "quantitySemantics", "unsupportedClaims"],
+    diagnosticOnlyFields: ["requested.range", "source.registry", "source.repositoryUrl", "source.sourceRef"]
+  };
+}
+
 export function deepbookQuoteUserAnswerUse(summaryKind: "raw" | "display"): UserAnswerUse {
   return {
     canAnswer: [

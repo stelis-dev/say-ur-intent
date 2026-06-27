@@ -703,10 +703,20 @@ describe("source policy", () => {
       toolSource.match(
         /TOOL_NAMES\.readGetDeepbookUsdcPriceHistory[\s\S]{0,700}description:\s*"([^"]+)"/
       )?.[1] ?? "";
+    const atTimeDescription =
+      toolSource.match(
+        /TOOL_NAMES\.readGetDeepbookUsdcPriceAtTime[\s\S]{0,700}description:\s*"([^"]+)"/
+      )?.[1] ?? "";
 
     expect(description).toContain("DeepBook USDC 10-minute UTC candle evidence");
     expect(description).not.toMatch(/live quote|execution price|route|best price|USD value|P&L|tax|signing readiness/i);
+    expect(atTimeDescription).toContain("DeepBook USDC 10-minute UTC candle");
+    expect(atTimeDescription).toContain("representative price");
+    expect(atTimeDescription).not.toMatch(/live quote|execution price|route|best price|USD value|P&L|tax|signing readiness/i);
     expect(docs).toMatch(/read\.get_deepbook_usdc_price_history/);
+    expect(docs).toMatch(/read\.get_deepbook_usdc_price_at_time/);
+    expect(docs).toMatch(/matchedBar\.close/);
+    expect(docs).toMatch(/no_price_in_search_window/);
     expect(docs).toMatch(/DeepBook USDC 10-minute UTC candle evidence|DeepBook USDC 10-minute UTC candle files|DeepBook USDC 10-minute UTC candle-history/i);
     expect(docs).toMatch(/deepbook-usdc-index/);
     expect(docs).toMatch(/source\.chainRecomputedBySayUrIntent:\s*false|does not independently recompute/i);
@@ -718,6 +728,9 @@ describe("source policy", () => {
     expect(docs).toMatch(/unsupported_range/);
     expect(docs).toMatch(/source_unavailable/);
     expect(source).toMatch(/read\.get_deepbook_usdc_price_history/);
+    expect(source).toMatch(/read\.get_deepbook_usdc_price_at_time/);
+    expect(source).toMatch(/matchedBar\.close/);
+    expect(source).toMatch(/no_price_in_search_window/);
     expect(source).toMatch(/external_precomputed_deepbook_usdc_index/);
     expect(source).toMatch(/observed_deepbook_usdc_fill_candle_history/);
     expect(source).toMatch(/usdcIsFiatUsd:\s*false/);

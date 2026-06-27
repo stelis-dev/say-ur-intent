@@ -1014,6 +1014,14 @@ export type DeepbookUsdcPriceHistoryInput = {
   end: string;
 };
 
+export type DeepbookUsdcPriceAtTimeInput = {
+  pairId?: string | undefined;
+  assetSymbol?: string | undefined;
+  coinType?: string | undefined;
+  targetTime: string;
+  maxDistanceMinutes?: number | undefined;
+};
+
 export type DeepbookUsdcPriceHistoryRange = {
   start: string;
   end: string;
@@ -1169,6 +1177,111 @@ export type DeepbookUsdcPriceHistorySummary =
   | {
       status: "source_unavailable";
       fetchedAt: string;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      reason: DeepbookUsdcPriceHistorySourceUnavailableReason;
+      pair?: DeepbookUsdcPriceHistoryPair | undefined;
+      source?: Partial<DeepbookUsdcPriceHistorySource> | undefined;
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    };
+
+export type DeepbookUsdcPriceAtTimeMatchKind = "exact_bucket" | "nearest_before" | "nearest_after";
+
+export type DeepbookUsdcPriceAtTimeTarget = {
+  targetTime: string;
+  searchWindow: {
+    start: string;
+    end: string;
+    maxDistanceMinutes: number;
+  };
+};
+
+export type DeepbookUsdcPriceAtTimeMatch = {
+  kind: DeepbookUsdcPriceAtTimeMatchKind;
+  distanceMinutes: number;
+  representativePrice: {
+    field: "matchedBar.close";
+    value: string;
+    quoteAsset: "USDC";
+    baseAssetSymbol: string;
+    priceConvention: "USDC_PER_BASE";
+  };
+};
+
+export type DeepbookUsdcPriceAtTimeSummary =
+  | {
+      status: "ok";
+      fetchedAt: string;
+      target: DeepbookUsdcPriceAtTimeTarget;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      pair: DeepbookUsdcPriceHistoryPair;
+      match: DeepbookUsdcPriceAtTimeMatch;
+      matchedBar: DeepbookUsdcPriceHistoryBar & { status: "filled" };
+      coverageStatus: DeepbookUsdcPriceHistoryCoverageStatus;
+      source: DeepbookUsdcPriceHistorySource;
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "no_price_in_search_window";
+      fetchedAt: string;
+      target: DeepbookUsdcPriceAtTimeTarget;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      pair: DeepbookUsdcPriceHistoryPair;
+      coverageStatus: DeepbookUsdcPriceHistoryCoverageStatus;
+      source: DeepbookUsdcPriceHistorySource;
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "unsupported_pair";
+      fetchedAt: string;
+      target: DeepbookUsdcPriceAtTimeTarget;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      reason: DeepbookUsdcPriceHistoryUnsupportedPairReason;
+      matchingPairIds: string[];
+      availablePairIds: string[];
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "unsupported_range";
+      fetchedAt: string;
+      target: DeepbookUsdcPriceAtTimeTarget;
+      requested: {
+        selector: DeepbookUsdcPriceHistorySelector;
+        range: DeepbookUsdcPriceHistoryRange;
+      };
+      reason: "requested_range_exceeds_max_bars";
+      userAnswerUse: UserAnswerUse;
+      quantitySemantics: DeepbookUsdcPriceHistoryQuantitySemantics;
+      responseSummary: DeepbookUsdcPriceHistoryResponseSummary;
+      unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
+    }
+  | {
+      status: "source_unavailable";
+      fetchedAt: string;
+      target: DeepbookUsdcPriceAtTimeTarget;
       requested: {
         selector: DeepbookUsdcPriceHistorySelector;
         range: DeepbookUsdcPriceHistoryRange;
