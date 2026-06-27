@@ -144,7 +144,7 @@ describe("DeepBook USDC chart API helper", () => {
       reason: "duplicate_query_field",
       field: "poolName"
     });
-    await expectStatus(api.getCandles(new URLSearchParams("poolName=SUI_USDC&interval=10m")), 400, {
+    await expectStatus(api.getCandles(new URLSearchParams("poolName=SUI_USDC&interval=not-an-interval")), 400, {
       status: "unsupported_input",
       reason: "unsupported_interval",
       field: "interval"

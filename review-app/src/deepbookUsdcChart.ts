@@ -370,9 +370,9 @@ function renderChart(container: HTMLElement, legend: HTMLElement, datasets: Cand
     crosshair: { mode: 0 }
   });
 
-  const filled = filledDatasets(datasets);
-  if (filled.length === 1) {
-    const dataset = filled[0]!;
+  const available = availableDatasets(datasets);
+  if (available.length === 1) {
+    const dataset = available[0]!;
     const candles = dataset.response.candles.map(candleToCandlestickData);
     const volumes = dataset.response.candles.map(candleToVolumeData);
     const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -400,7 +400,7 @@ function renderChart(container: HTMLElement, legend: HTMLElement, datasets: Cand
       legend.textContent = legendTextForCandle(dataset.response.pair.poolName, crosshairCandle(param, byTime) ?? latestCandle(dataset.response));
     });
   } else {
-    filled.forEach((dataset, index) => {
+    available.forEach((dataset, index) => {
       const series = chart.addSeries(LineSeries, {
         color: lineColor(index),
         lineWidth: 2,
@@ -411,7 +411,7 @@ function renderChart(container: HTMLElement, legend: HTMLElement, datasets: Cand
       chart.panes()[index]?.setStretchFactor(1);
     });
     chart.subscribeCrosshairMove((param) => {
-      legend.textContent = legendTextForMultiPool(filled, typeof param.time === "number" ? param.time : undefined);
+      legend.textContent = legendTextForMultiPool(available, typeof param.time === "number" ? param.time : undefined);
     });
   }
   chart.timeScale().fitContent();
@@ -591,9 +591,9 @@ function latestCandle(response: CandleDataset["response"] | undefined): ChartCan
 }
 
 export function legendTextForDatasets(datasets: CandleDataset[]): string {
-  const filled = filledDatasets(datasets);
-  if (filled.length > 1) {
-    return legendTextForMultiPool(filled);
+  const available = availableDatasets(datasets);
+  if (available.length > 1) {
+    return legendTextForMultiPool(available);
   }
   const primary = primaryDataset(datasets);
   const candle = latestCandle(primary?.response);
@@ -623,7 +623,7 @@ function legendTextForMultiPool(datasets: Array<{ poolName: string; response: Ca
     .join(" | ");
 }
 
-function filledDatasets(datasets: CandleDataset[]): Array<{ poolName: string; response: CandleOkResponse }> {
+function availableDatasets(datasets: CandleDataset[]): Array<{ poolName: string; response: CandleOkResponse }> {
   return datasets.filter((dataset): dataset is { poolName: string; response: CandleOkResponse } =>
     dataset.response.status === "ok" && dataset.response.candles.length > 0
   );

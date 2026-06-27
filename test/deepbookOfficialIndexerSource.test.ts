@@ -106,7 +106,7 @@ describe("DeepbookOfficialIndexerSource", () => {
     expect(DEEPBOOK_OFFICIAL_INDEXER_INTERVALS).toEqual(["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]);
     expect(parseDeepbookOfficialIndexerInterval("15m")).toBe("15m");
     expect(parseDeepbookOfficialIndexerInterval("1w")).toBe("1w");
-    expect(() => parseDeepbookOfficialIndexerInterval("10m")).toThrow("interval is not supported");
+    expect(() => parseDeepbookOfficialIndexerInterval("not-an-interval")).toThrow("interval is not supported");
   });
 
   it("normalizes exponent notation to ordinary decimal strings", async () => {

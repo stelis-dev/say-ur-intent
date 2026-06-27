@@ -2405,12 +2405,12 @@ describe("SuiReadService", () => {
     await expect(
       createService({ deepbookOfficialIndexerSource: source }).getDeepbookUsdcPriceAtTime({
         poolName: "SUI_USDC",
-        interval: "10m" as never,
+        interval: "not-an-interval" as never,
         targetTime: "2026-06-26T16:55:00.000Z"
       })
     ).rejects.toMatchObject({
       kind: "input_invalid",
-      details: { field: "interval", value: "10m" }
+      details: { field: "interval", value: "not-an-interval" }
     });
     expect(calls.pools).toBe(0);
     expect(calls.candles).toEqual([]);
