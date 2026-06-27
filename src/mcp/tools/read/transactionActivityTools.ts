@@ -1,9 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import {
-  ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES,
-  buildAccountAssetTimeline
-} from "../../../core/activity/accountAssetTimeline.js";
+import { buildAccountAssetTimeline } from "../../../core/activity/accountAssetTimeline.js";
 import {
   attachDeepbookUsdcReferencesToTimeline
 } from "../../../core/activity/accountAssetTimelineUsdcReferences.js";
@@ -25,7 +22,10 @@ import type {
   SummarizeSuiFunctionActivityScanResult
 } from "../../../core/activity/transactionActivityTypes.js";
 import { suiActivityAnalysisLimitations } from "../../../core/activity/transactionActivityAnalysis.js";
-import { deepbookUsdcIndexBarSchema } from "../../../core/read/deepbookUsdcIndexSource.js";
+import {
+  deepbookOfficialIndexerCandleSchema,
+  deepbookOfficialIndexerIntervalSchema
+} from "../../../core/read/deepbookOfficialIndexerSource.js";
 import { DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS } from "../../../core/read/readServiceTypes.js";
 import { suiTransactionDigestSchema } from "../../../core/suiAddress.js";
 import { okToolResult } from "../../result.js";
@@ -83,19 +83,11 @@ const suiFunctionActivityScanInputSchema = {
   fromTimestamp: fetchedAtSchema.optional(),
   toTimestamp: fetchedAtSchema.optional()
 };
-const accountAssetTimelineBucketMinutesSchema = z.union(
-  ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES.map((minutes) => z.literal(minutes)) as [
-    z.ZodLiteral<10>,
-    z.ZodLiteral<30>,
-    z.ZodLiteral<60>,
-    z.ZodLiteral<1440>
-  ]
-);
 const accountAssetTimelineInputSchema = {
   account: z.string().min(1).optional(),
   start: fetchedAtSchema,
   end: fetchedAtSchema,
-  bucketMinutes: accountAssetTimelineBucketMinutesSchema
+  interval: deepbookOfficialIndexerIntervalSchema.optional()
 };
 
 const suiTransactionActivitySourceSchema = z.discriminatedUnion("transport", [
@@ -461,18 +453,17 @@ const accountAssetTimelineNetFlowBarSchema = z.object({
 }).strict();
 
 const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
-  status: z.enum(["available", "partial", "unavailable", "unsupported_bucket_size", "no_timeline_bars"]),
+  status: z.enum(["available", "partial", "unavailable", "no_timeline_bars"]),
   quoteAsset: z.literal("USDC"),
   priceConvention: z.literal("USDC_PER_BASE"),
   usdcIsFiatUsd: z.literal(false),
   usdPegGuaranteeAvailable: z.literal(false),
-  source: z.literal("external_precomputed_deepbook_usdc_index"),
+  source: z.literal("deepbook_v3_official_indexer"),
   chainRecomputedBySayUrIntent: z.literal(false),
   quantitySemantics: z.object({
-    kind: z.literal("deepbook_usdc_indexed_10m_bars"),
-    allowedUse: z.literal("observed_deepbook_usdc_fill_candle_history"),
-    source: z.literal("external_precomputed_deepbook_usdc_index"),
-    barIntervalMinutes: z.literal(10),
+    kind: z.literal("deepbook_official_indexer_candles"),
+    allowedUse: z.literal("official_deepbook_usdc_candle_history"),
+    source: z.literal("deepbook_v3_official_indexer"),
     quoteAsset: z.literal("USDC"),
     priceConvention: z.literal("USDC_PER_BASE"),
     usdcIsFiatUsd: z.literal(false),
@@ -491,10 +482,10 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
   }).strict(),
   responseSummary: z.object({
     questionKind: z.literal("deepbook_usdc_price_history"),
-    evidenceKind: z.literal("external_precomputed_deepbook_usdc_index_10m_candles"),
+    evidenceKind: z.literal("official_deepbook_indexer_candles"),
     sourceStatement: z.string(),
     usdcDisclaimer: z.literal("USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."),
-    candleMeaning: z.literal("Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket."),
+    candleMeaning: z.literal("Each candle is returned by the DeepBookV3 official Indexer for the requested interval."),
     excludedFromConclusion: z.array(z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS))
   }).strict(),
   unsupportedClaims: z.array(z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS)),
@@ -503,7 +494,7 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
       coinType: z.string(),
       status: z.enum(["available", "partial"]),
       pair: z.object({
-        pairId: z.string(),
+        poolName: z.string(),
         poolId: z.string(),
         baseAsset: z.object({
           symbol: z.string(),
@@ -513,26 +504,27 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
         quoteAsset: z.object({
           symbol: z.literal("USDC"),
           coinType: z.string(),
-          decimals: z.literal(6)
+          decimals: z.number().int().nonnegative()
         }).strict(),
-        priceConvention: z.literal("USDC_PER_BASE"),
-        barIntervalMinutes: z.literal(10)
+        priceConvention: z.literal("USDC_PER_BASE")
       }).strict(),
       coverageStatus: z.string(),
       source: z.object({
-        kind: z.literal("external_precomputed_deepbook_usdc_index"),
-        repositoryUrl: z.string(),
+        kind: z.literal("deepbook_v3_official_indexer"),
         baseUrl: z.string(),
-        sourceRef: z.string(),
-        registry: z.object({
-          path: z.string(),
+        sourceStatement: z.string(),
+        poolList: z.object({
           url: z.string(),
           fetchedAt: fetchedAtSchema
         }).strict(),
-        weeklyFiles: z.object({
-          requested: z.array(z.unknown()),
-          found: z.array(z.unknown()),
-          missing: z.array(z.unknown())
+        candles: z.object({
+          url: z.string(),
+          fetchedAt: fetchedAtSchema,
+          poolName: z.string(),
+          interval: deepbookOfficialIndexerIntervalSchema,
+          startTimeMs: z.number().int().nonnegative(),
+          endTimeMs: z.number().int().nonnegative(),
+          limit: z.number().int().positive()
         }).strict(),
         chainRecomputedBySayUrIntent: z.literal(false)
       }).strict(),
@@ -540,8 +532,8 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
         z.object({
           bucketStart: fetchedAtSchema,
           bucketEnd: fetchedAtSchema,
-          status: z.enum(["filled", "empty", "missing"]),
-          candle: deepbookUsdcIndexBarSchema
+          status: z.literal("available"),
+          candle: deepbookOfficialIndexerCandleSchema
         }).strict(),
         z.object({
           bucketStart: fetchedAtSchema,
@@ -553,9 +545,9 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
     z.object({
       coinType: z.string(),
       status: z.literal("unsupported_asset"),
-      reason: z.enum(["selector_not_in_index_registry", "selector_resolves_to_multiple_enabled_pairs"]),
-      matchingPairIds: z.array(z.string()),
-      availablePairIds: z.array(z.string())
+      reason: z.enum(["selector_not_in_official_indexer", "selector_resolves_to_multiple_usdc_pools"]),
+      matchingPoolNames: z.array(z.string()),
+      availablePoolNames: z.array(z.string())
     }).strict(),
     z.object({
       coinType: z.string(),
@@ -566,7 +558,7 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
     z.object({
       coinType: z.string(),
       status: z.literal("source_unavailable"),
-      reason: z.enum(["index_source_not_configured", "registry_unavailable", "weekly_file_fetch_failed", "weekly_files_missing"]),
+      reason: z.enum(["official_indexer_not_configured", "pool_list_unavailable", "candle_fetch_failed", "official_indexer_invalid_payload"]),
       pair: z.unknown().optional(),
       source: z.unknown().optional()
     }).strict()
@@ -776,8 +768,9 @@ export function registerTransactionActivityTools(server: McpServer, deps: McpSer
           from: fetchedAtSchema,
           to: fetchedAtSchema
         }).strict(),
-        bucket: z.object({
-          minutes: accountAssetTimelineBucketMinutesSchema,
+      bucket: z.object({
+          interval: deepbookOfficialIndexerIntervalSchema,
+          durationMs: z.number().int().positive(),
           alignment: z.literal("utc_epoch")
         }).strict(),
         balanceStatus: z.literal("unavailable_no_balance_anchor"),
@@ -808,7 +801,7 @@ export function registerTransactionActivityTools(server: McpServer, deps: McpSer
       }),
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async ({ account, start, end, bucketMinutes }) => {
+    async ({ account, start, end, interval }) => {
       try {
         const coverage = await deps.activityStore.getExternalActivityCoverage({
           account,
@@ -825,7 +818,7 @@ export function registerTransactionActivityTools(server: McpServer, deps: McpSer
           account: coverage.dataScope.account,
           from: start,
           to: end,
-          bucketMinutes,
+          interval,
           coverage,
           transactions: activityTransactions.transactions,
           transactionsTruncated: activityTransactions.truncated

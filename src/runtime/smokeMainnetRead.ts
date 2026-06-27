@@ -9,7 +9,7 @@ import { validateSupportedAdapterLifecycle } from "../adapters/adapterLifecycleV
 import { SqliteActivityStore } from "../core/activity/sqliteActivityStore.js";
 import { TransactionActivityService } from "../core/activity/transactionActivityService.js";
 import { createSuiReadService } from "../core/read/readService.js";
-import { DeepbookUsdcIndexSource } from "../core/read/deepbookUsdcIndexSource.js";
+import { DeepbookOfficialIndexerSource } from "../core/read/deepbookOfficialIndexerSource.js";
 import { LocalSessionStore } from "../core/session/sessionStore.js";
 import { createMcpServer } from "../mcp/server.js";
 import { TOOL_NAMES } from "../mcp/toolNames.js";
@@ -136,7 +136,7 @@ async function main(): Promise<void> {
       network: config.network,
       chainIdentifier,
       coinMetadataCache: activityStore.createCoinMetadataCache(),
-      deepbookUsdcIndexSource: new DeepbookUsdcIndexSource()
+      deepbookOfficialIndexerSource: new DeepbookOfficialIndexerSource()
     });
     const transactionMaterialStore = activityStore.createTransactionMaterialStore();
     const sessions = new LocalSessionStore({

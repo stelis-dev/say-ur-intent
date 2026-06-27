@@ -304,8 +304,8 @@ export function deepbookMidPriceUserAnswerUse(): UserAnswerUse {
 export function deepbookUsdcPriceHistoryUserAnswerUse(): UserAnswerUse {
   return {
     canAnswer: [
-      "observed_deepbook_usdc_10m_candle_history_from_external_index",
-      "filled_empty_or_missing_bar_statuses_for_the_requested_utc_range"
+      "official_deepbook_usdc_candle_history",
+      "official_candle_availability_for_the_requested_utc_range"
     ],
     cannotAnswer: [
       "fiat_usd_cash_out",
@@ -325,19 +325,19 @@ export function deepbookUsdcPriceHistoryUserAnswerUse(): UserAnswerUse {
       "requested.range",
       "coverageStatus",
       "bars",
-      "source.weeklyFiles",
+      "source.candles",
       "responseSummary",
       "unsupportedClaims"
     ],
     conclusionRuleFields: ["responseSummary", "quantitySemantics", "unsupportedClaims"],
-    diagnosticOnlyFields: ["source.registry", "source.repositoryUrl", "source.sourceRef"]
+    diagnosticOnlyFields: ["source.poolList", "source.baseUrl"]
   };
 }
 
 export function deepbookUsdcPriceAtTimeUserAnswerUse(matchAvailable: boolean): UserAnswerUse {
   return {
     canAnswer: [
-      "observed_deepbook_usdc_10m_candle_for_requested_time_from_external_index",
+      "official_deepbook_usdc_candle_for_requested_time",
       ...(matchAvailable ? ["representative_close_price_for_the_matched_candle"] : [])
     ],
     cannotAnswer: [
@@ -363,21 +363,21 @@ export function deepbookUsdcPriceAtTimeUserAnswerUse(matchAvailable: boolean): U
             "match.kind",
             "match.distanceMinutes",
             "match.representativePrice",
-            "matchedBar.start",
-            "matchedBar.end",
-            "matchedBar.open",
-            "matchedBar.high",
-            "matchedBar.low",
-            "matchedBar.close"
+            "matchedCandle.start",
+            "matchedCandle.end",
+            "matchedCandle.open",
+            "matchedCandle.high",
+            "matchedCandle.low",
+            "matchedCandle.close"
           ]
         : []),
       "coverageStatus",
-      "source.weeklyFiles",
+      "source.candles",
       "responseSummary",
       "unsupportedClaims"
     ],
     conclusionRuleFields: ["responseSummary", "quantitySemantics", "unsupportedClaims"],
-    diagnosticOnlyFields: ["requested.range", "source.registry", "source.repositoryUrl", "source.sourceRef"]
+    diagnosticOnlyFields: ["requested.range", "source.poolList", "source.baseUrl"]
   };
 }
 

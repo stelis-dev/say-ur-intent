@@ -175,7 +175,7 @@ It first checks stored scan coverage for the requested account and UTC range. If
 
 Timeline output uses account-scoped raw balance-change facts only. `netFlowBars` are observed inflow/outflow bars, not held balances. The storage model does not store balance snapshots or balance anchors. The timeline response returns `balanceStatus: "unavailable_no_balance_anchor"` and empty `balanceBars`.
 
-Optional `usdcReferences` read external precomputed DeepBook USDC candle evidence for supported indexed assets. Those references are token-denominated USDC evidence only. They are not fiat USD value, a USDC/USD peg guarantee, P&L, tax, cost basis, route advice, transaction-building input, signing data, or signing readiness.
+Optional `usdcReferences` read DeepBookV3 official Indexer USDC candle evidence for supported USDC-quoted assets. Those references are token-denominated USDC evidence only. They are not fiat USD value, a USDC/USD peg guarantee, P&L, tax, cost basis, route advice, transaction-building input, signing data, or signing readiness.
 
 Provider retention and rate-limit behavior are endpoint/operator properties, not guarantees made by Say Ur Intent.
 

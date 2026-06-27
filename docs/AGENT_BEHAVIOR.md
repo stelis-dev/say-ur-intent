@@ -11,7 +11,7 @@ It is not the contributor rulebook and it is not enforcement. Development rules 
 | Surface | Status | Behavior |
 | --- | --- | --- |
 | Sui mainnet state reads | Current | Use read tools for supported balances, DeepBook pools, FlowX pools, token registry metadata, mid-price snapshots, orderbook context, raw-quantity quotes, and DeepBook account inventory. |
-| DeepBook USDC candle-history reads | Current external precomputed index evidence | `read.get_deepbook_usdc_price_history` reads observed DeepBook USDC 10-minute UTC candle files from `deepbook-usdc-index`. `read.get_deepbook_usdc_price_at_time` selects the filled candle for or nearest to one target UTC time and identifies `matchedBar.close` as the representative price. Treat both as external precomputed candle evidence, not a live quote, chain recomputation by Say Ur Intent, USD value, route choice, P&L, tax, transaction-building input, signing readiness, or user-account history. |
+| DeepBook USDC candle-history reads | Current DeepBookV3 official Indexer candle evidence | `read.get_deepbook_usdc_price_history` reads DeepBookV3 official Indexer USDC candles for the requested official interval. `read.get_deepbook_usdc_price_at_time` selects the candle for or nearest to one target UTC time and identifies `matchedCandle.close` as the representative price. Treat both as external official Indexer candle evidence, not a live quote, chain recomputation by Say Ur Intent, USD value, route choice, P&L, tax, transaction-building input, signing readiness, or user-account history. |
 | DeepBook and FlowX swap review sessions | Digest-gated handoff; user-controlled signing on the review page | A review URL can be created. The review URL displays the proposal and local review evidence. The account-bound review can build local unsigned DeepBook or FlowX swap transaction material inside the review server, internally bind a Sui transaction digest to that stored material, and derive object ownership, quote/policy provenance, human-readable review facts, and review-time simulation evidence from the same private review artifacts. This release does not provide a sign action, signing data, MCP-visible transaction bytes, or signing readiness. The local review page requests a digest-gated byte handoff for a `ready_for_wallet_review` state, then the user signs in their own wallet. After the page reports the signed transaction digest, the review server re-reads Sui mainnet and records normalized chain receipt evidence. Terminal review sessions can open a read-only review execution analysis page that shows the reviewed request, local review evidence, labeled session facts, and server-read chain receipt facts without adding wallet or MCP authority. |
 | External proposal review sessions | Non-signable review in the current release | `action.prepare_external_proposal_review` can create a review URL from a structured external payment or Sui action proposal. Treat the proposal as untrusted display and review context only. It does not build, verify, simulate, sign, or execute transaction material. |
 | Wallet signing | User-controlled on the local review page | MCP tools do not return signing readiness, signing data, or executable transaction bytes. Signing and submission happen only from the local review page after the digest-gated handoff; after the page reports the signed transaction digest, the review server records server-read chain receipt evidence keyed by the review session. |
@@ -63,12 +63,12 @@ For SUI price questions:
 
 For DeepBook USDC candle-history questions:
 
-- Use `read.get_deepbook_usdc_price_at_time` when the user asks for a supported indexed DeepBook USDC pair price at one target time, such as "3 hours ago" after resolving the target to a canonical UTC timestamp.
-- Use `read.get_deepbook_usdc_price_history` when the user asks for observed DeepBook USDC historical candles, OHLCV-like bars, or a UTC range for a supported indexed DeepBook USDC pair.
-- Provide exactly one selector: `pairId`, `assetSymbol`, or `coinType`. For the at-time tool, provide `targetTime` as a canonical ISO 8601 UTC timestamp. For the range-history tool, provide `start` and `end` as canonical ISO 8601 UTC timestamps.
-- For `read.get_deepbook_usdc_price_at_time`, answer from `target`, `match`, `matchedBar`, `coverageStatus`, `source.weeklyFiles`, `quantitySemantics`, and `responseSummary`. Use `match.representativePrice.value`, which is `matchedBar.close`, as the representative target-time price. Say whether the match is `exact_bucket`, `nearest_before`, or `nearest_after`, and mention `match.distanceMinutes` when it is not zero.
-- For `read.get_deepbook_usdc_price_history`, answer from `bars`, `coverageStatus`, `source.weeklyFiles`, `quantitySemantics`, and `responseSummary`.
-- Describe the result as observed DeepBook USDC 10-minute UTC candle evidence read from the external precomputed `deepbook-usdc-index` repository.
+- Use `read.get_deepbook_usdc_price_at_time` when the user asks for one supported official USDC-quoted DeepBook pool price at one target time, such as "3 hours ago" after resolving the target to a canonical UTC timestamp.
+- Use `read.get_deepbook_usdc_price_history` when the user asks for observed DeepBook USDC historical candles, OHLCV-like bars, or a UTC range for a supported official USDC-quoted DeepBook pool.
+- Provide exactly one selector: `poolName`, `assetSymbol`, or `coinType`. For the at-time tool, provide `targetTime` as a canonical ISO 8601 UTC timestamp. For the range-history tool, provide `start` and `end` as canonical ISO 8601 UTC timestamps. Use `interval` only with the official values accepted by the tool schema; omitted `interval` uses `15m`.
+- For `read.get_deepbook_usdc_price_at_time`, answer from `target`, `match`, `matchedCandle`, `coverageStatus`, `source.candles`, `quantitySemantics`, and `responseSummary`. Use `match.representativePrice.value`, which is `matchedCandle.close`, as the representative target-time price. Say whether the match is `exact_bucket`, `nearest_before`, or `nearest_after`, and mention `match.distanceMinutes` when it is not zero.
+- For `read.get_deepbook_usdc_price_history`, answer from `bars`, `coverageStatus`, `source.candles`, `quantitySemantics`, and `responseSummary`.
+- Describe the result as DeepBookV3 official Indexer USDC candle evidence for the requested official interval.
 - Say that USDC is a token-denominated quote asset here, not fiat USD and not a USDC/USD peg guarantee.
 - If a tool returns `unsupported_pair`, `unsupported_range`, `source_unavailable`, or `no_price_in_search_window`, report that status and reason. Do not synthesize candles, interpolate missing bars, carry forward the previous bar, run an on-demand chain-history scan, or web-search a replacement unless the user explicitly asks for outside Say Ur Intent context.
 - Do not use these tools for live price, current mid price, execution price, global market price, USD value, cash-out value, P&L, tax, cost basis, route selection, best-price advice, transaction building, signing readiness, user-account transaction history, or user-account balance history.
@@ -229,7 +229,7 @@ Interpret common `quantitySemantics.kind` values this way:
 
 - `sui_wallet_balance_snapshot`: current coin-balance snapshot only.
 - `sui_intent_evidence_report`: pre-transaction evidence summary only.
-- `deepbook_usdc_indexed_10m_bars`: observed DeepBook USDC 10-minute UTC candle evidence from the external precomputed index only.
+- `deepbook_official_indexer_candles`: DeepBookV3 official Indexer USDC candle evidence for the requested official interval only.
 - `deepbook_display_number`: display-like account inventory only.
 
 Use quote tools only for explicit source inputs:
@@ -425,7 +425,7 @@ For account asset timeline questions:
 - Use `netFlowBars` as observed raw integer token inflow/outflow bars only.
 - Do not call `netFlowBars` held balances, current balances, wallet total value, complete wallet history, P&L, tax, or cost basis.
 - `balanceStatus: "unavailable_no_balance_anchor"` means held-balance bars are not available. Say that explicitly if the user asks for balances over time.
-- Use `usdcReferences` only as DeepBook USDC token-denominated candle references for supported indexed assets. State that USDC is not fiat USD and not a USDC/USD peg guarantee. Do not turn those references into portfolio value, P&L, tax, cost basis, route advice, or signing readiness.
+- Use `usdcReferences` only as DeepBook USDC token-denominated candle references for supported USDC-quoted assets. State that USDC is not fiat USD and not a USDC/USD peg guarantee. Do not turn those references into portfolio value, P&L, tax, cost basis, route advice, or signing readiness.
 
 If the user wants a time range, explain that the tool requests bounded recent-to-older pages and can continue page by page.
 

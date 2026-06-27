@@ -27,7 +27,7 @@ import { createMcpServer, startMcp } from "../mcp/server.js";
 import { SERVER_NAME, SERVER_NETWORK, SERVER_VERSION } from "../mcp/serverInfo.js";
 import { createReviewHttpServer } from "../review-server/server.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL, composeRuntimeConfig, loadBootConfig } from "./config.js";
-import { DeepbookUsdcIndexSource } from "../core/read/deepbookUsdcIndexSource.js";
+import { DeepbookOfficialIndexerSource } from "../core/read/deepbookOfficialIndexerSource.js";
 import {
   probeReviewServerIdentity,
   startOrDeferReviewServer,
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
       network: config.network,
       chainIdentifier,
       coinMetadataCache: store.createCoinMetadataCache(),
-      deepbookUsdcIndexSource: new DeepbookUsdcIndexSource()
+      deepbookOfficialIndexerSource: new DeepbookOfficialIndexerSource()
     });
     const chainReceiptVerifier = (input: Parameters<typeof verifySuiChainReceipt>[1]) =>
       verifySuiChainReceipt(

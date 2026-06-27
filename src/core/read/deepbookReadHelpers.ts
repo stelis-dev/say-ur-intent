@@ -144,9 +144,8 @@ export function deepbookQuoteQuantitySemantics(
 export function deepbookUsdcPriceHistoryQuantitySemantics(): DeepbookUsdcPriceHistoryQuantitySemantics {
   return {
     kind: DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND,
-    allowedUse: "observed_deepbook_usdc_fill_candle_history",
-    source: "external_precomputed_deepbook_usdc_index",
-    barIntervalMinutes: 10,
+    allowedUse: "official_deepbook_usdc_candle_history",
+    source: "deepbook_v3_official_indexer",
     quoteAsset: "USDC",
     priceConvention: "USDC_PER_BASE",
     usdcIsFiatUsd: false,
@@ -181,11 +180,10 @@ export function deepbookUsdcPriceHistoryQuantitySemantics(): DeepbookUsdcPriceHi
 export function deepbookUsdcPriceHistoryResponseSummary(): DeepbookUsdcPriceHistoryResponseSummary {
   return {
     questionKind: "deepbook_usdc_price_history",
-    evidenceKind: "external_precomputed_deepbook_usdc_index_10m_candles",
-    sourceStatement:
-      "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.",
+    evidenceKind: "official_deepbook_indexer_candles",
+    sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.",
     usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
-    candleMeaning: "Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket.",
+    candleMeaning: "Each candle is returned by the DeepBookV3 official Indexer for the requested interval.",
     excludedFromConclusion: [...DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS]
   };
 }

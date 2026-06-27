@@ -16,14 +16,18 @@ import {
 } from "./coinMetadata.js";
 import { createDeepBookReadClient } from "./deepbookRawQuoteClient.js";
 import {
-  DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES,
-  DEEPBOOK_USDC_INDEX_PRICE_CONVENTION,
-  utcIsoWeekFromDate,
-  type DeepbookUsdcIndexFetchSource,
-  type DeepbookUsdcIndexPair,
-  type DeepbookUsdcIndexWeeklyBarsResult,
-  type UtcIsoWeek
-} from "./deepbookUsdcIndexSource.js";
+  DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL,
+  DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
+  DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION,
+  DeepbookOfficialIndexerSourceError,
+  deepbookOfficialIndexerIntervalDurationMs,
+  isDeepbookOfficialIndexerCanonicalUsdcPool,
+  type DeepbookOfficialIndexerCandle,
+  type DeepbookOfficialIndexerFetchSource,
+  type DeepbookOfficialIndexerInterval,
+  type DeepbookOfficialIndexerPool,
+  type DeepbookOfficialIndexerSourceClient
+} from "./deepbookOfficialIndexerSource.js";
 import { createFlowxQuoteClient } from "./flowxQuoteClient.js";
 import { flowxQuoteQuantitySemantics, validateFlowxRouteQuote } from "./flowxReadHelpers.js";
 import { resolveFlowxSwapPair } from "./flowxRegistry.js";
@@ -127,13 +131,10 @@ import {
   type DeepbookRawQuoteEvidence,
   type DeepbookRawQuoteReturnValues,
   type DeepbookQuoteSummary,
-  type DeepbookUsdcIndexSourceClient,
   type DeepbookUsdcPriceAtTimeInput,
   type DeepbookUsdcPriceAtTimeMatch,
   type DeepbookUsdcPriceAtTimeSummary,
   type DeepbookUsdcPriceAtTimeTarget,
-  type DeepbookUsdcPriceHistoryFileReference,
-  type DeepbookUsdcPriceHistoryFoundFileReference,
   type DeepbookUsdcPriceHistoryBar,
   type DeepbookUsdcPriceHistoryInput,
   type DeepbookUsdcPriceHistoryPair,
@@ -192,7 +193,6 @@ type WalletBalanceClassificationScan = {
   blockedReason?: IntentEvidenceBlockedReason | undefined;
 };
 
-const DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS = DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES * 60 * 1000;
 const DEFAULT_DEEPBOOK_USDC_PRICE_AT_TIME_MAX_DISTANCE_MINUTES = 360;
 
 const DEEPBOOK_USDC_PRICE_HISTORY_RESPONSE_SUMMARY = {
@@ -201,7 +201,7 @@ const DEEPBOOK_USDC_PRICE_HISTORY_RESPONSE_SUMMARY = {
 
 function deepbookUsdcPriceHistorySelector(input: DeepbookUsdcPriceHistoryInput): DeepbookUsdcPriceHistorySelector {
   const selectors = [
-    input.pairId === undefined ? undefined : ({ kind: "pair_id", value: input.pairId.trim().toUpperCase() } as const),
+    input.poolName === undefined ? undefined : ({ kind: "pool_name", value: input.poolName.trim().toUpperCase() } as const),
     input.assetSymbol === undefined
       ? undefined
       : ({ kind: "asset_symbol", value: input.assetSymbol.trim().toUpperCase() } as const),
@@ -213,9 +213,9 @@ function deepbookUsdcPriceHistorySelector(input: DeepbookUsdcPriceHistoryInput):
   if (selectors.length !== 1) {
     throw new ReadServiceInputError(
       "input_invalid",
-      "Provide exactly one DeepBook USDC history selector: pairId, assetSymbol, or coinType",
+      "Provide exactly one DeepBook USDC history selector: poolName, assetSymbol, or coinType",
       {
-        fields: ["pairId", "assetSymbol", "coinType"],
+        fields: ["poolName", "assetSymbol", "coinType"],
         providedSelectorCount: selectors.length
       }
     );
@@ -234,7 +234,11 @@ function normalizedHistoryCoinType(value: string): string {
   }
 }
 
-function deepbookUsdcPriceHistoryRange(start: string, end: string): DeepbookUsdcPriceHistoryRange {
+function deepbookUsdcPriceHistoryRange(
+  start: string,
+  end: string,
+  interval: DeepbookOfficialIndexerInterval | undefined
+): DeepbookUsdcPriceHistoryRange {
   const startDate = parseUtcIsoHistoryDate(start, "start");
   const endDate = parseUtcIsoHistoryDate(end, "end");
   const durationMs = endDate.getTime() - startDate.getTime();
@@ -244,13 +248,16 @@ function deepbookUsdcPriceHistoryRange(start: string, end: string): DeepbookUsdc
       end
     });
   }
+  const selectedInterval = interval ?? DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
+  const intervalDurationMs = deepbookOfficialIndexerIntervalDurationMs(selectedInterval);
   return {
     start: startDate.toISOString(),
     end: endDate.toISOString(),
     timeZone: "UTC",
-    barIntervalMinutes: DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES,
+    interval: selectedInterval,
+    intervalDurationMs,
     maxBars: MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS,
-    requestedBarSlots: Math.ceil(durationMs / DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS)
+    requestedCandleSlots: Math.ceil(durationMs / intervalDurationMs)
   };
 }
 
@@ -263,9 +270,12 @@ function deepbookUsdcPriceAtTimeTarget(input: DeepbookUsdcPriceAtTimeInput): Dee
       value: input.maxDistanceMinutes
     });
   }
+  const interval = input.interval ?? DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
+  const intervalDurationMs = deepbookOfficialIndexerIntervalDurationMs(interval);
+  const intervalMinutes = intervalDurationMs / 60_000;
   const maxSearchMinutes = Math.floor(
-    (MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS * DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES -
-      DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES) /
+    (MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS * intervalMinutes -
+      intervalMinutes) /
       2
   );
   if (maxDistanceMinutes > maxSearchMinutes) {
@@ -278,7 +288,7 @@ function deepbookUsdcPriceAtTimeTarget(input: DeepbookUsdcPriceAtTimeInput): Dee
 
   const targetMs = target.getTime();
   const start = new Date(targetMs - maxDistanceMinutes * 60 * 1000);
-  const end = new Date(targetMs + maxDistanceMinutes * 60 * 1000 + DEEPBOOK_USDC_PRICE_HISTORY_INTERVAL_MS);
+  const end = new Date(targetMs + maxDistanceMinutes * 60 * 1000 + intervalDurationMs);
   return {
     targetTime: target.toISOString(),
     searchWindow: {
@@ -305,127 +315,101 @@ function parseUtcIsoHistoryDate(value: string, field: "start" | "end" | "targetT
 }
 
 function deepbookUsdcPriceHistoryMatchingPairs(
-  enabledPairs: DeepbookUsdcIndexPair[],
+  usdcPools: DeepbookOfficialIndexerPool[],
   selector: DeepbookUsdcPriceHistorySelector
-): DeepbookUsdcIndexPair[] {
+): DeepbookOfficialIndexerPool[] {
   switch (selector.kind) {
-    case "pair_id":
-      return enabledPairs.filter((pair) => pair.id === selector.value);
+    case "pool_name":
+      return usdcPools.filter((pool) => pool.pool_name.toUpperCase() === selector.value);
     case "asset_symbol":
-      return enabledPairs.filter((pair) => pair.baseAsset.symbol.toUpperCase() === selector.value);
+      return usdcPools.filter((pool) => pool.base_asset_symbol.toUpperCase() === selector.value);
     case "coin_type":
-      return enabledPairs.filter((pair) => normalizeCoinType(pair.baseAsset.coinType) === selector.value);
+      return usdcPools.filter((pool) => normalizeCoinType(pool.base_asset_id) === selector.value);
   }
-}
-
-function utcIsoWeeksForRange(start: string, end: string): UtcIsoWeek[] {
-  const endMs = Date.parse(end);
-  let cursor = new Date(start);
-  const weeks: UtcIsoWeek[] = [];
-  const seen = new Set<string>();
-  while (cursor.getTime() < endMs) {
-    const week = utcIsoWeekFromDate(cursor);
-    const key = `${week.weekYear}:${week.week}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      weeks.push(week);
-    }
-    const nextUtcDay = Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1);
-    cursor = new Date(Math.min(nextUtcDay, endMs));
-  }
-  return weeks;
 }
 
 function deepbookUsdcPriceHistoryPair(
-  pair: DeepbookUsdcIndexPair,
-  quoteCoinType: string
+  pool: DeepbookOfficialIndexerPool
 ): DeepbookUsdcPriceHistoryPair {
   return {
-    pairId: pair.id,
-    poolId: pair.poolId,
-    baseAsset: pair.baseAsset,
+    poolName: pool.pool_name,
+    poolId: pool.pool_id,
+    baseAsset: {
+      symbol: pool.base_asset_symbol,
+      coinType: normalizeCoinType(pool.base_asset_id),
+      decimals: pool.base_asset_decimals
+    },
     quoteAsset: {
       symbol: "USDC",
-      coinType: quoteCoinType,
-      decimals: 6
+      coinType: normalizeCoinType(DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE),
+      decimals: pool.quote_asset_decimals
     },
-    priceConvention: DEEPBOOK_USDC_INDEX_PRICE_CONVENTION,
-    barIntervalMinutes: DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES
+    priceConvention: DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION
   };
 }
 
 function deepbookUsdcPriceHistorySource(input: {
-  registrySource: DeepbookUsdcIndexFetchSource;
-  weeklyResults: Array<{ week: UtcIsoWeek; result: DeepbookUsdcIndexWeeklyBarsResult }>;
+  poolSource: DeepbookOfficialIndexerFetchSource;
+  candleSource: DeepbookOfficialIndexerFetchSource;
 }): DeepbookUsdcPriceHistorySource {
-  const requested = input.weeklyResults.map((entry) => weeklyFileReference(entry.week, entry.result.source));
-  const found: DeepbookUsdcPriceHistoryFoundFileReference[] = input.weeklyResults
-    .filter((entry): entry is { week: UtcIsoWeek; result: Extract<DeepbookUsdcIndexWeeklyBarsResult, { status: "found" }> } =>
-      entry.result.status === "found"
-    )
-    .map((entry) => ({
-      ...weeklyFileReference(entry.week, entry.result.source),
-      fetchedAt: entry.result.source.fetchedAt
-    }));
-  const missing = input.weeklyResults
-    .filter((entry): entry is { week: UtcIsoWeek; result: Extract<DeepbookUsdcIndexWeeklyBarsResult, { status: "missing_file" }> } =>
-      entry.result.status === "missing_file"
-    )
-    .map((entry) => weeklyFileReference(entry.week, entry.result.source));
-
   return {
-    kind: "external_precomputed_deepbook_usdc_index",
-    repositoryUrl: input.registrySource.repositoryUrl,
-    baseUrl: input.registrySource.baseUrl,
-    sourceRef: input.registrySource.sourceRef,
-    registry: {
-      path: input.registrySource.path,
-      url: input.registrySource.url,
-      fetchedAt: input.registrySource.fetchedAt
+    kind: "deepbook_v3_official_indexer",
+    baseUrl: input.poolSource.baseUrl,
+    sourceStatement: input.candleSource.sourceStatement,
+    poolList: {
+      url: input.poolSource.url,
+      fetchedAt: input.poolSource.fetchedAt
     },
-    weeklyFiles: { requested, found, missing },
+    candles: {
+      url: input.candleSource.url,
+      fetchedAt: input.candleSource.fetchedAt,
+      poolName: input.candleSource.poolName ?? "",
+      interval: input.candleSource.interval ?? DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL,
+      startTimeMs: input.candleSource.startTimeMs ?? 0,
+      endTimeMs: input.candleSource.endTimeMs ?? 0,
+      limit: input.candleSource.limit ?? MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS
+    },
     chainRecomputedBySayUrIntent: false
   };
 }
 
-type FilledDeepbookUsdcHistoryBar = DeepbookUsdcPriceHistoryBar & {
-  status: "filled";
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-};
+function deepbookOfficialSourceUnavailableReason(
+  error: unknown,
+  phase: "pools" | "candles"
+): "pool_list_unavailable" | "candle_fetch_failed" | "official_indexer_invalid_payload" {
+  if (error instanceof DeepbookOfficialIndexerSourceError && error.reason === "invalid_payload") {
+    return "official_indexer_invalid_payload";
+  }
+  return phase === "pools" ? "pool_list_unavailable" : "candle_fetch_failed";
+}
 
 function deepbookUsdcPriceAtTimeMatch(input: {
   target: DeepbookUsdcPriceAtTimeTarget;
   pair: DeepbookUsdcPriceHistoryPair;
   bars: DeepbookUsdcPriceHistoryBar[];
-}): { bar: FilledDeepbookUsdcHistoryBar; match: DeepbookUsdcPriceAtTimeMatch } | undefined {
+}): { candle: DeepbookOfficialIndexerCandle; match: DeepbookUsdcPriceAtTimeMatch } | undefined {
   const targetMs = Date.parse(input.target.targetTime);
-  const filledBars = input.bars.filter((bar): bar is FilledDeepbookUsdcHistoryBar =>
-    bar.status === "filled" && bar.open !== null && bar.high !== null && bar.low !== null && bar.close !== null
-  );
-  const exact = filledBars.find((bar) => {
-    const startMs = Date.parse(bar.start);
-    const endMs = Date.parse(bar.end);
+  const exact = input.bars.find((candle) => {
+    const startMs = Date.parse(candle.start);
+    const endMs = Date.parse(candle.end);
     return targetMs >= startMs && targetMs < endMs;
   });
   if (exact !== undefined) {
     return {
-      bar: exact,
+      candle: exact,
       match: deepbookUsdcPriceAtTimeMatchFromBar({
         kind: "exact_bucket",
         distanceMinutes: 0,
         pair: input.pair,
-        bar: exact
+        candle: exact
       })
     };
   }
 
-  const candidates = filledBars
-    .map((bar) => {
-      const startMs = Date.parse(bar.start);
-      const endMs = Date.parse(bar.end);
+  const candidates = input.bars
+    .map((candle) => {
+      const startMs = Date.parse(candle.start);
+      const endMs = Date.parse(candle.end);
       const before = endMs <= targetMs;
       const after = startMs > targetMs;
       const distanceMinutes = before
@@ -434,7 +418,7 @@ function deepbookUsdcPriceAtTimeMatch(input: {
           ? (startMs - targetMs) / 60_000
           : 0;
       return {
-        bar,
+        candle,
         kind: before ? ("nearest_before" as const) : ("nearest_after" as const),
         distanceMinutes
       };
@@ -448,7 +432,7 @@ function deepbookUsdcPriceAtTimeMatch(input: {
       if (left.kind !== right.kind) {
         return left.kind === "nearest_before" ? -1 : 1;
       }
-      return Date.parse(left.bar.start) - Date.parse(right.bar.start);
+      return Date.parse(left.candle.start) - Date.parse(right.candle.start);
     });
 
   const best = candidates[0];
@@ -456,12 +440,12 @@ function deepbookUsdcPriceAtTimeMatch(input: {
     return undefined;
   }
   return {
-    bar: best.bar,
+    candle: best.candle,
     match: deepbookUsdcPriceAtTimeMatchFromBar({
       kind: best.kind,
       distanceMinutes: best.distanceMinutes,
       pair: input.pair,
-      bar: best.bar
+      candle: best.candle
     })
   };
 }
@@ -470,26 +454,18 @@ function deepbookUsdcPriceAtTimeMatchFromBar(input: {
   kind: DeepbookUsdcPriceAtTimeMatch["kind"];
   distanceMinutes: number;
   pair: DeepbookUsdcPriceHistoryPair;
-  bar: FilledDeepbookUsdcHistoryBar;
+  candle: DeepbookOfficialIndexerCandle;
 }): DeepbookUsdcPriceAtTimeMatch {
   return {
     kind: input.kind,
     distanceMinutes: Number(input.distanceMinutes.toFixed(6)),
     representativePrice: {
-      field: "matchedBar.close",
-      value: input.bar.close,
+      field: "matchedCandle.close",
+      value: input.candle.close,
       quoteAsset: "USDC",
       baseAssetSymbol: input.pair.baseAsset.symbol,
       priceConvention: "USDC_PER_BASE"
     }
-  };
-}
-
-function weeklyFileReference(week: UtcIsoWeek, source: { path: string; url: string }): DeepbookUsdcPriceHistoryFileReference {
-  return {
-    week,
-    path: source.path,
-    url: source.url
   };
 }
 
@@ -503,7 +479,7 @@ export class SuiReadService {
   readonly #coinMetadataTtlMs: number;
   readonly #deepbookCoins: DeepBookCoinRegistry;
   readonly #flowxQuoteClient: FlowxQuoteClient;
-  readonly #deepbookUsdcIndexSource: DeepbookUsdcIndexSourceClient | undefined;
+  readonly #deepbookOfficialIndexerSource: DeepbookOfficialIndexerSourceClient | undefined;
 
   constructor(options: SuiReadServiceOptions) {
     this.#client = options.client;
@@ -525,7 +501,7 @@ export class SuiReadService {
             : { balanceManagers: factoryOptions.balanceManagers })
         }));
     this.#flowxQuoteClient = options.flowxQuoteClient ?? createFlowxQuoteClient();
-    this.#deepbookUsdcIndexSource = options.deepbookUsdcIndexSource;
+    this.#deepbookOfficialIndexerSource = options.deepbookOfficialIndexerSource;
   }
 
   async quoteFlowxSwap(input: {
@@ -1013,7 +989,7 @@ export class SuiReadService {
   async getDeepbookUsdcPriceHistory(input: DeepbookUsdcPriceHistoryInput): Promise<DeepbookUsdcPriceHistorySummary> {
     const fetchedAt = this.#fetchedAt();
     const selector = deepbookUsdcPriceHistorySelector(input);
-    const range = deepbookUsdcPriceHistoryRange(input.start, input.end);
+    const range = deepbookUsdcPriceHistoryRange(input.start, input.end, input.interval);
     const common = {
       fetchedAt,
       requested: { selector, range },
@@ -1030,7 +1006,7 @@ export class SuiReadService {
       unsupportedClaims: DeepbookUsdcPriceHistoryUnsupportedClaim[];
     };
 
-    if (range.requestedBarSlots > MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS) {
+    if (range.requestedCandleSlots > MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS) {
       return {
         status: "unsupported_range",
         ...common,
@@ -1038,100 +1014,84 @@ export class SuiReadService {
       };
     }
 
-    if (this.#deepbookUsdcIndexSource === undefined) {
+    if (this.#deepbookOfficialIndexerSource === undefined) {
       return {
         status: "source_unavailable",
         ...common,
-        reason: "index_source_not_configured"
+        reason: "official_indexer_not_configured"
       };
     }
 
-    let registryResult: Awaited<ReturnType<DeepbookUsdcIndexSourceClient["fetchRegistry"]>>;
+    let poolResult: Awaited<ReturnType<DeepbookOfficialIndexerSourceClient["fetchPools"]>>;
     try {
-      registryResult = await this.#deepbookUsdcIndexSource.fetchRegistry();
-    } catch {
+      poolResult = await this.#deepbookOfficialIndexerSource.fetchPools();
+    } catch (error) {
       return {
         status: "source_unavailable",
         ...common,
-        reason: "registry_unavailable"
+        reason: deepbookOfficialSourceUnavailableReason(error, "pools")
       };
     }
 
-    const enabledPairs = registryResult.registry.pairs.filter((pair) => pair.enabled);
-    const matchingPairs = deepbookUsdcPriceHistoryMatchingPairs(enabledPairs, selector);
-    if (matchingPairs.length !== 1) {
+    const usdcPools = poolResult.pools.filter(isDeepbookOfficialIndexerCanonicalUsdcPool);
+    const matchingPools = deepbookUsdcPriceHistoryMatchingPairs(usdcPools, selector);
+    if (matchingPools.length !== 1) {
       return {
         status: "unsupported_pair",
         ...common,
         reason:
-          matchingPairs.length === 0
-            ? "selector_not_in_index_registry"
-            : "selector_resolves_to_multiple_enabled_pairs",
-        matchingPairIds: matchingPairs.map((pair) => pair.id),
-        availablePairIds: enabledPairs.map((pair) => pair.id)
+          matchingPools.length === 0
+            ? "selector_not_in_official_indexer"
+            : "selector_resolves_to_multiple_usdc_pools",
+        matchingPoolNames: matchingPools.map((pool) => pool.pool_name),
+        availablePoolNames: usdcPools.map((pool) => pool.pool_name)
       };
     }
 
-    const pair = matchingPairs[0]!;
-    const weeks = utcIsoWeeksForRange(input.start, input.end);
-    let weeklyResults: Array<{ week: UtcIsoWeek; result: DeepbookUsdcIndexWeeklyBarsResult }>;
+    const pool = matchingPools[0]!;
+    const outputPair = deepbookUsdcPriceHistoryPair(pool);
+    let candleResult: Awaited<ReturnType<DeepbookOfficialIndexerSourceClient["fetchCandles"]>>;
     try {
-      weeklyResults = await Promise.all(
-        weeks.map(async (week) => ({
-          week,
-          result: await this.#deepbookUsdcIndexSource!.fetchWeeklyBars(pair.id, week)
-        }))
-      );
-    } catch {
+      candleResult = await this.#deepbookOfficialIndexerSource.fetchCandles({
+        poolName: pool.pool_name,
+        interval: range.interval,
+        startTimeMs: Date.parse(range.start),
+        endTimeMs: Date.parse(range.end),
+        limit: MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS
+      });
+    } catch (error) {
       return {
         status: "source_unavailable",
         ...common,
-        reason: "weekly_file_fetch_failed",
-        pair: deepbookUsdcPriceHistoryPair(pair, registryResult.registry.quoteAsset.coinType)
-      };
-    }
-
-    const foundResults = weeklyResults.filter(
-      (entry): entry is { week: UtcIsoWeek; result: Extract<DeepbookUsdcIndexWeeklyBarsResult, { status: "found" }> } =>
-        entry.result.status === "found"
-    );
-    const missingResults = weeklyResults.filter(
-      (entry): entry is { week: UtcIsoWeek; result: Extract<DeepbookUsdcIndexWeeklyBarsResult, { status: "missing_file" }> } =>
-        entry.result.status === "missing_file"
-    );
-    const source = deepbookUsdcPriceHistorySource({
-      registrySource: registryResult.source,
-      weeklyResults
-    });
-    const outputPair = deepbookUsdcPriceHistoryPair(pair, registryResult.registry.quoteAsset.coinType);
-
-    if (foundResults.length === 0) {
-      return {
-        status: "source_unavailable",
-        ...common,
-        reason: "weekly_files_missing",
+        reason: deepbookOfficialSourceUnavailableReason(error, "candles"),
         pair: outputPair,
-        source
+        source: {
+          kind: "deepbook_v3_official_indexer",
+          baseUrl: poolResult.source.baseUrl,
+          sourceStatement: poolResult.source.sourceStatement,
+          poolList: {
+            url: poolResult.source.url,
+            fetchedAt: poolResult.source.fetchedAt
+          },
+          chainRecomputedBySayUrIntent: false
+        }
       };
     }
+
+    const source = deepbookUsdcPriceHistorySource({
+      poolSource: poolResult.source,
+      candleSource: candleResult.source
+    });
 
     const startMs = Date.parse(range.start);
     const endMs = Date.parse(range.end);
-    const bars = foundResults
-      .flatMap((entry) => entry.result.weeklyBars.bars)
-      .filter((bar) => {
-        const barStart = Date.parse(bar.start);
-        return barStart >= startMs && barStart < endMs;
+    const bars = candleResult.candles
+      .filter((candle) => {
+        const candleStart = Date.parse(candle.start);
+        return candleStart >= startMs && candleStart < endMs;
       })
       .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
-    const coverageStatus =
-      missingResults.length > 0
-        ? "partial_missing_week_files"
-        : bars.some((bar) => bar.status === "missing")
-          ? "contains_missing_bars"
-          : bars.length === 0
-            ? "no_bars_in_range"
-            : "complete";
+    const coverageStatus = bars.length === 0 ? "no_candles_in_range" : "complete";
 
     return {
       status: "ok",
@@ -1147,9 +1107,10 @@ export class SuiReadService {
   async getDeepbookUsdcPriceAtTime(input: DeepbookUsdcPriceAtTimeInput): Promise<DeepbookUsdcPriceAtTimeSummary> {
     const target = deepbookUsdcPriceAtTimeTarget(input);
     const history = await this.getDeepbookUsdcPriceHistory({
-      pairId: input.pairId,
+      poolName: input.poolName,
       assetSymbol: input.assetSymbol,
       coinType: input.coinType,
+      interval: input.interval,
       start: target.searchWindow.start,
       end: target.searchWindow.end
     });
@@ -1167,8 +1128,8 @@ export class SuiReadService {
         status: "unsupported_pair",
         ...common,
         reason: history.reason,
-        matchingPairIds: history.matchingPairIds,
-        availablePairIds: history.availablePairIds,
+        matchingPoolNames: history.matchingPoolNames,
+        availablePoolNames: history.availablePoolNames,
         userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(false)
       };
     }
@@ -1212,7 +1173,7 @@ export class SuiReadService {
       ...common,
       pair: history.pair,
       match: matched.match,
-      matchedBar: matched.bar,
+      matchedCandle: matched.candle,
       coverageStatus: history.coverageStatus,
       source: history.source,
       userAnswerUse: deepbookUsdcPriceAtTimeUserAnswerUse(true)

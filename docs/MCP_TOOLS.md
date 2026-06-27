@@ -18,8 +18,8 @@ Tool names use dot prefixes and avoid arbitrary shell, arbitrary Move calls, and
 | `read.list_deepbook_tokens` | Implemented | Lists DeepBook mainnet tokens from pinned `@mysten/deepbook-v3` constants. |
 | `read.inspect_deepbook_orderbook` | Implemented | Uses pinned DeepBook SDK read methods over Sui gRPC simulation reads with an internal sender placeholder; `ticks` is capped at 50. |
 | `read.get_deepbook_mid_price` | Implemented | Returns a DeepBook pool mid price snapshot from pinned SDK simulation reads. |
-| `read.get_deepbook_usdc_price_history` | Implemented | Returns external precomputed DeepBook USDC 10-minute UTC candle evidence from `deepbook-usdc-index`. |
-| `read.get_deepbook_usdc_price_at_time` | Implemented | Returns the filled external DeepBook USDC 10-minute UTC candle for or nearest to one target UTC time. |
+| `read.get_deepbook_usdc_price_history` | Implemented | Returns DeepBookV3 official Indexer USDC candle evidence for a requested official interval. |
+| `read.get_deepbook_usdc_price_at_time` | Implemented | Returns the DeepBookV3 official Indexer USDC candle for or nearest to one target UTC time. |
 | `read.quote_deepbook_action` | Implemented | Quotes raw integer DeepBook quantities through pinned SDK transaction builders and raw `u64` simulation return values with an internal sender placeholder. |
 | `read.quote_deepbook_display_amount` | Implemented | Converts an explicit display source amount through pinned DeepBook token units, then returns scoped display quote facts plus raw quote evidence. |
 | `read.list_flowx_pools` | Implemented | Lists pinned FlowX CLMM mainnet pools for supported pairs from the chain-verified pinned registry. |
@@ -97,34 +97,35 @@ The response includes `priceSemantics` and `userAnswerUse.cannotAnswer` for unsu
 
 If the SDK returns a non-positive or non-finite mid price, both `read.get_deepbook_mid_price` and `read.inspect_deepbook_orderbook` fail closed with `quote_unavailable`.
 
-`read.get_deepbook_usdc_price_history` returns observed DeepBook USDC 10-minute UTC candle evidence from the external precomputed `deepbook-usdc-index` repository.
+`read.get_deepbook_usdc_price_history` returns DeepBookV3 official Indexer USDC candle evidence for a requested official interval.
 
-Inputs require `start` and `end` as canonical ISO 8601 UTC timestamps and exactly one selector: `pairId`, `assetSymbol`, or `coinType`.
+Inputs require `start` and `end` as canonical ISO 8601 UTC timestamps and exactly one selector: `poolName`, `assetSymbol`, or `coinType`. Optional `interval` accepts only official Indexer interval values and defaults to `15m`.
 
-The requested range is capped at `requested.range.maxBars: 1008` ten-minute bar slots. Larger requests return `status: "unsupported_range"` with `reason: "requested_range_exceeds_max_bars"`.
+The requested range is capped at `requested.range.maxBars: 1008` candle slots for the selected interval. Larger requests return `status: "unsupported_range"` with `reason: "requested_range_exceeds_max_bars"`.
 
 Supported successful responses return:
 
 - `status: "ok"`;
-- `pair` with the indexed pair id, pool id, base asset, canonical USDC quote asset, `priceConvention: "USDC_PER_BASE"`, and `barIntervalMinutes: 10`;
-- `bars`, where each returned bar has `status: "filled"`, `"empty"`, or `"missing"`;
-- `coverageStatus`, which can be `complete`, `partial_missing_week_files`, `contains_missing_bars`, or `no_bars_in_range`;
-- `source.weeklyFiles.requested`, `source.weeklyFiles.found`, and `source.weeklyFiles.missing`;
+- `pair` with the official pool name, pool id, base asset, canonical USDC quote asset, and `priceConvention: "USDC_PER_BASE"`;
+- `requested.range.interval`, `requested.range.intervalDurationMs`, and `requested.range.requestedCandleSlots`;
+- `bars`, where each returned candle has `timestampMs`, `start`, `end`, `open`, `high`, `low`, `close`, and `volume`;
+- `coverageStatus`, which can be `complete` or `no_candles_in_range`;
+- `source.poolList` and `source.candles`;
 - `quantitySemantics`, `responseSummary`, and `unsupportedClaims`.
 
-`filled` bars summarize observed DeepBook `OrderFilled` events in that UTC ten-minute bucket. `empty` and `missing` bars are not interpolated or carried forward. Missing weekly files are reported through `source.weeklyFiles.missing`; the tool does not use GitHub directory listing and does not fall back to an on-demand chain-history scan.
+Candles are returned by the DeepBookV3 official Indexer for the requested interval. The tool does not synthesize candles, interpolate, carry forward a previous candle, call the browser, use a local price database, or fall back to an on-demand chain-history scan.
 
-`status: "unsupported_pair"` means the selector did not resolve to exactly one enabled pair in the index registry. `status: "source_unavailable"` means the external registry or requested weekly files were unavailable or failed validation.
+`status: "unsupported_pair"` means the selector did not resolve to exactly one official USDC-quoted pool. `status: "source_unavailable"` means the official pool list or candle response was unavailable or failed validation.
 
-`quantitySemantics.kind: "deepbook_usdc_indexed_10m_bars"` and `quantitySemantics.allowedUse: "observed_deepbook_usdc_fill_candle_history"` mean this output is candle evidence only.
+`quantitySemantics.kind: "deepbook_official_indexer_candles"` and `quantitySemantics.allowedUse: "official_deepbook_usdc_candle_history"` mean this output is candle evidence only.
 
-`source.kind: "external_precomputed_deepbook_usdc_index"` and `source.chainRecomputedBySayUrIntent: false` mean Say Ur Intent read precomputed index files and did not independently recompute candle values from chain history for this response.
+`source.kind: "deepbook_v3_official_indexer"` and `source.chainRecomputedBySayUrIntent: false` mean Say Ur Intent read official Indexer candles and did not independently recompute candle values from chain history for this response.
 
-USDC in this tool is the indexed token-denominated quote asset. It is not fiat USD and not a USDC/USD peg guarantee.
+USDC in this tool is the token-denominated quote asset for the returned official DeepBookV3 Indexer candles. It is not fiat USD and not a USDC/USD peg guarantee.
 
 This output is not a live quote, execution price, historical mid price, global market price, fiat USD cash-out estimate, external market-price conversion, USDC/USD peg assumption, route recommendation, best route, transaction-building input, signing data, signing readiness, P&L, tax evidence, cost basis, user-account transaction history, or user-account balance history.
 
-`read.get_deepbook_usdc_price_at_time` uses the same external precomputed candle source and selector rules, but accepts one `targetTime` instead of a range. Optional `maxDistanceMinutes` limits how far from the target time the tool may select a filled candle.
+`read.get_deepbook_usdc_price_at_time` uses the same official Indexer candle source and selector rules, but accepts one `targetTime` instead of a range. Optional `interval` defaults to `15m`. Optional `maxDistanceMinutes` limits how far from the target time the tool may select a candle.
 
 Successful at-time responses return:
 
@@ -132,11 +133,11 @@ Successful at-time responses return:
 - `target`, including `targetTime` and the UTC search window;
 - `match.kind`, which can be `exact_bucket`, `nearest_before`, or `nearest_after`;
 - `match.distanceMinutes`;
-- `match.representativePrice`, whose `field` is `matchedBar.close`;
-- `matchedBar`, a filled 10-minute UTC candle;
+- `match.representativePrice`, whose `field` is `matchedCandle.close`;
+- `matchedCandle`, an official Indexer candle;
 - the same `pair`, `coverageStatus`, `source`, `quantitySemantics`, `responseSummary`, and `unsupportedClaims` boundaries as the range-history tool.
 
-`status: "no_price_in_search_window"` means no filled candle was available inside the bounded search window. The tool does not synthesize a price from empty or missing candles, interpolate, carry forward a previous candle outside the search window, or perform an on-demand chain-history scan.
+`status: "no_price_in_search_window"` means no official Indexer candle was available inside the bounded search window. The tool does not synthesize a price, interpolate, carry forward a previous candle outside the search window, or perform an on-demand chain-history scan.
 
 `read.quote_deepbook_action` and `read.quote_deepbook_display_amount` use the pinned DeepBook transaction builder quote functions.
 
@@ -569,7 +570,7 @@ Tool source comparison:
 - The summary tools also return deterministic `analysis`.
 - `read.inspect_sui_transaction` is the full normalized detail path for a specific digest.
 - `read.summarize_sui_account_activity` reads only stored normalized facts from local SQLite.
-- `read.get_account_asset_timeline` reads only stored normalized facts from local SQLite, then can attach external precomputed DeepBook USDC candle references for supported indexed assets.
+- `read.get_account_asset_timeline` reads only stored normalized facts from local SQLite, then can attach DeepBookV3 official Indexer USDC candle references for supported USDC-quoted assets.
 
 If stored or summary details are missing or capped, use the digest metadata with `read.inspect_sui_transaction` instead of inferring missing calls, balances, objects, events, gas, or errors.
 
@@ -581,7 +582,7 @@ Inputs:
 
 - `account` is optional. If omitted, the tool uses active account context. Supplying an explicit public account does not create active account context or prove ownership.
 - `start` and `end` are ISO 8601 UTC timestamps. The requested range is half-open: `start` is included and `end` is excluded.
-- `bucketMinutes` must be one of the supported bucket sizes returned by the tool schema.
+- `interval` is optional and uses the same official Indexer interval values as DeepBook USDC price tools. Omitted `interval` uses `15m`.
 
 Output fields:
 
@@ -592,7 +593,7 @@ Output fields:
 - `balanceStatus` is currently `unavailable_no_balance_anchor`, and `balanceBars` is empty. Do not present net-flow bars as held balances.
 - `sourceTransactions` reports how many stored rows were read, returned, truncated, and detail-covered.
 - `quantitySemantics` marks raw integer net-flow fields and unsupported uses.
-- `usdcReferences` can attach DeepBook USDC token-denominated 10-minute UTC candle references for supported indexed assets. These references are not fiat USD value, not a USDC/USD peg guarantee, not P&L, not cost basis, not route advice, and not signing readiness.
+- `usdcReferences` can attach DeepBookV3 official Indexer USDC token-denominated candle references for supported USDC-quoted assets. These references are not fiat USD value, not a USDC/USD peg guarantee, not P&L, not cost basis, not route advice, and not signing readiness.
 
 This tool does not run scans, start a background indexer, create a price cache, prove complete wallet history, compute held balances, calculate portfolio value, compute P&L, compute tax, compute cost basis, recommend routes, build transactions, return signing data, or provide signing readiness.
 

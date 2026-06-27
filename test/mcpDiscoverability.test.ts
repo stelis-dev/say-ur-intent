@@ -8,13 +8,16 @@ import {
   SuiReadService,
   type DeepBookCoinRegistry,
   type DeepBookReadClient,
-  type DeepbookUsdcIndexSourceClient
 } from "../src/core/read/readService.js";
 import {
-  DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
-  type DeepbookUsdcIndexWeeklyBars,
-  type UtcIsoWeek
-} from "../src/core/read/deepbookUsdcIndexSource.js";
+  DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT,
+  type DeepbookOfficialIndexerCandlesInput,
+  type DeepbookOfficialIndexerCandle,
+  type DeepbookOfficialIndexerFetchSource,
+  type DeepbookOfficialIndexerPool,
+  type DeepbookOfficialIndexerSourceClient
+} from "../src/core/read/deepbookOfficialIndexerSource.js";
 import { TransactionActivityService, type SuiTransactionActivitySource } from "../src/core/activity/transactionActivityService.js";
 import { PreferencesStoreError, type LocalSettingsService } from "../src/core/preferences/preferencesStore.js";
 import { SuiEndpointError } from "../src/core/suiEndpoint.js";
@@ -37,11 +40,6 @@ import {
   InMemoryLocalSettingsService,
   InMemoryPreferencesRepository
 } from "./fixtures/inMemoryLocalSettings.js";
-import {
-  PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF,
-  publicDeepbookUsdcIndexRegistryFixture,
-  publicDeepbookUsdcIndexSuiW26Fixture
-} from "./fixtures/deepbookUsdcIndex.js";
 import { chainReceiptDigest, chainReceiptFixture } from "./fixtures/chainReceipt.js";
 import type { ActionPlan, ReviewState } from "../src/core/action/types.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL } from "../src/runtime/config.js";
@@ -227,7 +225,7 @@ function createTestReadService(
   options: {
     deepbook?: Partial<DeepBookReadClient>;
     deepbookCoins?: DeepBookCoinRegistry;
-    deepbookUsdcIndexSource?: DeepbookUsdcIndexSourceClient;
+    deepbookOfficialIndexerSource?: DeepbookOfficialIndexerSourceClient;
   } = {}
 ): SuiReadService {
   const deepbook: DeepBookReadClient = {
@@ -286,7 +284,7 @@ function createTestReadService(
     chainIdentifier: "4c78adac",
     coinMetadataCache: new MemoryCoinMetadataCache(),
     ...(options.deepbookCoins === undefined ? {} : { deepbookCoins: options.deepbookCoins }),
-    deepbookUsdcIndexSource: options.deepbookUsdcIndexSource ?? createTestDeepbookUsdcIndexSource(),
+    deepbookOfficialIndexerSource: options.deepbookOfficialIndexerSource ?? createTestDeepbookOfficialIndexerSource(),
     now: () => new Date("2026-05-11T00:00:00.000Z"),
     deepbookFactory: () => deepbook,
     client: {
@@ -315,109 +313,100 @@ function createTestReadService(
   });
 }
 
-function createTestDeepbookUsdcIndexSource(): DeepbookUsdcIndexSourceClient {
+function createTestDeepbookOfficialIndexerSource(): DeepbookOfficialIndexerSourceClient {
   return {
-    async fetchRegistry() {
+    async fetchPools() {
       return {
-        source: indexFetchSource("registry/pairs.json", PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF),
-        registry: publicDeepbookUsdcIndexRegistryFixture()
+        source: officialSource("get_pools"),
+        pools: [officialPoolFixture()]
       };
     },
-    async fetchWeeklyBars(pairId, week) {
-      if (pairId === "SUI_USDC" && week.weekYear === 2026 && week.week === 26) {
-        return foundWeeklyResult(
-          pairId,
-          week,
-          publicDeepbookUsdcIndexSuiW26Fixture(),
-          PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF
-        );
-      }
-      return foundWeeklyResult(pairId, week, weeklyBarsFixtureForIndex(pairId, week));
+    async fetchCandles(input) {
+      return {
+        source: officialSource("ohclv", input),
+        candles: officialCandlesFixture()
+      };
     }
   };
 }
 
-function foundWeeklyResult(
-  pairId: string,
-  week: UtcIsoWeek,
-  weeklyBars: DeepbookUsdcIndexWeeklyBars,
-  sourceRef?: string | undefined
-) {
+function officialPoolFixture(): DeepbookOfficialIndexerPool {
   return {
-    status: "found" as const,
-    source: indexFetchSource(weeklyPath(pairId, week), sourceRef),
-    weeklyBars
+    pool_id: "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+    pool_name: "SUI_USDC",
+    base_asset_id: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+    base_asset_symbol: "SUI",
+    base_asset_decimals: 9,
+    quote_asset_id: DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
+    quote_asset_symbol: "USDC",
+    quote_asset_decimals: 6
   };
 }
 
-function weeklyBarsFixtureForIndex(pairId: string, week: UtcIsoWeek): DeepbookUsdcIndexWeeklyBars {
-  return {
-    schemaVersion: 1,
-    pairId,
-    week: {
-      weekYear: week.weekYear,
-      week: week.week,
-      startsAt: "2026-06-22T00:00:00.000Z",
-      endsAt: "2026-06-29T00:00:00.000Z",
-      timeZone: "UTC"
+function officialCandlesFixture(): DeepbookOfficialIndexerCandle[] {
+  return [
+    {
+      timestampMs: Date.parse("2026-06-26T16:50:00.000Z"),
+      start: "2026-06-26T16:50:00.000Z",
+      end: "2026-06-26T17:05:00.000Z",
+      open: "0.69507",
+      high: "0.69672",
+      low: "0.69287",
+      close: "0.69316",
+      volume: "101444.802158"
     },
-    barIntervalMinutes: 10,
-    priceConvention: "USDC_PER_BASE",
-    disclaimer: "USDC is not fiat USD and this index does not guarantee a USDC/USD peg.",
-    bars: [
-      {
-        start: "2026-06-26T16:50:00.000Z",
-        end: "2026-06-26T17:00:00.000Z",
-        status: "filled",
-        eventCount: 257,
-        open: "0.69507",
-        high: "0.69672",
-        low: "0.69287",
-        close: "0.69316",
-        baseVolumeRaw: "146148100000000",
-        quoteVolumeRaw: "101444802158"
-      },
-      {
-        start: "2026-06-26T17:00:00.000Z",
-        end: "2026-06-26T17:10:00.000Z",
-        status: "empty",
-        eventCount: 0,
-        open: null,
-        high: null,
-        low: null,
-        close: null,
-        baseVolumeRaw: "0",
-        quoteVolumeRaw: "0"
-      },
-      {
-        start: "2026-06-26T17:10:00.000Z",
-        end: "2026-06-26T17:20:00.000Z",
-        status: "missing",
-        eventCount: 0,
-        open: null,
-        high: null,
-        low: null,
-        close: null,
-        baseVolumeRaw: "0",
-        quoteVolumeRaw: "0"
-      }
-    ]
-  };
+    {
+      timestampMs: Date.parse("2026-06-26T17:20:00.000Z"),
+      start: "2026-06-26T17:20:00.000Z",
+      end: "2026-06-26T17:35:00.000Z",
+      open: "0.69604",
+      high: "0.69797",
+      low: "0.69495",
+      close: "0.69734",
+      volume: "86921.414432"
+    },
+    {
+      timestampMs: Date.parse("2026-06-26T19:45:00.000Z"),
+      start: "2026-06-26T19:45:00.000Z",
+      end: "2026-06-26T20:00:00.000Z",
+      open: "0.69846",
+      high: "0.7009",
+      low: "0.6978",
+      close: "0.7006",
+      volume: "97026.231024"
+    },
+    {
+      timestampMs: Date.parse("2026-06-26T20:00:00.000Z"),
+      start: "2026-06-26T20:00:00.000Z",
+      end: "2026-06-26T20:15:00.000Z",
+      open: "0.7006",
+      high: "0.701",
+      low: "0.699",
+      close: "0.6998",
+      volume: "115612.509667"
+    }
+  ];
 }
 
-function indexFetchSource(path: string, sourceRef = "test-index-ref") {
+function officialSource(
+  endpoint: "get_pools" | "ohclv",
+  input: Partial<DeepbookOfficialIndexerCandlesInput> = {}
+): DeepbookOfficialIndexerFetchSource {
   return {
-    repositoryUrl: "https://github.com/stelis-dev/deepbook-usdc-index",
-    baseUrl: "https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main",
-    sourceRef,
-    path,
-    url: `https://raw.githubusercontent.com/stelis-dev/deepbook-usdc-index/main/${path}`,
-    fetchedAt: "2026-06-27T00:00:00.000Z"
+    baseUrl: "https://deepbook-indexer.mainnet.mystenlabs.com",
+    endpoint,
+    url:
+      endpoint === "get_pools"
+        ? "https://deepbook-indexer.mainnet.mystenlabs.com/get_pools"
+        : `https://deepbook-indexer.mainnet.mystenlabs.com/ohclv/${input.poolName}?interval=${input.interval}`,
+    fetchedAt: "2026-06-27T00:00:00.000Z",
+    sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT,
+    poolName: input.poolName,
+    interval: input.interval,
+    startTimeMs: input.startTimeMs,
+    endTimeMs: input.endTimeMs,
+    limit: input.limit
   };
-}
-
-function weeklyPath(pairId: string, week: UtcIsoWeek): string {
-  return `data/${pairId}/bars/${week.weekYear}/W${week.week.toString().padStart(2, "0")}.json`;
 }
 
 function attachReviewedCommitment(
@@ -1603,7 +1592,7 @@ describe("MCP discoverability", () => {
       const priceHistory = await client.callTool({
         name: TOOL_NAMES.readGetDeepbookUsdcPriceHistory,
         arguments: {
-          pairId: "SUI_USDC",
+          poolName: "SUI_USDC",
           start: "2026-06-26T19:40:00.000Z",
           end: "2026-06-26T20:10:00.000Z"
         }
@@ -1613,52 +1602,53 @@ describe("MCP discoverability", () => {
         data: {
           status: "ok",
           requested: {
-            selector: { kind: "pair_id", value: "SUI_USDC" },
+            selector: { kind: "pool_name", value: "SUI_USDC" },
             range: {
               start: "2026-06-26T19:40:00.000Z",
               end: "2026-06-26T20:10:00.000Z",
               timeZone: "UTC",
-              barIntervalMinutes: 10,
+              interval: "15m",
+              intervalDurationMs: 900000,
               maxBars: 1008,
-              requestedBarSlots: 3
+              requestedCandleSlots: 2
             }
           },
           pair: {
-            pairId: "SUI_USDC",
+            poolName: "SUI_USDC",
             quoteAsset: {
               symbol: "USDC",
-              coinType: DEEPBOOK_USDC_INDEX_CANONICAL_USDC_COIN_TYPE,
+              coinType: DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
               decimals: 6
             },
-            priceConvention: "USDC_PER_BASE",
-            barIntervalMinutes: 10
+            priceConvention: "USDC_PER_BASE"
           },
           coverageStatus: "complete",
-          barCount: 3,
+          barCount: 2,
           source: {
-            kind: "external_precomputed_deepbook_usdc_index",
-            repositoryUrl: "https://github.com/stelis-dev/deepbook-usdc-index",
-            sourceRef: PUBLIC_DEEPBOOK_USDC_INDEX_FIXTURE_REF,
-            weeklyFiles: {
-              requested: [{ path: "data/SUI_USDC/bars/2026/W26.json" }],
-              found: [{ path: "data/SUI_USDC/bars/2026/W26.json" }],
-              missing: []
+            kind: "deepbook_v3_official_indexer",
+            baseUrl: "https://deepbook-indexer.mainnet.mystenlabs.com",
+            poolList: {
+              url: "https://deepbook-indexer.mainnet.mystenlabs.com/get_pools"
+            },
+            candles: {
+              poolName: "SUI_USDC",
+              interval: "15m"
             },
             chainRecomputedBySayUrIntent: false
           },
           userAnswerUse: {
-            canAnswer: expect.arrayContaining(["observed_deepbook_usdc_10m_candle_history_from_external_index"]),
+            canAnswer: expect.arrayContaining(["official_deepbook_usdc_candle_history"]),
             cannotAnswer: expect.arrayContaining([
               "fiat_usd_cash_out",
               "usd_peg_assumption",
               "signing_data_or_readiness"
             ]),
-            answerFields: expect.arrayContaining(["bars", "source.weeklyFiles", "responseSummary"])
+            answerFields: expect.arrayContaining(["bars", "source.candles", "responseSummary"])
           },
           quantitySemantics: {
-            kind: "deepbook_usdc_indexed_10m_bars",
-            allowedUse: "observed_deepbook_usdc_fill_candle_history",
-            source: "external_precomputed_deepbook_usdc_index",
+            kind: "deepbook_official_indexer_candles",
+            allowedUse: "official_deepbook_usdc_candle_history",
+            source: "deepbook_v3_official_indexer",
             quoteAsset: "USDC",
             priceConvention: "USDC_PER_BASE",
             usdcIsFiatUsd: false,
@@ -1686,10 +1676,9 @@ describe("MCP discoverability", () => {
             ])
           },
           responseSummary: {
-            sourceStatement:
-              "Say Ur Intent read precomputed DeepBook USDC candle files from the external deepbook-usdc-index repository for this response.",
+            sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.",
             usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
-            candleMeaning: "Each filled candle summarizes observed DeepBook OrderFilled events in that UTC 10-minute bucket.",
+            candleMeaning: "Each candle is returned by the DeepBookV3 official Indexer for the requested interval.",
             excludedFromConclusion: expect.arrayContaining(["fiat_usd_cash_out", "usd_peg_assumption"])
           },
           unsupportedClaims: expect.arrayContaining([
@@ -1707,20 +1696,19 @@ describe("MCP discoverability", () => {
       });
       const priceHistoryPayload = textPayload(priceHistory) as {
         data: {
-          bars: Array<{ status: string; start: string; open: string | null }>;
+          bars: Array<{ start: string; open: string }>;
         };
       };
-      expect(priceHistoryPayload.data.bars.map((bar) => bar.status)).toEqual(["filled", "filled", "filled"]);
       expect(priceHistoryPayload.data.bars[0]).toMatchObject({
-        start: "2026-06-26T19:40:00.000Z",
+        start: "2026-06-26T19:45:00.000Z",
         open: "0.69846"
       });
 
       const priceAtTime = await client.callTool({
         name: TOOL_NAMES.readGetDeepbookUsdcPriceAtTime,
         arguments: {
-          pairId: "SUI_USDC",
-          targetTime: "2026-06-26T19:45:00.000Z"
+          poolName: "SUI_USDC",
+          targetTime: "2026-06-26T16:55:00.000Z"
         }
       });
       expect(textPayload(priceAtTime)).toMatchObject({
@@ -1728,34 +1716,33 @@ describe("MCP discoverability", () => {
         data: {
           status: "ok",
           target: {
-            targetTime: "2026-06-26T19:45:00.000Z",
+            targetTime: "2026-06-26T16:55:00.000Z",
             searchWindow: { maxDistanceMinutes: 360 }
           },
-          pair: { pairId: "SUI_USDC", priceConvention: "USDC_PER_BASE" },
+          pair: { poolName: "SUI_USDC", priceConvention: "USDC_PER_BASE" },
           match: {
             kind: "exact_bucket",
             distanceMinutes: 0,
             representativePrice: {
-              field: "matchedBar.close",
-              value: "0.7006",
+              field: "matchedCandle.close",
+              value: "0.69316",
               quoteAsset: "USDC",
               baseAssetSymbol: "SUI",
               priceConvention: "USDC_PER_BASE"
             }
           },
-          matchedBar: {
-            status: "filled",
-            start: "2026-06-26T19:40:00.000Z",
-            end: "2026-06-26T19:50:00.000Z",
-            close: "0.7006"
+          matchedCandle: {
+            start: "2026-06-26T16:50:00.000Z",
+            end: "2026-06-26T17:05:00.000Z",
+            close: "0.69316"
           },
           userAnswerUse: {
             canAnswer: expect.arrayContaining(["representative_close_price_for_the_matched_candle"]),
             cannotAnswer: expect.arrayContaining(["global_market_price", "profit_or_pnl", "signing_data_or_readiness"]),
-            answerFields: expect.arrayContaining(["match.representativePrice", "matchedBar.close", "responseSummary"])
+            answerFields: expect.arrayContaining(["match.representativePrice", "matchedCandle.close", "responseSummary"])
           },
           quantitySemantics: {
-            kind: "deepbook_usdc_indexed_10m_bars",
+            kind: "deepbook_official_indexer_candles",
             usdcIsFiatUsd: false,
             chainRecomputedBySayUrIntent: false,
             liveQuoteAvailable: false,
@@ -2723,8 +2710,7 @@ describe("MCP discoverability", () => {
         arguments: {
           account: walletAccount,
           start: "2026-06-26T19:40:00.000Z",
-          end: "2026-06-26T20:10:00.000Z",
-          bucketMinutes: 10
+          end: "2026-06-26T20:10:00.000Z"
         }
       });
       expect(textPayload(scanNeeded)).toMatchObject({
@@ -2758,8 +2744,7 @@ describe("MCP discoverability", () => {
         arguments: {
           account: `0x${"c".repeat(64)}`,
           start: "2026-06-26T19:40:00.000Z",
-          end: "2026-06-26T20:10:00.000Z",
-          bucketMinutes: 10
+          end: "2026-06-26T20:10:00.000Z"
         }
       });
       const unknownAccountPayload = textPayload(unknownAccount) as {
@@ -2816,8 +2801,7 @@ describe("MCP discoverability", () => {
         arguments: {
           account: walletAccount,
           start: "2026-06-26T19:40:00.000Z",
-          end: "2026-06-26T20:10:00.000Z",
-          bucketMinutes: 10
+          end: "2026-06-26T20:10:00.000Z"
         }
       });
 
@@ -2847,8 +2831,8 @@ describe("MCP discoverability", () => {
           balanceBars: [],
           netFlowBars: [
             {
-              bucketStart: "2026-06-26T19:40:00.000Z",
-              bucketEnd: "2026-06-26T19:50:00.000Z",
+              bucketStart: "2026-06-26T19:45:00.000Z",
+              bucketEnd: "2026-06-26T20:00:00.000Z",
               coinType: "0x2::sui::SUI",
               increaseRaw: "0",
               decreaseRaw: "1000",
@@ -2881,9 +2865,9 @@ describe("MCP discoverability", () => {
                 status: "available",
                 barReferences: [
                   expect.objectContaining({
-                    bucketStart: "2026-06-26T19:40:00.000Z",
-                    bucketEnd: "2026-06-26T19:50:00.000Z",
-                    status: "filled"
+                    bucketStart: "2026-06-26T19:45:00.000Z",
+                    bucketEnd: "2026-06-26T20:00:00.000Z",
+                    status: "available"
                   })
                 ]
               })

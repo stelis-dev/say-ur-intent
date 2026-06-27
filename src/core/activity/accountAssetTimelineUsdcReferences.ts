@@ -1,7 +1,4 @@
-import {
-  DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES,
-  type DeepbookUsdcIndexBar
-} from "../read/deepbookUsdcIndexSource.js";
+import type { DeepbookOfficialIndexerCandle } from "../read/deepbookOfficialIndexerSource.js";
 import {
   deepbookUsdcPriceHistoryQuantitySemantics,
   deepbookUsdcPriceHistoryResponseSummary
@@ -29,13 +26,12 @@ export type AccountAssetTimelineUsdcReferenceSummary = {
     | "available"
     | "partial"
     | "unavailable"
-    | "unsupported_bucket_size"
     | "no_timeline_bars";
   quoteAsset: "USDC";
   priceConvention: "USDC_PER_BASE";
   usdcIsFiatUsd: false;
   usdPegGuaranteeAvailable: false;
-  source: "external_precomputed_deepbook_usdc_index";
+  source: "deepbook_v3_official_indexer";
   chainRecomputedBySayUrIntent: false;
   quantitySemantics: ReturnType<typeof deepbookUsdcPriceHistoryQuantitySemantics>;
   responseSummary: ReturnType<typeof deepbookUsdcPriceHistoryResponseSummary>;
@@ -56,8 +52,8 @@ export type AccountAssetTimelineCoinUsdcReference =
       coinType: string;
       status: "unsupported_asset";
       reason: Extract<DeepbookUsdcPriceHistorySummary, { status: "unsupported_pair" }>["reason"];
-      matchingPairIds: string[];
-      availablePairIds: string[];
+      matchingPoolNames: string[];
+      availablePoolNames: string[];
     }
   | {
       coinType: string;
@@ -77,8 +73,8 @@ export type AccountAssetTimelineUsdcBarReference =
   | {
       bucketStart: string;
       bucketEnd: string;
-      status: "filled" | "empty" | "missing";
-      candle: DeepbookUsdcIndexBar;
+      status: "available";
+      candle: DeepbookOfficialIndexerCandle;
     }
   | {
       bucketStart: string;
@@ -97,18 +93,12 @@ export async function attachDeepbookUsdcReferencesToTimeline(input: {
       usdcReferences: { ...baseSummary, status: "no_timeline_bars" }
     };
   }
-  if (input.timeline.bucket.minutes !== DEEPBOOK_USDC_INDEX_BAR_INTERVAL_MINUTES) {
-    return {
-      ...input.timeline,
-      usdcReferences: { ...baseSummary, status: "unsupported_bucket_size" }
-    };
-  }
-
   const barsByCoin = groupBarsByCoin(input.timeline.netFlowBars);
   const coinReferences: AccountAssetTimelineCoinUsdcReference[] = [];
   for (const [coinType, bars] of barsByCoin) {
     const history = await input.getPriceHistory({
       coinType,
+      interval: input.timeline.bucket.interval,
       start: input.timeline.requestedRange.from,
       end: input.timeline.requestedRange.to
     });
@@ -132,7 +122,7 @@ function emptyReferenceSummary(): AccountAssetTimelineUsdcReferenceSummary {
     priceConvention: "USDC_PER_BASE",
     usdcIsFiatUsd: false,
     usdPegGuaranteeAvailable: false,
-    source: "external_precomputed_deepbook_usdc_index",
+    source: "deepbook_v3_official_indexer",
     chainRecomputedBySayUrIntent: false,
     quantitySemantics: deepbookUsdcPriceHistoryQuantitySemantics(),
     responseSummary: deepbookUsdcPriceHistoryResponseSummary(),
@@ -151,8 +141,8 @@ function referenceForHistory(
       coinType,
       status: "unsupported_asset",
       reason: history.reason,
-      matchingPairIds: history.matchingPairIds,
-      availablePairIds: history.availablePairIds
+      matchingPoolNames: history.matchingPoolNames,
+      availablePoolNames: history.availablePoolNames
     };
   }
   if (history.status === "unsupported_range") {
@@ -185,13 +175,13 @@ function referenceForHistory(
       : {
           bucketStart: bar.bucketStart,
           bucketEnd: bar.bucketEnd,
-          status: candle.status,
+          status: "available",
           candle
         };
   });
   return {
     coinType,
-    status: barReferences.some((bar) => bar.status === "missing" || bar.status === "missing_candle")
+    status: barReferences.some((bar) => bar.status === "missing_candle")
       ? "partial"
       : "available",
     pair: history.pair,

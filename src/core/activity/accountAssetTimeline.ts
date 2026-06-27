@@ -1,14 +1,15 @@
 import { parseSuiAddress } from "../suiAddress.js";
+import {
+  DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL,
+  deepbookOfficialIndexerIntervalDurationMs,
+  type DeepbookOfficialIndexerInterval
+} from "../read/deepbookOfficialIndexerSource.js";
 import type {
   ExternalActivityCoverageResult,
   ExternalActivityTransactionRecord
 } from "./activityStore.js";
 import { requestedAccountEffectsForTransaction } from "./transactionActivityAccountEffects.js";
 import type { SuiTransactionActivityFact } from "./transactionActivityTypes.js";
-
-export const ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES = [10, 30, 60, 1440] as const;
-
-export type AccountAssetTimelineBucketMinutes = typeof ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES[number];
 
 export type AccountAssetTimelineStatus =
   | "ok"
@@ -37,7 +38,7 @@ export type AccountAssetTimelineInput = {
   account: string;
   from: string;
   to: string;
-  bucketMinutes: AccountAssetTimelineBucketMinutes;
+  interval?: DeepbookOfficialIndexerInterval | undefined;
   coverage: ExternalActivityCoverageResult;
   transactions: ExternalActivityTransactionRecord[];
   transactionsTruncated?: boolean | undefined;
@@ -50,7 +51,8 @@ export type AccountAssetTimelineResult = {
     to: string;
   };
   bucket: {
-    minutes: AccountAssetTimelineBucketMinutes;
+    interval: DeepbookOfficialIndexerInterval;
+    durationMs: number;
     alignment: "utc_epoch";
   };
   status: AccountAssetTimelineStatus;
@@ -98,7 +100,7 @@ export function buildAccountAssetTimeline(input: AccountAssetTimelineInput): Acc
   if (fromMs >= toMs) {
     throw new Error("Account asset timeline from must be before to");
   }
-  assertSupportedBucketMinutes(input.bucketMinutes);
+  const interval = input.interval ?? DEFAULT_DEEPBOOK_OFFICIAL_INDEXER_INTERVAL;
 
   const limitations = new Set<AccountAssetTimelineLimitation>(["no_balance_anchor"]);
   if (!input.coverage.accountKnown) {
@@ -111,7 +113,7 @@ export function buildAccountAssetTimeline(input: AccountAssetTimelineInput): Acc
     limitations.add("source_transactions_truncated");
   }
 
-  const bucketMs = input.bucketMinutes * 60 * 1000;
+  const bucketMs = deepbookOfficialIndexerIntervalDurationMs(interval);
   const bars = new Map<string, NetFlowAccumulator>();
   let analyzedTransactionCount = 0;
   let skippedTransactionCount = 0;
@@ -183,7 +185,8 @@ export function buildAccountAssetTimeline(input: AccountAssetTimelineInput): Acc
       to: input.to
     },
     bucket: {
-      minutes: input.bucketMinutes,
+      interval,
+      durationMs: bucketMs,
       alignment: "utc_epoch"
     },
     status: statusForCoverage(input.coverage),
@@ -243,12 +246,6 @@ function parseRequiredUtc(value: string, field: "from" | "to"): number {
     throw new Error(`Account asset timeline ${field} must be an ISO 8601 UTC timestamp`);
   }
   return parsed.getTime();
-}
-
-function assertSupportedBucketMinutes(value: number): asserts value is AccountAssetTimelineBucketMinutes {
-  if (!ACCOUNT_ASSET_TIMELINE_BUCKET_MINUTES.includes(value as AccountAssetTimelineBucketMinutes)) {
-    throw new Error("Unsupported account asset timeline bucket size");
-  }
 }
 
 function compareNetFlowBars(a: AccountAssetTimelineNetFlowBar, b: AccountAssetTimelineNetFlowBar): number {
