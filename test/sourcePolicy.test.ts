@@ -637,6 +637,7 @@ describe("source policy", () => {
       "docs/golden-scenarios/BEHAVIOR_MATRIX.md"
     ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
     const source = [
+      "src/core/read/deepbookSourceOwners.ts",
       "src/core/read/readService.ts",
       "src/core/read/readServiceTypes.ts",
       "src/core/read/deepbookReadHelpers.ts",
@@ -693,6 +694,7 @@ describe("source policy", () => {
       "src/mcp/serverInfo.ts"
     ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
     const source = [
+      "src/core/read/deepbookSourceOwners.ts",
       "src/core/read/readService.ts",
       "src/core/read/readServiceTypes.ts",
       "src/core/read/deepbookReadHelpers.ts",
@@ -833,6 +835,7 @@ describe("source policy", () => {
     const source = [
       "src/core/activity/accountAssetTimeline.ts",
       "src/core/activity/accountAssetTimelineUsdcReferences.ts",
+      "src/core/read/deepbookSourceOwners.ts",
       "src/mcp/serverInfo.ts",
       "src/mcp/toolNames.ts",
       "src/mcp/tools/read/transactionActivityOutput.ts",

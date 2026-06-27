@@ -27,6 +27,11 @@ import {
   type DeepbookOfficialIndexerPool,
   type DeepbookOfficialIndexerSourceClient
 } from "./deepbookOfficialIndexerSource.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
+  DEEPBOOK_SOURCE_FIELD_VALUES
+} from "./deepbookSourceOwners.js";
 import { createFlowxQuoteClient } from "./flowxQuoteClient.js";
 import { flowxQuoteQuantitySemantics, validateFlowxRouteQuote } from "./flowxReadHelpers.js";
 import { resolveFlowxSwapPair } from "./flowxRegistry.js";
@@ -358,7 +363,7 @@ function deepbookUsdcPriceHistorySource(input: {
   candleSource: DeepbookOfficialIndexerFetchSource;
 }): DeepbookUsdcPriceHistorySource {
   return {
-    kind: "deepbook_v3_official_indexer",
+    kind: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
     baseUrl: input.poolSource.baseUrl,
     sourceStatement: input.candleSource.sourceStatement,
     poolList: {
@@ -374,7 +379,7 @@ function deepbookUsdcPriceHistorySource(input: {
       endTimeMs: input.candleSource.endTimeMs ?? 0,
       limit: input.candleSource.limit ?? MAX_DEEPBOOK_USDC_PRICE_HISTORY_BARS
     },
-    chainRecomputedBySayUrIntent: false
+    chainRecomputedBySayUrIntent: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent
   };
 }
 
@@ -684,9 +689,7 @@ export class SuiReadService {
       evidenceSources: {
         settlementAssetGroup: assetGroup.evidenceSources,
         midPrice: {
-          sdk: "@mysten/deepbook-v3",
-          transport: "grpc",
-          simulation: "client.core.simulateTransaction",
+          ...DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
           method: "midPrice",
           precision: DEEPBOOK_MID_PRICE_PRECISION
         }
@@ -908,7 +911,7 @@ export class SuiReadService {
           method: "client.core.listBalances"
         },
         settlementAssetGroup: assetGroup.evidenceSources,
-        quoteEvidence: "pinned_deepbook_sdk_when_target_asset_selected"
+        quoteEvidence: DEEPBOOK_SOURCE_FIELD_VALUES.pinnedSdkWhenTargetAssetSelected
       },
       settlementAssetGroup,
       balances,
@@ -962,9 +965,7 @@ export class SuiReadService {
       fetchedAt: this.#fetchedAt(),
       userAnswerUse: deepbookOrderbookUserAnswerUse(),
       source: {
-        sdk: "@mysten/deepbook-v3",
-        transport: "grpc",
-        simulation: "client.core.simulateTransaction",
+        ...DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
         methods: ["midPrice", "poolBookParams", "getLevel2TicksFromMid"]
       },
       midPrice: checkedMidPrice,
@@ -993,9 +994,7 @@ export class SuiReadService {
       priceType: DEEPBOOK_MID_PRICE_TYPE,
       fetchedAt: this.#fetchedAt(),
       source: {
-        sdk: "@mysten/deepbook-v3",
-        transport: "grpc",
-        simulation: "client.core.simulateTransaction",
+        ...DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
         method: "midPrice",
         precision: DEEPBOOK_MID_PRICE_PRECISION
       }
@@ -1082,14 +1081,14 @@ export class SuiReadService {
         reason: deepbookOfficialSourceUnavailableReason(error, "candles"),
         pair: outputPair,
         source: {
-          kind: "deepbook_v3_official_indexer",
+          kind: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
           baseUrl: poolResult.source.baseUrl,
           sourceStatement: poolResult.source.sourceStatement,
           poolList: {
             url: poolResult.source.url,
             fetchedAt: poolResult.source.fetchedAt
           },
-          chainRecomputedBySayUrIntent: false
+          chainRecomputedBySayUrIntent: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent
         }
       };
     }
@@ -1243,9 +1242,7 @@ export class SuiReadService {
       userAnswerUse: deepbookQuoteUserAnswerUse("raw"),
       quantitySemantics: deepbookQuoteQuantitySemantics("raw_u64"),
       source: {
-        sdk: "@mysten/deepbook-v3",
-        transport: "grpc",
-        simulation: "client.core.simulateTransaction",
+        ...DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
         method:
           input.direction === "base_to_quote"
             ? feeMode === "input_coin"

@@ -18,6 +18,13 @@ import {
   type DeepbookOfficialIndexerPool,
   type DeepbookOfficialIndexerSourceClient
 } from "../src/core/read/deepbookOfficialIndexerSource.js";
+import {
+  DEEPBOOK_ANSWER_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_PINNED_SDK_METADATA_SOURCE
+} from "../src/core/read/deepbookSourceOwners.js";
+import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../src/core/read/coinMetadata.js";
 import { TransactionActivityService, type SuiTransactionActivitySource } from "../src/core/activity/transactionActivityService.js";
 import { PreferencesStoreError, type LocalSettingsService } from "../src/core/preferences/preferencesStore.js";
 import { SuiEndpointError } from "../src/core/suiEndpoint.js";
@@ -1038,8 +1045,9 @@ describe("MCP discoverability", () => {
               aliases: expect.arrayContaining(["dollar", "stablecoins"]),
               includedAssets: expect.arrayContaining([expect.objectContaining({ symbol: "USDC" })]),
               evidenceSources: {
-                sdk: "@mysten/deepbook-v3",
-                registry: ["mainnetCoins", "mainnetPools"]
+                sdk: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.sdk,
+                registry: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.registry,
+                unitSource: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.unitSource
               }
             }
           ]
@@ -1363,7 +1371,7 @@ describe("MCP discoverability", () => {
           inputAmount: {
             display: "10",
             raw: "10000000000",
-            asset: { symbol: "SUI", unitSource: "deepbook_mainnetCoins_scalar" }
+            asset: { symbol: "SUI", unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE }
           },
           source: { method: "getQuoteQuantityOut" },
           userAnswerUse: {
@@ -1625,7 +1633,7 @@ describe("MCP discoverability", () => {
           coverageStatus: "complete",
           barCount: 2,
           source: {
-            kind: "deepbook_v3_official_indexer",
+            kind: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
             baseUrl: "https://deepbook-indexer.mainnet.mystenlabs.com",
             poolList: {
               url: "https://deepbook-indexer.mainnet.mystenlabs.com/get_pools"
@@ -1637,7 +1645,7 @@ describe("MCP discoverability", () => {
             chainRecomputedBySayUrIntent: false
           },
           userAnswerUse: {
-            canAnswer: expect.arrayContaining(["official_deepbook_usdc_candle_history"]),
+            canAnswer: expect.arrayContaining([DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory]),
             cannotAnswer: expect.arrayContaining([
               "fiat_usd_cash_out",
               "usd_peg_assumption",
@@ -1647,8 +1655,8 @@ describe("MCP discoverability", () => {
           },
           quantitySemantics: {
             kind: "deepbook_official_indexer_candles",
-            allowedUse: "official_deepbook_usdc_candle_history",
-            source: "deepbook_v3_official_indexer",
+            allowedUse: DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory,
+            source: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
             quoteAsset: "USDC",
             priceConvention: "USDC_PER_BASE",
             usdcIsFiatUsd: false,
@@ -1676,8 +1684,8 @@ describe("MCP discoverability", () => {
             ])
           },
           responseSummary: {
-            sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.",
-            usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
+            sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.sourceStatement,
+            usdcDisclaimer: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer,
             candleMeaning: "Each candle is returned by the DeepBookV3 official Indexer for the requested interval.",
             excludedFromConclusion: expect.arrayContaining(["fiat_usd_cash_out", "usd_peg_assumption"])
           },
@@ -1749,7 +1757,7 @@ describe("MCP discoverability", () => {
             globalMarketPriceAvailable: false
           },
           responseSummary: {
-            usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+            usdcDisclaimer: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer
           },
           unsupportedClaims: expect.arrayContaining(["fiat_usd_cash_out", "usd_peg_assumption"])
         }
@@ -2873,7 +2881,7 @@ describe("MCP discoverability", () => {
               })
             ],
             responseSummary: {
-              usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+              usdcDisclaimer: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer
             }
           },
           userAnswerUse: {

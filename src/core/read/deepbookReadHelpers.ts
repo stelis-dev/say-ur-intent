@@ -12,6 +12,11 @@ import {
   type DeepbookOfficialIndexerPool
 } from "./deepbookOfficialIndexerSource.js";
 import {
+  DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE
+} from "./deepbookSourceOwners.js";
+import {
   DEEPBOOK_ACCOUNT_QUANTITY_KIND,
   DEEPBOOK_MID_PRICE_SEMANTICS_KIND,
   DEEPBOOK_QUOTE_QUANTITY_KIND,
@@ -150,13 +155,7 @@ export function deepbookQuoteQuantitySemantics(
 export function deepbookUsdcPriceHistoryQuantitySemantics(): DeepbookUsdcPriceHistoryQuantitySemantics {
   return {
     kind: DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND,
-    allowedUse: "official_deepbook_usdc_candle_history",
-    source: "deepbook_v3_official_indexer",
-    quoteAsset: "USDC",
-    priceConvention: "USDC_PER_BASE",
-    usdcIsFiatUsd: false,
-    usdPegGuaranteeAvailable: false,
-    chainRecomputedBySayUrIntent: false,
+    ...DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
     liveQuoteAvailable: false,
     historicalMidPriceAvailable: false,
     globalMarketPriceAvailable: false,
@@ -187,8 +186,8 @@ export function deepbookUsdcPriceHistoryResponseSummary(): DeepbookUsdcPriceHist
   return {
     questionKind: "deepbook_usdc_price_history",
     evidenceKind: "official_deepbook_indexer_candles",
-    sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.",
-    usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.",
+    sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.sourceStatement,
+    usdcDisclaimer: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer,
     candleMeaning: "Each candle is returned by the DeepBookV3 official Indexer for the requested interval.",
     excludedFromConclusion: [...DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS]
   };
@@ -216,9 +215,7 @@ export function deepbookUsdcPriceHistoryPairFromOfficialPool(
 
 export function deepbookAccountInventorySource(methods: string[]): DeepbookAccountInventorySummary["source"] {
   return {
-    sdk: "@mysten/deepbook-v3",
-    transport: "grpc",
-    simulation: "client.core.simulateTransaction",
+    ...DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
     methods
   };
 }

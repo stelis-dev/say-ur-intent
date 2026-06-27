@@ -20,6 +20,16 @@ import type {
   DeepbookOfficialIndexerPool,
   DeepbookOfficialIndexerSourceClient
 } from "./deepbookOfficialIndexerSource.js";
+import type {
+  DEEPBOOK_ANSWER_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE,
+  DEEPBOOK_PINNED_SDK_METADATA_SOURCE,
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
+  DEEPBOOK_SOURCE_FIELD_VALUES
+} from "./deepbookSourceOwners.js";
 import type { UserAnswerUse } from "../evidence/userAnswerUse.js";
 
 export type QuoteDirection = "base_to_quote" | "quote_to_base";
@@ -214,10 +224,10 @@ export type SettlementAssetGroup = {
   includedAssets: SettlementAssetGroupAsset[];
   excludedAssets: SettlementAssetGroupExcludedAsset[];
   evidenceSources: {
-    sdk: "@mysten/deepbook-v3";
-    registry: ["mainnetCoins", "mainnetPools"];
-    network: "mainnet";
-    unitSource: typeof DEEPBOOK_SCALAR_UNIT_SOURCE;
+    sdk: typeof DEEPBOOK_PINNED_SDK_METADATA_SOURCE.sdk;
+    registry: typeof DEEPBOOK_PINNED_SDK_METADATA_SOURCE.registry;
+    network: typeof DEEPBOOK_PINNED_SDK_METADATA_SOURCE.network;
+    unitSource: typeof DEEPBOOK_PINNED_SDK_METADATA_SOURCE.unitSource;
   };
   limitations: [
     "static_pinned_sdk_registry_not_live_liquidity",
@@ -310,9 +320,9 @@ export type SettlementAssetGroupParitySummary = {
   evidenceSources: {
     settlementAssetGroup: SettlementAssetGroup["evidenceSources"];
     midPrice: {
-      sdk: "@mysten/deepbook-v3";
-      transport: "grpc";
-      simulation: "client.core.simulateTransaction";
+      sdk: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.sdk;
+      transport: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.transport;
+      simulation: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation;
       method: "midPrice";
       precision: typeof DEEPBOOK_MID_PRICE_PRECISION;
     };
@@ -664,7 +674,7 @@ export type IntentEvidenceSummary = {
   evidenceSources: {
     walletBalances: WalletBalanceSummary["source"];
     settlementAssetGroup: SettlementAssetGroup["evidenceSources"];
-    quoteEvidence: "pinned_deepbook_sdk_when_target_asset_selected";
+    quoteEvidence: typeof DEEPBOOK_SOURCE_FIELD_VALUES.pinnedSdkWhenTargetAssetSelected;
   };
   settlementAssetGroup: Omit<SettlementAssetGroup, "excludedAssets">;
   balances: IntentEvidenceSettlementAssetBalance[];
@@ -690,9 +700,9 @@ export type DeepbookOrderbookSummary = {
   fetchedAt: string;
   userAnswerUse: UserAnswerUse;
   source: {
-    sdk: "@mysten/deepbook-v3";
-    transport: "grpc";
-    simulation: "client.core.simulateTransaction";
+    sdk: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.sdk;
+    transport: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.transport;
+    simulation: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation;
     methods: ["midPrice", "poolBookParams", "getLevel2TicksFromMid"];
   };
   midPrice: number;
@@ -712,9 +722,9 @@ export type DeepbookMidPriceSummary = {
   priceType: typeof DEEPBOOK_MID_PRICE_TYPE;
   fetchedAt: string;
   source: {
-    sdk: "@mysten/deepbook-v3";
-    transport: "grpc";
-    simulation: "client.core.simulateTransaction";
+    sdk: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.sdk;
+    transport: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.transport;
+    simulation: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation;
     method: "midPrice";
     precision: typeof DEEPBOOK_MID_PRICE_PRECISION;
   };
@@ -766,9 +776,9 @@ export type DeepbookQuoteSummary = {
   userAnswerUse: UserAnswerUse;
   quantitySemantics: DeepbookQuoteQuantitySemantics;
   source: {
-    sdk: "@mysten/deepbook-v3";
-    transport: "grpc";
-    simulation: "client.core.simulateTransaction";
+    sdk: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.sdk;
+    transport: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.transport;
+    simulation: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation;
     method: "getQuoteQuantityOut" | "getBaseQuantityOut" | "getQuoteQuantityOutInputFee" | "getBaseQuantityOutInputFee";
     returnValueEncoding: "bcs.u64";
   };
@@ -960,9 +970,9 @@ export type DeepbookAccountInventorySummary = {
   fetchedAt: string;
   userAnswerUse: UserAnswerUse;
   source: {
-    sdk: "@mysten/deepbook-v3";
-    transport: "grpc";
-    simulation: "client.core.simulateTransaction";
+    sdk: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.sdk;
+    transport: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.transport;
+    simulation: typeof DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation;
     methods: string[];
   };
   requested: {
@@ -1025,13 +1035,13 @@ export type DeepbookUsdcPriceHistoryRange = {
 
 export type DeepbookUsdcPriceHistoryQuantitySemantics = {
   kind: typeof DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND;
-  allowedUse: "official_deepbook_usdc_candle_history";
-  source: "deepbook_v3_official_indexer";
-  quoteAsset: "USDC";
-  priceConvention: "USDC_PER_BASE";
-  usdcIsFiatUsd: false;
-  usdPegGuaranteeAvailable: false;
-  chainRecomputedBySayUrIntent: false;
+  allowedUse: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse;
+  source: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.source;
+  quoteAsset: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.quoteAsset;
+  priceConvention: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.priceConvention;
+  usdcIsFiatUsd: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.usdcIsFiatUsd;
+  usdPegGuaranteeAvailable: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.usdPegGuaranteeAvailable;
+  chainRecomputedBySayUrIntent: typeof DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.chainRecomputedBySayUrIntent;
   liveQuoteAvailable: false;
   historicalMidPriceAvailable: false;
   globalMarketPriceAvailable: false;
@@ -1076,7 +1086,7 @@ export type DeepbookUsdcPriceHistoryPair = {
 };
 
 export type DeepbookUsdcPriceHistorySource = {
-  kind: "deepbook_v3_official_indexer";
+  kind: typeof DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind;
   baseUrl: string;
   sourceStatement: string;
   poolList: {
@@ -1092,7 +1102,7 @@ export type DeepbookUsdcPriceHistorySource = {
     endTimeMs: number;
     limit: number;
   };
-  chainRecomputedBySayUrIntent: false;
+  chainRecomputedBySayUrIntent: typeof DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent;
 };
 
 export type DeepbookUsdcPriceHistoryBar = DeepbookOfficialIndexerCandle;
@@ -1100,8 +1110,8 @@ export type DeepbookUsdcPriceHistoryBar = DeepbookOfficialIndexerCandle;
 export type DeepbookUsdcPriceHistoryResponseSummary = {
   questionKind: "deepbook_usdc_price_history";
   evidenceKind: "official_deepbook_indexer_candles";
-  sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.";
-  usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee.";
+  sourceStatement: typeof DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.sourceStatement;
+  usdcDisclaimer: typeof DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer;
   candleMeaning: "Each candle is returned by the DeepBookV3 official Indexer for the requested interval.";
   excludedFromConclusion: DeepbookUsdcPriceHistoryUnsupportedClaim[];
 };

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { validateSupportedAdapterLifecycle } from "../src/adapters/adapterLifecycleValidators.js";
 import { TransactionActivityService, type SuiTransactionActivitySource } from "../src/core/activity/transactionActivityService.js";
 import { decimalsFromScalar, formatRawAmount } from "../src/core/read/coinMetadata.js";
+import { DEEPBOOK_PINNED_SDK_METADATA_SOURCE } from "../src/core/read/deepbookSourceOwners.js";
 import { SuiReadService, type DeepBookCoinRegistry, type DeepBookReadClient } from "../src/core/read/readService.js";
 import { InMemorySessionStore } from "../src/core/session/sessionStore.js";
 import { createMcpServer } from "../src/mcp/server.js";
@@ -354,8 +355,9 @@ describe("intent evidence scenario replay", () => {
             expect.objectContaining({
               id: "SUI_USD_SETTLEMENT_ASSETS",
               evidenceSources: expect.objectContaining({
-                sdk: "@mysten/deepbook-v3",
-                registry: ["mainnetCoins", "mainnetPools"]
+                sdk: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.sdk,
+                registry: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.registry,
+                unitSource: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.unitSource
               })
             })
           ])

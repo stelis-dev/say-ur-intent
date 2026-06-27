@@ -7,10 +7,15 @@ import {
 } from "../../../core/read/coinMetadata.js";
 import {
   DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE,
-  DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION,
   deepbookOfficialIndexerCandleSchema,
   deepbookOfficialIndexerIntervalSchema
 } from "../../../core/read/deepbookOfficialIndexerSource.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE
+} from "../../../core/read/deepbookSourceOwners.js";
 import {
   DEEPBOOK_MID_PRICE_DIRECTION,
   DEEPBOOK_MID_PRICE_PRECISION,
@@ -150,11 +155,11 @@ const deepbookUsdcPriceHistoryPairSchema = z.object({
     coinType: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANONICAL_USDC_COIN_TYPE),
     decimals: z.number().int().nonnegative()
   }).strict(),
-  priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION)
+  priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention)
 }).strict();
 
 const deepbookUsdcPriceHistorySourceSchema = z.object({
-  kind: z.literal("deepbook_v3_official_indexer"),
+  kind: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind),
   baseUrl: z.string().url(),
   sourceStatement: z.string().min(1),
   poolList: z.object({
@@ -170,20 +175,20 @@ const deepbookUsdcPriceHistorySourceSchema = z.object({
     endTimeMs: z.number().int().nonnegative(),
     limit: z.number().int().positive()
   }).strict(),
-  chainRecomputedBySayUrIntent: z.literal(false)
+  chainRecomputedBySayUrIntent: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent)
 }).strict();
 
 const deepbookUsdcPriceHistoryUnsupportedClaimSchema = z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS);
 
 const deepbookUsdcPriceHistoryQuantitySemanticsSchema = z.object({
   kind: z.literal(DEEPBOOK_USDC_PRICE_HISTORY_QUANTITY_KIND),
-  allowedUse: z.literal("official_deepbook_usdc_candle_history"),
-  source: z.literal("deepbook_v3_official_indexer"),
-  quoteAsset: z.literal("USDC"),
-  priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION),
-  usdcIsFiatUsd: z.literal(false),
-  usdPegGuaranteeAvailable: z.literal(false),
-  chainRecomputedBySayUrIntent: z.literal(false),
+  allowedUse: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse),
+  source: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.source),
+  quoteAsset: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.quoteAsset),
+  priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.priceConvention),
+  usdcIsFiatUsd: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.usdcIsFiatUsd),
+  usdPegGuaranteeAvailable: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.usdPegGuaranteeAvailable),
+  chainRecomputedBySayUrIntent: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.chainRecomputedBySayUrIntent),
   liveQuoteAvailable: z.literal(false),
   historicalMidPriceAvailable: z.literal(false),
   globalMarketPriceAvailable: z.literal(false),
@@ -212,10 +217,8 @@ const deepbookUsdcPriceHistoryQuantitySemanticsSchema = z.object({
 const deepbookUsdcPriceHistoryResponseSummarySchema = z.object({
   questionKind: z.literal("deepbook_usdc_price_history"),
   evidenceKind: z.literal("official_deepbook_indexer_candles"),
-  sourceStatement: z.literal("Say Ur Intent read DeepBookV3 official Indexer candle data for this response."),
-  usdcDisclaimer: z.literal(
-    "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
-  ),
+  sourceStatement: z.literal(DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.sourceStatement),
+  usdcDisclaimer: z.literal(DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer),
   candleMeaning: z.literal("Each candle is returned by the DeepBookV3 official Indexer for the requested interval."),
   excludedFromConclusion: z.array(deepbookUsdcPriceHistoryUnsupportedClaimSchema)
 }).strict();
@@ -274,9 +277,9 @@ const deepbookUsdcPriceAtTimeMatchSchema = z.object({
   representativePrice: z.object({
     field: z.literal("matchedCandle.close"),
     value: z.string().regex(/^\d+(?:\.\d+)?$/),
-    quoteAsset: z.literal("USDC"),
+    quoteAsset: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.quoteAsset),
     baseAssetSymbol: z.string().min(1),
-    priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION)
+    priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention)
   }).strict()
 }).strict();
 

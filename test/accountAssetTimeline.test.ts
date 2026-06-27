@@ -11,6 +11,10 @@ import type {
 import { buildExternalActivityCoverageResult } from "../src/core/activity/externalActivityCoverage.js";
 import type { DeepbookUsdcPriceHistorySummary } from "../src/core/read/readServiceTypes.js";
 import { deepbookUsdcPriceHistoryQuantitySemantics, deepbookUsdcPriceHistoryResponseSummary } from "../src/core/read/deepbookReadHelpers.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE
+} from "../src/core/read/deepbookSourceOwners.js";
 import { deepbookUsdcPriceHistoryUserAnswerUse } from "../src/core/read/readResponseGuidance.js";
 import type { ExternalActivityTransactionDetail } from "../src/core/activity/transactionActivityDetails.js";
 
@@ -220,7 +224,7 @@ describe("account asset timeline builder", () => {
     expect(withReferences.usdcReferences.usdcIsFiatUsd).toBe(false);
     expect(withReferences.usdcReferences.usdPegGuaranteeAvailable).toBe(false);
     expect(withReferences.usdcReferences.responseSummary.usdcDisclaimer).toBe(
-      "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+      DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer
     );
     expect(withReferences.usdcReferences.coinReferences).toEqual([
       expect.objectContaining({
@@ -446,9 +450,9 @@ function okHistory(bars: Extract<DeepbookUsdcPriceHistorySummary, { status: "ok"
     barCount: bars.length,
     bars,
     source: {
-      kind: "deepbook_v3_official_indexer",
+      kind: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
       baseUrl: "https://deepbook-indexer.mainnet.mystenlabs.com",
-      sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.",
+      sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.sourceStatement,
       poolList: {
         url: "https://deepbook-indexer.mainnet.mystenlabs.com/get_pools",
         fetchedAt: "2026-05-11T00:20:01.000Z"

@@ -10,6 +10,7 @@ import {
   SUI_SYSTEM_ADDRESS,
   SUI_SYSTEM_STATE_OBJECT_ID
 } from "@mysten/sui/utils";
+import { DEEPBOOK_SOURCE_FIELD_VALUES } from "../read/deepbookSourceOwners.js";
 
 /**
  * Pinned name registries for review-time PTB display labels.
@@ -58,7 +59,7 @@ export const PACKAGE_NAME_REGISTRY: readonly ContractNameEntry[] = [
   {
     address: mainnetPackageIds.DEEPBOOK_PACKAGE_ID,
     name: "@deepbook/core",
-    source: "deepbook_v3_sdk_mainnet_package_id"
+    source: DEEPBOOK_SOURCE_FIELD_VALUES.sdkMainnetPackageId
   },
   {
     address: MOVE_STDLIB_ADDRESS,

@@ -3,6 +3,7 @@ import {
   DEEPBOOK_REVIEW_QUOTE_STALE_AFTER_MS,
   deriveDeepbookSwapQuotePolicy
 } from "../src/adapters/deepbook/deepbookQuotePolicy.js";
+import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../src/core/read/coinMetadata.js";
 import type { DeepbookRawQuoteEvidence } from "../src/core/read/readServiceTypes.js";
 
 function rawQuote(overrides: Partial<DeepbookRawQuoteEvidence> = {}): DeepbookRawQuoteEvidence {
@@ -11,7 +12,7 @@ function rawQuote(overrides: Partial<DeepbookRawQuoteEvidence> = {}): DeepbookRa
     symbol,
     coinType: `0x2::${symbol.toLowerCase()}::${symbol}`,
     decimals,
-    unitSource: "deepbook_mainnetCoins_scalar" as const
+    unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
   });
 
   return {
@@ -86,7 +87,7 @@ describe("DeepBook quote policy", () => {
             symbol: "SUI",
             coinType: "0x2::sui::SUI",
             decimals: 9,
-            unitSource: "deepbook_mainnetCoins_scalar"
+            unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
           }
         }),
         fetchedAt: "2026-05-15T00:00:00.000Z",
@@ -211,7 +212,7 @@ describe("DeepBook quote policy", () => {
             symbol: "USDC",
             coinType: "0x2::usdc::USDC",
             decimals: 6,
-            unitSource: "deepbook_mainnetCoins_scalar"
+            unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
           }
         }),
         fetchedAt: "2026-05-15T00:00:00.000Z",

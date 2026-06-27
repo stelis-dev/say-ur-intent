@@ -4,6 +4,10 @@ import {
   deepbookUsdcPriceHistoryResponseSummary
 } from "../read/deepbookReadHelpers.js";
 import {
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE
+} from "../read/deepbookSourceOwners.js";
+import {
   DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS,
   type DeepbookUsdcPriceHistoryInput,
   type DeepbookUsdcPriceHistorySummary
@@ -27,12 +31,12 @@ export type AccountAssetTimelineUsdcReferenceSummary = {
     | "partial"
     | "unavailable"
     | "no_timeline_bars";
-  quoteAsset: "USDC";
-  priceConvention: "USDC_PER_BASE";
-  usdcIsFiatUsd: false;
-  usdPegGuaranteeAvailable: false;
-  source: "deepbook_v3_official_indexer";
-  chainRecomputedBySayUrIntent: false;
+  quoteAsset: typeof DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.quoteAsset;
+  priceConvention: typeof DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention;
+  usdcIsFiatUsd: typeof DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.usdcIsFiatUsd;
+  usdPegGuaranteeAvailable: typeof DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.usdPegGuaranteeAvailable;
+  source: typeof DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind;
+  chainRecomputedBySayUrIntent: typeof DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent;
   quantitySemantics: ReturnType<typeof deepbookUsdcPriceHistoryQuantitySemantics>;
   responseSummary: ReturnType<typeof deepbookUsdcPriceHistoryResponseSummary>;
   unsupportedClaims: typeof DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS[number][];
@@ -118,12 +122,9 @@ export async function attachDeepbookUsdcReferencesToTimeline(input: {
 function emptyReferenceSummary(): AccountAssetTimelineUsdcReferenceSummary {
   return {
     status: "unavailable",
-    quoteAsset: "USDC",
-    priceConvention: "USDC_PER_BASE",
-    usdcIsFiatUsd: false,
-    usdPegGuaranteeAvailable: false,
-    source: "deepbook_v3_official_indexer",
-    chainRecomputedBySayUrIntent: false,
+    ...DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE,
+    source: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
+    chainRecomputedBySayUrIntent: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent,
     quantitySemantics: deepbookUsdcPriceHistoryQuantitySemantics(),
     responseSummary: deepbookUsdcPriceHistoryResponseSummary(),
     unsupportedClaims: [...DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS],

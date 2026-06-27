@@ -26,6 +26,12 @@ import {
   deepbookOfficialIndexerCandleSchema,
   deepbookOfficialIndexerIntervalSchema
 } from "../../../core/read/deepbookOfficialIndexerSource.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE
+} from "../../../core/read/deepbookSourceOwners.js";
 import { DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS } from "../../../core/read/readServiceTypes.js";
 import { suiTransactionDigestSchema } from "../../../core/suiAddress.js";
 import { okToolResult } from "../../result.js";
@@ -454,21 +460,21 @@ const accountAssetTimelineNetFlowBarSchema = z.object({
 
 const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
   status: z.enum(["available", "partial", "unavailable", "no_timeline_bars"]),
-  quoteAsset: z.literal("USDC"),
-  priceConvention: z.literal("USDC_PER_BASE"),
-  usdcIsFiatUsd: z.literal(false),
-  usdPegGuaranteeAvailable: z.literal(false),
-  source: z.literal("deepbook_v3_official_indexer"),
-  chainRecomputedBySayUrIntent: z.literal(false),
+  quoteAsset: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.quoteAsset),
+  priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention),
+  usdcIsFiatUsd: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.usdcIsFiatUsd),
+  usdPegGuaranteeAvailable: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.usdPegGuaranteeAvailable),
+  source: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind),
+  chainRecomputedBySayUrIntent: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent),
   quantitySemantics: z.object({
     kind: z.literal("deepbook_official_indexer_candles"),
-    allowedUse: z.literal("official_deepbook_usdc_candle_history"),
-    source: z.literal("deepbook_v3_official_indexer"),
-    quoteAsset: z.literal("USDC"),
-    priceConvention: z.literal("USDC_PER_BASE"),
-    usdcIsFiatUsd: z.literal(false),
-    usdPegGuaranteeAvailable: z.literal(false),
-    chainRecomputedBySayUrIntent: z.literal(false),
+    allowedUse: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse),
+    source: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.source),
+    quoteAsset: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.quoteAsset),
+    priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.priceConvention),
+    usdcIsFiatUsd: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.usdcIsFiatUsd),
+    usdPegGuaranteeAvailable: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.usdPegGuaranteeAvailable),
+    chainRecomputedBySayUrIntent: z.literal(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.chainRecomputedBySayUrIntent),
     liveQuoteAvailable: z.literal(false),
     historicalMidPriceAvailable: z.literal(false),
     globalMarketPriceAvailable: z.literal(false),
@@ -484,7 +490,7 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
     questionKind: z.literal("deepbook_usdc_price_history"),
     evidenceKind: z.literal("official_deepbook_indexer_candles"),
     sourceStatement: z.string(),
-    usdcDisclaimer: z.literal("USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."),
+    usdcDisclaimer: z.literal(DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer),
     candleMeaning: z.literal("Each candle is returned by the DeepBookV3 official Indexer for the requested interval."),
     excludedFromConclusion: z.array(z.enum(DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS))
   }).strict(),
@@ -506,11 +512,11 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
           coinType: z.string(),
           decimals: z.number().int().nonnegative()
         }).strict(),
-        priceConvention: z.literal("USDC_PER_BASE")
+        priceConvention: z.literal(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention)
       }).strict(),
       coverageStatus: z.string(),
       source: z.object({
-        kind: z.literal("deepbook_v3_official_indexer"),
+        kind: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind),
         baseUrl: z.string(),
         sourceStatement: z.string(),
         poolList: z.object({
@@ -526,7 +532,7 @@ const accountAssetTimelineUsdcReferenceSummarySchema = z.object({
           endTimeMs: z.number().int().nonnegative(),
           limit: z.number().int().positive()
         }).strict(),
-        chainRecomputedBySayUrIntent: z.literal(false)
+        chainRecomputedBySayUrIntent: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent)
       }).strict(),
       barReferences: z.array(z.union([
         z.object({

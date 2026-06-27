@@ -45,6 +45,7 @@ import {
   ReadServiceInputError,
   type DeepbookDisplayQuoteSummary
 } from "../../core/read/readServiceTypes.js";
+import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../../core/read/coinMetadata.js";
 import { resolveDeepbookPoolForSymbols } from "../../core/read/deepbookRegistry.js";
 import {
   blockedAdapterLifecycleReviewResult,
@@ -643,7 +644,7 @@ function quotePolicyAmount(
     symbol: string;
     coinType: string;
     decimals: number;
-    unitSource: "deepbook_mainnetCoins_scalar";
+    unitSource: typeof DEEPBOOK_SCALAR_UNIT_SOURCE;
   };
 } {
   return {

@@ -1,3 +1,5 @@
+import { DEEPBOOK_SDK_SIMULATION_SOURCE_BASE } from "../../src/core/read/deepbookSourceOwners.js";
+import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../../src/core/read/coinMetadata.js";
 import { deepbookQuoteUserAnswerUse } from "../../src/core/read/readResponseGuidance.js";
 import type { DeepbookDisplayQuoteSummary } from "../../src/core/read/readServiceTypes.js";
 
@@ -9,7 +11,7 @@ export function deepbookDisplayQuote(
     symbol,
     coinType,
     decimals,
-    unitSource: "deepbook_mainnetCoins_scalar" as const
+    unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
   });
 
   return {
@@ -27,15 +29,13 @@ export function deepbookDisplayQuote(
         symbol: "SUI",
         coinType: "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
         decimals: 9,
-        unitSource: "deepbook_mainnetCoins_scalar"
+        unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
       }
     },
     fetchedAt: overrides.fetchedAt ?? "2026-05-15T00:00:00.000Z",
     userAnswerUse: deepbookQuoteUserAnswerUse("display"),
     source: {
-      sdk: "@mysten/deepbook-v3",
-      transport: "grpc",
-      simulation: "client.core.simulateTransaction",
+      ...DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
       method: "getQuoteQuantityOut",
       returnValueEncoding: "bcs.u64"
     },

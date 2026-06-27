@@ -9,6 +9,7 @@ import {
   type DeepbookOfficialIndexerPool,
   type DeepbookOfficialIndexerSourceClient
 } from "../src/core/read/deepbookOfficialIndexerSource.js";
+import { DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE } from "../src/core/read/deepbookSourceOwners.js";
 import {
   createDeepbookUsdcChartApi,
   type DeepbookUsdcChartApiRouteResult,
@@ -40,7 +41,7 @@ describe("DeepBook USDC chart API helper", () => {
         usdcDisclaimer: expect.stringContaining("not fiat USD")
       },
       quantitySemantics: {
-        source: "deepbook_v3_official_indexer",
+        source: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
         usdcIsFiatUsd: false,
         chainRecomputedBySayUrIntent: false
       },

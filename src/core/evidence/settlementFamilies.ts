@@ -1,4 +1,5 @@
 import { formatRawAmount, normalizeCoinType } from "../read/coinMetadata.js";
+import { DEEPBOOK_PINNED_SDK_METADATA_SOURCE } from "../read/deepbookSourceOwners.js";
 import { listDeepbookTokenRegistry } from "../read/deepbookRegistry.js";
 import {
   SUI_USD_SETTLEMENT_ASSET_GROUP_ID,
@@ -64,10 +65,7 @@ export function buildUsdSettlementAssetGroup(coins?: DeepBookCoinRegistry): Sett
     includedAssets,
     excludedAssets,
     evidenceSources: {
-      sdk: "@mysten/deepbook-v3",
-      registry: ["mainnetCoins", "mainnetPools"],
-      network: "mainnet",
-      unitSource: "deepbook_mainnetCoins_scalar"
+      ...DEEPBOOK_PINNED_SDK_METADATA_SOURCE
     },
     limitations: [
       "static_pinned_sdk_registry_not_live_liquidity",

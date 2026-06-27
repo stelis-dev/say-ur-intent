@@ -5,6 +5,7 @@ import {
   DISPLAY_AMOUNT_SOURCE,
   SUI_METADATA_UNIT_SOURCE
 } from "../../../core/read/coinMetadata.js";
+import { DEEPBOOK_SOURCE_FIELD_VALUES } from "../../../core/read/deepbookSourceOwners.js";
 import {
   DEEPBOOK_MID_PRICE_DIRECTION,
   DEEPBOOK_MID_PRICE_PRECISION,
@@ -776,7 +777,7 @@ export function registerWalletReadTools(server: McpServer, deps: McpServerDeps):
         evidenceSources: z.object({
           walletBalances: readSourceSchema,
           settlementAssetGroup: settlementAssetGroupEvidenceSourcesSchema,
-          quoteEvidence: z.literal("pinned_deepbook_sdk_when_target_asset_selected")
+          quoteEvidence: z.literal(DEEPBOOK_SOURCE_FIELD_VALUES.pinnedSdkWhenTargetAssetSelected)
         }),
         settlementAssetGroup: intentEvidenceSettlementAssetGroupSchema,
         balances: z.array(intentEvidenceAssetGroupBalanceSchema),

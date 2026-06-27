@@ -10,7 +10,12 @@ import {
 import { parseRawU64 } from "../numeric/rawU64.js";
 import type { LocalTransactionMaterialHandle } from "../session/transactionMaterialStore.js";
 import { normalizedSuiAddressSchema } from "../suiAddress.js";
-import { normalizeCoinType } from "../read/coinMetadata.js";
+import {
+  DEEPBOOK_SCALAR_UNIT_SOURCE,
+  SUI_METADATA_UNIT_SOURCE,
+  normalizeCoinType
+} from "../read/coinMetadata.js";
+import { FLOWX_CLMM_UNIT_SOURCE } from "../read/flowxRegistry.js";
 
 export const SWAP_QUOTE_POLICY_EVIDENCE_VERSION =
   "swap-quote-policy-v1";
@@ -35,7 +40,7 @@ const quotePolicyAssetSchema = z.object({
   symbol: z.string().min(1).max(64),
   coinType: coinTypeSchema,
   decimals: z.number().int().min(0).max(255),
-  unitSource: z.enum(["deepbook_mainnetCoins_scalar", "flowx_pinned_registry", "sui_core_getCoinMetadata"])
+  unitSource: z.enum([DEEPBOOK_SCALAR_UNIT_SOURCE, FLOWX_CLMM_UNIT_SOURCE, SUI_METADATA_UNIT_SOURCE])
 }).strict();
 
 const quotePolicyRawAmountSchema = z.object({
@@ -350,14 +355,14 @@ function mapUnitSource(
   unitClaimSource: "pinned_sdk_metadata" | "verified_mainnet_onchain_metadata";
   sourceDescription: string;
 } | undefined {
-  if (unitSource === "deepbook_mainnetCoins_scalar") {
+  if (unitSource === DEEPBOOK_SCALAR_UNIT_SOURCE) {
     return {
       sourceOfTruthKind: "pinned_sdk_registry",
       unitClaimSource: "pinned_sdk_metadata",
       sourceDescription: "Pinned DeepBook mainnet coin metadata scalar used for quote raw units"
     };
   }
-  if (unitSource === "flowx_pinned_registry") {
+  if (unitSource === FLOWX_CLMM_UNIT_SOURCE) {
     return {
       sourceOfTruthKind: "pinned_sdk_registry",
       unitClaimSource: "pinned_sdk_metadata",

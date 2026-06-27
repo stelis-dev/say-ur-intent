@@ -1,3 +1,9 @@
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT
+} from "./deepbookOfficialIndexerSource.js";
+import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "./coinMetadata.js";
+
 export const DEEPBOOK_SOURCE_OWNER_GROUPS = {
   pinnedSdkMetadata: {
     label: "pinned DeepBook SDK metadata",
@@ -30,6 +36,49 @@ export const DEEPBOOK_ANSWER_USE = {
   officialCandleAvailabilityForRequestedUtcRange: "official_candle_availability_for_the_requested_utc_range",
   officialUsdcCandleForRequestedTime: "official_deepbook_usdc_candle_for_requested_time",
   representativeClosePriceForMatchedCandle: "representative_close_price_for_the_matched_candle"
+} as const;
+
+export const DEEPBOOK_SOURCE_FIELD_VALUES = {
+  officialIndexer: "deepbook_v3_official_indexer",
+  sdkMainnetPackageId: "deepbook_v3_sdk_mainnet_package_id",
+  pinnedSdkWhenTargetAssetSelected: "pinned_deepbook_sdk_when_target_asset_selected"
+} as const;
+
+export const DEEPBOOK_SDK_SIMULATION_SOURCE_BASE = {
+  sdk: "@mysten/deepbook-v3",
+  transport: "grpc",
+  simulation: "client.core.simulateTransaction"
+} as const;
+
+export const DEEPBOOK_PINNED_SDK_METADATA_SOURCE = {
+  sdk: "@mysten/deepbook-v3",
+  registry: ["mainnetCoins", "mainnetPools"],
+  network: "mainnet",
+  unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
+} as const;
+
+export const DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE = {
+  kind: DEEPBOOK_SOURCE_FIELD_VALUES.officialIndexer,
+  chainRecomputedBySayUrIntent: false
+} as const;
+
+export const DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE = {
+  quoteAsset: "USDC",
+  priceConvention: DEEPBOOK_OFFICIAL_INDEXER_PRICE_CONVENTION,
+  usdcIsFiatUsd: false,
+  usdPegGuaranteeAvailable: false
+} as const;
+
+export const DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE = {
+  allowedUse: DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory,
+  source: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
+  ...DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE,
+  chainRecomputedBySayUrIntent: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent
+} as const;
+
+export const DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT = {
+  sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_STATEMENT,
+  usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
 } as const;
 
 export const DEEPBOOK_READ_RESPONSE_UNSUPPORTED = {

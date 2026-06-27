@@ -20,6 +20,14 @@ import {
   type DeepbookOfficialIndexerSourceClient
 } from "../src/core/read/deepbookOfficialIndexerSource.js";
 import {
+  DEEPBOOK_ANSWER_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_PINNED_SDK_METADATA_SOURCE,
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE
+} from "../src/core/read/deepbookSourceOwners.js";
+import {
+  DEEPBOOK_SCALAR_UNIT_SOURCE,
   decimalsFromScalar,
   formatRawAmount,
   normalizeCoinType,
@@ -319,7 +327,7 @@ describe("SuiReadService", () => {
     expect(tokens.find((token) => token.symbol === "SUI")).toMatchObject({
       symbol: "SUI",
       decimals: 9,
-      unitSource: "deepbook_mainnetCoins_scalar",
+      unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE,
       poolKeys: expect.arrayContaining(["SUI_USDC"])
     });
     for (const token of tokens) {
@@ -619,7 +627,7 @@ describe("SuiReadService", () => {
       balance: {
         unit: {
           status: "available",
-          source: "deepbook_mainnetCoins_scalar"
+          source: DEEPBOOK_SCALAR_UNIT_SOURCE
         }
       },
       classification: {
@@ -719,9 +727,10 @@ describe("SuiReadService", () => {
           id: "SUI_USD_SETTLEMENT_ASSETS",
           aliases: expect.arrayContaining(["dollar", "usd", "stablecoins"]),
           evidenceSources: {
-            sdk: "@mysten/deepbook-v3",
-            registry: ["mainnetCoins", "mainnetPools"],
-            network: "mainnet"
+            sdk: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.sdk,
+            registry: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.registry,
+            network: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.network,
+            unitSource: DEEPBOOK_PINNED_SDK_METADATA_SOURCE.unitSource
           },
           limitations: expect.arrayContaining([
             "static_pinned_sdk_registry_not_live_liquidity",
@@ -1879,7 +1888,7 @@ describe("SuiReadService", () => {
     expect(result.balances[0]).toMatchObject({
       unit: {
         status: "available",
-        source: "deepbook_mainnetCoins_scalar",
+        source: DEEPBOOK_SCALAR_UNIT_SOURCE,
         decimals: 9,
         symbol: "SUI"
       },
@@ -2011,7 +2020,7 @@ describe("SuiReadService", () => {
         cannotAnswer: expect.arrayContaining(["indicative_quote_for_a_source_amount", "payment_coverage_or_shortfall"]),
         answerFields: expect.arrayContaining(["level2TicksFromMid"])
       },
-      source: { simulation: "client.core.simulateTransaction" },
+      source: { simulation: DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation },
       midPrice: 12.5
     });
   });
@@ -2045,7 +2054,7 @@ describe("SuiReadService", () => {
       priceDirection: "quote_per_base",
       priceType: "deepbook_mid_price",
       source: {
-        simulation: "client.core.simulateTransaction",
+        simulation: DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation,
         method: "midPrice",
         precision: "deepbook_v3_to_fixed_9_js_number"
       },
@@ -2113,7 +2122,7 @@ describe("SuiReadService", () => {
       coverageStatus: "complete",
       barCount: 2,
       source: {
-        kind: "deepbook_v3_official_indexer",
+        kind: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
         baseUrl: "https://deepbook-indexer.mainnet.mystenlabs.com",
         candles: {
           poolName: "SUI_USDC",
@@ -2122,11 +2131,11 @@ describe("SuiReadService", () => {
         chainRecomputedBySayUrIntent: false
       },
       responseSummary: {
-        sourceStatement: "Say Ur Intent read DeepBookV3 official Indexer candle data for this response.",
-        usdcDisclaimer: "USDC is a token-denominated reference asset here, not fiat USD and not a USDC/USD peg guarantee."
+        sourceStatement: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.sourceStatement,
+        usdcDisclaimer: DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT.usdcDisclaimer
       },
       quantitySemantics: {
-        allowedUse: "official_deepbook_usdc_candle_history",
+        allowedUse: DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory,
         quoteAsset: "USDC",
         usdcIsFiatUsd: false,
         usdPegGuaranteeAvailable: false,
@@ -2135,7 +2144,7 @@ describe("SuiReadService", () => {
         signingReadinessAvailable: false
       },
       userAnswerUse: {
-        canAnswer: expect.arrayContaining(["official_deepbook_usdc_candle_history"]),
+        canAnswer: expect.arrayContaining([DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory]),
         cannotAnswer: expect.arrayContaining(["fiat_usd_cash_out", "usd_peg_assumption", "signing_data_or_readiness"])
       },
       unsupportedClaims: expect.arrayContaining([
@@ -2236,7 +2245,7 @@ describe("SuiReadService", () => {
       reason: "candle_fetch_failed",
       pair: { poolName: "SUI_USDC" },
       source: {
-        kind: "deepbook_v3_official_indexer",
+        kind: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
         poolList: { url: "https://deepbook-indexer.mainnet.mystenlabs.com/get_pools" }
       }
     });
@@ -2278,7 +2287,7 @@ describe("SuiReadService", () => {
         cannotAnswer: expect.arrayContaining(["fiat_usd_cash_out", "global_market_price", "profit_or_pnl"])
       },
       quantitySemantics: {
-        allowedUse: "official_deepbook_usdc_candle_history",
+        allowedUse: DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory,
         usdcIsFiatUsd: false,
         chainRecomputedBySayUrIntent: false
       }
@@ -2476,7 +2485,7 @@ describe("SuiReadService", () => {
       })
     ).resolves.toMatchObject({
       status: "ok",
-      source: { method: "getQuoteQuantityOut", simulation: "client.core.simulateTransaction" },
+      source: { method: "getQuoteQuantityOut", simulation: DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation },
       quote: { quoteOut: "100" },
       rawQuote: {
         kind: "deepbook_quote_raw_u64",
@@ -2520,7 +2529,7 @@ describe("SuiReadService", () => {
       })
     ).resolves.toMatchObject({
       status: "ok",
-      source: { method: "getBaseQuantityOut", simulation: "client.core.simulateTransaction" },
+      source: { method: "getBaseQuantityOut", simulation: DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation },
       quote: { baseOut: "50000" },
       rawQuote: {
         sourceMoveFunction: "pool::get_base_quantity_out",
@@ -2682,10 +2691,10 @@ describe("SuiReadService", () => {
         asset: {
           symbol: "SUI",
           decimals: 9,
-          unitSource: "deepbook_mainnetCoins_scalar"
+          unitSource: DEEPBOOK_SCALAR_UNIT_SOURCE
         }
       },
-      source: { method: "getQuoteQuantityOut", simulation: "client.core.simulateTransaction" },
+      source: { method: "getQuoteQuantityOut", simulation: DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation },
       quote: { baseOut: "0", quoteOut: "100", deepRequired: "1" },
       userAnswerUse: {
         canAnswer: expect.arrayContaining(["raw_sdk_quote_return_values_before_slippage_policy"]),
@@ -2895,7 +2904,7 @@ describe("SuiReadService", () => {
       account: accountAddress,
       fetchedAt: "2026-05-11T00:00:00.000Z",
       source: {
-        simulation: "client.core.simulateTransaction",
+        simulation: DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation,
         methods: ["getBalanceManagerIds"]
       },
       requested: {},

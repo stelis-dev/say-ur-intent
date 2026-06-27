@@ -4,9 +4,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEEPBOOK_ANSWER_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
+  DEEPBOOK_PINNED_SDK_METADATA_SOURCE,
   DEEPBOOK_READ_RESPONSE_UNSUPPORTED,
+  DEEPBOOK_SOURCE_FIELD_VALUES,
   DEEPBOOK_SOURCE_OWNER_GROUPS
 } from "../src/core/read/deepbookSourceOwners.js";
+import { DEEPBOOK_SCALAR_UNIT_SOURCE } from "../src/core/read/coinMetadata.js";
 import {
   deepbookAccountInventoryUserAnswerUse,
   deepbookMidPriceUserAnswerUse,
@@ -32,13 +38,35 @@ describe("DeepBook source owner contract", () => {
     expect(JSON.stringify(DEEPBOOK_SOURCE_OWNER_GROUPS)).not.toMatch(/FlowX/i);
   });
 
-  it("keeps Unit 1 limited to guidance labels and unsupported-use rules", () => {
+  it("owns runtime source field literals and reusable source fragments", () => {
+    expect(DEEPBOOK_SOURCE_FIELD_VALUES).toEqual({
+      officialIndexer: "deepbook_v3_official_indexer",
+      sdkMainnetPackageId: "deepbook_v3_sdk_mainnet_package_id",
+      pinnedSdkWhenTargetAssetSelected: "pinned_deepbook_sdk_when_target_asset_selected"
+    });
+    expect(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE).toEqual({
+      kind: DEEPBOOK_SOURCE_FIELD_VALUES.officialIndexer,
+      chainRecomputedBySayUrIntent: false
+    });
+    expect(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE).toMatchObject({
+      allowedUse: DEEPBOOK_ANSWER_USE.officialUsdcCandleHistory,
+      source: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind,
+      quoteAsset: "USDC",
+      priceConvention: "USDC_PER_BASE",
+      usdcIsFiatUsd: false,
+      usdPegGuaranteeAvailable: false,
+      chainRecomputedBySayUrIntent: DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent
+    });
+    expect(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE).toEqual({
+      sdk: "@mysten/deepbook-v3",
+      transport: "grpc",
+      simulation: "client.core.simulateTransaction"
+    });
+    expect(DEEPBOOK_PINNED_SDK_METADATA_SOURCE.unitSource).toBe(DEEPBOOK_SCALAR_UNIT_SOURCE);
     const source = readFileSync(join(process.cwd(), "src/core/read/deepbookSourceOwners.ts"), "utf8");
-
-    expect(source).toContain("official_deepbook_usdc_candle_history");
-    expect(source).not.toContain("deepbook_v3_official_indexer");
-    expect(source).not.toContain("deepbook_v3_sdk_mainnet_package_id");
-    expect(source).not.toContain("pinned_deepbook_sdk_when_target_asset_selected");
+    expect(source).toContain("deepbook_v3_official_indexer");
+    expect(source).toContain("deepbook_v3_sdk_mainnet_package_id");
+    expect(source).toContain("pinned_deepbook_sdk_when_target_asset_selected");
   });
 
   it("feeds official candle answer-use labels into read-response guidance", () => {
