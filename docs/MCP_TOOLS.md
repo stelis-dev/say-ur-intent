@@ -139,6 +139,12 @@ Successful at-time responses return:
 
 `status: "no_price_in_search_window"` means no official Indexer candle was available inside the bounded search window. The tool does not synthesize a price, interpolate, carry forward a previous candle outside the search window, or perform an on-demand chain-history scan.
 
+A local read-only chart page is available at `/charts/deepbook-usdc`.
+
+The chart page is not an MCP tool and does not change the MCP price-history or price-at-time contracts. It displays DeepBookV3 official Indexer USDC-denominated candles through same-origin local chart APIs under `/api/charts/deepbook-usdc/`. The page can render one selected official USDC pool as candlesticks plus volume, or two to five selected official USDC pools as separate close-price line panes. It accepts only official Indexer intervals, UTC start/end timestamps, and a candle limit. Its shortcut buttons fill those query fields; shortcut labels are not API values or source contracts.
+
+The chart page does not require a wallet, session token, review session, signing state, user account, direct browser access to the official Indexer, local price database, persistent price storage, background collection, auto-refresh, live-feed behavior, order entry, order book, route recommendation, best-price advice, fiat USD value, P&L, tax, cost basis, portfolio value, or a USDC/USD peg guarantee.
+
 `read.quote_deepbook_action` and `read.quote_deepbook_display_amount` use the pinned DeepBook transaction builder quote functions.
 
 Input kinds:

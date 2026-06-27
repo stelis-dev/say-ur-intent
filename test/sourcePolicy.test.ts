@@ -745,6 +745,43 @@ describe("source policy", () => {
     expect(source).toMatch(/independent_chain_recomputation/);
   });
 
+  it("documents the DeepBook USDC candle chart page as local read-only display", () => {
+    const docs = [
+      "docs/AGENT_BEHAVIOR.md",
+      "docs/MCP_TOOLS.md",
+      "docs/UTILITY_INDEX.md",
+      "src/mcp/serverInfo.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+    const source = [
+      "review-app/src/deepbookUsdcChart.ts",
+      "src/review-server/deepbookUsdcChartApi.ts",
+      "src/review-server/server.ts",
+      "src/review-server/html.ts"
+    ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+
+    expect(docs).toMatch(/\/charts\/deepbook-usdc/);
+    expect(docs).toMatch(/local read-only (chart page|browser page)/i);
+    expect(docs).toMatch(/same-origin local chart APIs|same-origin chart APIs/i);
+    expect(docs).toMatch(/DeepBookV3 official Indexer USDC-denominated candles/i);
+    expect(docs).toMatch(/not an MCP tool/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(live feed|live quote|auto-refresh)/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(wallet|session token|review session|signing)/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(route recommendation|best-price|trading interface)/i);
+    expect(docs).toMatch(/not[\s\S]{0,160}(fiat USD|USD value|P&L|tax|cost basis|USDC\/USD peg guarantee)/i);
+    expect(docs).not.toMatch(
+      /\/charts\/deepbook-usdc[\s\S]{0,240}(is|as|provides?|supports?|enables?)\s+(a\s+)?(live price|live feed|auto-refresh|trading interface|order entry|P&L page|portfolio value)/i
+    );
+    expect(docs).not.toMatch(
+      /shortcut labels? (are|become) (API values?|source contracts?|product period models?)/i
+    );
+    expect(docs).not.toMatch(/React rewrite|direct browser access to the official Indexer is allowed/i);
+    expect(source).toMatch(/\/api\/charts\/deepbook-usdc\/pools/);
+    expect(source).toMatch(/\/api\/charts\/deepbook-usdc\/candles/);
+    expect(source).toMatch(/connect-src 'self'/);
+    expect(source).not.toMatch(/deepbook-indexer\.mainnet\.mystenlabs\.com[\s\S]{0,160}fetch\(/);
+    expect(source).not.toMatch(/setInterval|autoRefresh|localStorage|sessionStorage|indexedDB/);
+  });
+
   it("keeps account asset timeline bounded to stored net-flow evidence", () => {
     const toolSource = readFileSync(join(process.cwd(), "src/mcp/tools/read/transactionActivityTools.ts"), "utf8");
     const docs = [
