@@ -1067,7 +1067,7 @@ describe("review HTTP server", () => {
     }
   });
 
-  it("serves local settings status and creates wallet identity sessions through settings APIs", async () => {
+  it("serves local settings status and no longer exposes a settings wallet-identity endpoint", async () => {
     const { server, created } = await createSettingsServer();
     try {
       const base = `http://${server.host}:${server.port}`;
@@ -1090,15 +1090,14 @@ describe("review HTTP server", () => {
         dataCounts: { localSettings: 2 }
       });
 
+      // Binding happens only on the Connect page; Settings no longer mints a
+      // wallet identity, so the endpoint is gone (no second binding path).
       const wallet = await fetch(`${base}/api/settings/${created.session.id}/wallet-identity`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-say-ur-intent-token": created.token, origin: base },
         body: "{}"
       });
-      expect(wallet.status).toBe(200);
-      const walletJson = (await wallet.json()) as { walletSessionId: string; walletUrl: string; openTarget: string };
-      expect(walletJson.openTarget).toBe("system_browser");
-      expect(walletJson.walletUrl).toContain(`/connect/${walletJson.walletSessionId}#`);
+      expect(wallet.status).toBe(404);
     } finally {
       await server.close();
     }

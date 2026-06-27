@@ -4,9 +4,9 @@ Say Ur Intent frontend pages are local review and wallet-context surfaces. They
 exist to show server-validated facts, capture explicit wallet gestures, and
 keep AI reasoning separate from wallet authority.
 
-The current release ships the wallet identity page, local settings page, a
-review page that can display server-computed review state, and the read-only
-review execution analysis page. The review server may build local unsigned
+The current release ships the Connect page, the public Analytics page, the local
+settings page, a review page that can display server-computed review state, the
+read-only review execution analysis page, and the DeepBook USDC chart page. The review server may build local unsigned
 DeepBook or FlowX swap transaction material during account-bound review, but the
 frontend does not receive transaction bytes outside the digest-gated handoff.
 The review page offers a sign action only on a

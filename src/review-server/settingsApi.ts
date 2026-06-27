@@ -12,7 +12,6 @@ import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { HttpError, MAX_JSON_BODY_BYTES, readJsonBody, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES } from "./reviewServerPolicy.js";
-import { walletIdentitySessionResponse } from "./walletIdentityResponse.js";
 
 const MAX_SETTINGS_BODY_BYTES = MAX_JSON_BODY_BYTES;
 const MAX_IMPORT_BODY_BYTES = 16 * 1024 * 1024;
@@ -31,7 +30,6 @@ type SettingsApiRouteOptions = {
 
 export type SettingsApiMatches = {
   status?: string | undefined;
-  walletIdentity?: string | undefined;
   clearActiveAccount?: string | undefined;
   setSuiGrpcUrl?: string | undefined;
   restoreDefaultSuiGrpcUrl?: string | undefined;
@@ -62,7 +60,6 @@ export async function routeSettingsApi(
   const settings = requireSettingsDeps(options);
   const sessionId =
     matches.status ??
-    matches.walletIdentity ??
     matches.clearActiveAccount ??
     matches.setSuiGrpcUrl ??
     matches.restoreDefaultSuiGrpcUrl ??
@@ -103,14 +100,6 @@ export async function routeSettingsApi(
         localSettings.suiGrpcUrl.appliesAfter === "mcp_server_restart" ||
         localSettings.suiGraphqlUrl.appliesAfter === "mcp_server_restart"
     });
-    return;
-  }
-
-  if (request.method === "POST" && matches.walletIdentity) {
-    await readJsonBody(request, MAX_SETTINGS_BODY_BYTES);
-    const wallet = await options.store.createWalletIdentitySession();
-    const baseUrl = requestBaseUrl(request);
-    sendJson(response, 200, walletIdentitySessionResponse(wallet, baseUrl));
     return;
   }
 
@@ -206,14 +195,6 @@ function requireSettingsDeps(options: SettingsApiRouteOptions): {
     localData: options.localData,
     serverInfo: options.serverInfo
   };
-}
-
-function requestBaseUrl(request: IncomingMessage): string {
-  const host = request.headers.host;
-  if (!host) {
-    throw new HttpError(400, "host_required");
-  }
-  return `http://${host}`;
 }
 
 async function mapLocalSettingsError<T>(operation: () => Promise<T>): Promise<T> {

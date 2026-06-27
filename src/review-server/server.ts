@@ -193,7 +193,6 @@ async function routeRequest(
   const apiWalletResultMatch = /^\/api\/wallet\/([^/]+)\/result$/.exec(url.pathname);
   const settingsMatch = /^\/settings\/([^/]+)$/.exec(url.pathname);
   const apiSettingsMatch = /^\/api\/settings\/([^/]+)$/.exec(url.pathname);
-  const apiSettingsWalletIdentityMatch = /^\/api\/settings\/([^/]+)\/wallet-identity$/.exec(url.pathname);
   const apiSettingsClearActiveAccountMatch = /^\/api\/settings\/([^/]+)\/clear-active-account$/.exec(url.pathname);
   const apiSettingsSuiGrpcUrlMatch = /^\/api\/settings\/([^/]+)\/sui-grpc-url$/.exec(url.pathname);
   const apiSettingsSuiGrpcUrlDefaultMatch = /^\/api\/settings\/([^/]+)\/sui-grpc-url\/restore-default$/.exec(url.pathname);
@@ -419,7 +418,6 @@ async function routeRequest(
 
   if (
     apiSettingsMatch?.[1] ||
-    apiSettingsWalletIdentityMatch?.[1] ||
     apiSettingsClearActiveAccountMatch?.[1] ||
     apiSettingsSuiGrpcUrlMatch?.[1] ||
     apiSettingsSuiGrpcUrlDefaultMatch?.[1] ||
@@ -432,7 +430,6 @@ async function routeRequest(
   ) {
     await routeSettingsApi(request, response, options, url, {
       status: apiSettingsMatch?.[1],
-      walletIdentity: apiSettingsWalletIdentityMatch?.[1],
       clearActiveAccount: apiSettingsClearActiveAccountMatch?.[1],
       setSuiGrpcUrl: apiSettingsSuiGrpcUrlMatch?.[1],
       restoreDefaultSuiGrpcUrl: apiSettingsSuiGrpcUrlDefaultMatch?.[1],

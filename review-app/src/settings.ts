@@ -1,6 +1,7 @@
 import "./settings.css";
 import { MAX_SUI_GRAPHQL_URL_LENGTH, MAX_SUI_GRPC_URL_LENGTH } from "../../src/core/suiEndpoint.js";
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
+import { readPageToken, tokenHeaders } from "./token.js";
 
 type StatusPayload = {
   server: {
@@ -52,7 +53,7 @@ if (!root) {
 const rootElement = root;
 
 const settingsSessionId = rootElement.dataset.settingsSessionId ?? "";
-const token = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+const token = readPageToken();
 let statusPayload: StatusPayload | undefined;
 let importPayload: unknown | undefined;
 let importPreview: ImportPreview | undefined;
@@ -121,10 +122,9 @@ function renderWalletPanel(): HTMLElement {
     element(
       "p",
       undefined,
-      "Connect wallet creates a wallet identity session. Clear active account removes only the local read context; it does not disconnect a wallet or revoke onchain permission."
+      "Clear active account removes only the local read context; it does not disconnect a wallet or revoke onchain permission. To connect a wallet, open the connect link from your AI client; binding happens only on the Connect page."
     )
   );
-  panel.append(button("Connect wallet", () => void createWalletIdentity()));
   panel.append(button("Clear active account", () => void clearActiveAccount(), "secondary"));
   return panel;
 }
@@ -198,21 +198,6 @@ async function refresh(): Promise<void> {
     errorMessage = "";
   } catch (error) {
     errorMessage = messageForHttpError(error, "The local server did not accept this settings session.");
-  }
-  render();
-}
-
-async function createWalletIdentity(): Promise<void> {
-  try {
-    const result = await requestJson<{ walletUrl: string }>(`/api/settings/${encodeURIComponent(settingsSessionId)}/wallet-identity`, {
-      method: "POST",
-      body: "{}"
-    });
-    const opened = window.open(result.walletUrl, "_blank", "noopener,noreferrer");
-    message = opened ? "Wallet identity page opened in a new system browser tab." : `Open this wallet URL in the same browser: ${result.walletUrl}`;
-    errorMessage = "";
-  } catch (error) {
-    errorMessage = messageForHttpError(error, "Could not create a wallet identity session.");
   }
   render();
 }
@@ -390,12 +375,8 @@ async function postAction(
 }
 
 async function requestJson<T = unknown>(path: string, init: RequestInit): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set("x-say-ur-intent-token", token);
-  if (init.body !== undefined) {
-    headers.set("content-type", "application/json");
-  }
-  const response = await fetch(path, { ...init, headers });
+  const extra = init.body !== undefined ? { "content-type": "application/json" } : undefined;
+  const response = await fetch(path, { ...init, headers: tokenHeaders(token, extra) });
   if (!response.ok) {
     throw new HttpJsonRequestError(response.status, await errorCodeFromResponse(response));
   }
