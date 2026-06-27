@@ -2,7 +2,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DEEPBOOK_READ_RESPONSE_UNSUPPORTED } from "../src/core/read/deepbookSourceOwners.js";
+import {
+  DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
+  DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
+  DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE,
+  DEEPBOOK_READ_RESPONSE_UNSUPPORTED,
+  DEEPBOOK_SDK_SIMULATION_SOURCE_BASE
+} from "../src/core/read/deepbookSourceOwners.js";
 
 const sourceFiles = [
   "src/runtime/start.ts",
@@ -722,7 +728,12 @@ describe("source policy", () => {
     expect(docs).toMatch(/matchedCandle\.close/);
     expect(docs).toMatch(/no_price_in_search_window/);
     expect(docs).toMatch(/DeepBookV3 official Indexer USDC candle evidence|official Indexer candle data|official Indexer candle references/i);
-    expect(docs).toMatch(/source\.chainRecomputedBySayUrIntent:\s*false|does not independently recompute/i);
+    expect(docs).toContain(`quantitySemantics.allowedUse: "${DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse}"`);
+    expect(docs).toContain(`source.kind: "${DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind}"`);
+    expect(docs).toContain(
+      `source.chainRecomputedBySayUrIntent: ${String(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent)}`
+    );
+    expect(docs).toMatch(/does not independently recompute/i);
     expect(docs).toMatch(/USDC[\s\S]{0,120}not fiat USD[\s\S]{0,120}not a USDC\/USD peg guarantee/i);
     expect(docs).toMatch(/not[\s\S]{0,160}(live quote|historical mid price|global market price)/i);
     expect(docs).toMatch(/not[\s\S]{0,160}(P&L|cost basis|signing readiness)/i);
@@ -734,11 +745,15 @@ describe("source policy", () => {
     expect(source).toMatch(/read\.get_deepbook_usdc_price_at_time/);
     expect(source).toMatch(/matchedCandle\.close/);
     expect(source).toMatch(/no_price_in_search_window/);
-    expect(source).toMatch(/deepbook_v3_official_indexer/);
-    expect(source).toMatch(/official_deepbook_usdc_candle_history/);
-    expect(source).toMatch(/usdcIsFiatUsd:\s*false/);
-    expect(source).toMatch(/usdPegGuaranteeAvailable:\s*false/);
-    expect(source).toMatch(/chainRecomputedBySayUrIntent:\s*false/);
+    expect(source).toContain(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind);
+    expect(source).toContain(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse);
+    expect(source).toContain(`usdcIsFiatUsd: ${String(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.usdcIsFiatUsd)}`);
+    expect(source).toContain(
+      `usdPegGuaranteeAvailable: ${String(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.usdPegGuaranteeAvailable)}`
+    );
+    expect(source).toContain(
+      `chainRecomputedBySayUrIntent: ${String(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.chainRecomputedBySayUrIntent)}`
+    );
     expect(source).toMatch(/liveQuoteAvailable:\s*false/);
     expect(source).toMatch(/historicalMidPriceAvailable:\s*false/);
     expect(source).toMatch(/routeRecommendationAvailable:\s*false/);
@@ -747,6 +762,73 @@ describe("source policy", () => {
     expect(source).toMatch(/profitAndLossAvailable:\s*false/);
     expect(source).toMatch(/costBasisAvailable:\s*false/);
     expect(source).toMatch(/independent_chain_recomputation/);
+  });
+
+  it("keeps public and runtime DeepBook source-owner guidance aligned with the contract", () => {
+    const publicAndRuntimeGuidanceFiles = [
+      "docs/MCP_TOOLS.md",
+      "docs/AGENT_BEHAVIOR.md",
+      "docs/SDK_API.md",
+      "protocols/deepbook-v3.md",
+      "src/mcp/serverInfo.ts",
+      "src/mcp/resources.ts",
+      "src/mcp/prompts.ts",
+      "src/adapters/adapterPromptSurfaces.ts"
+    ] as const;
+    const guidanceByFile = Object.fromEntries(
+      publicAndRuntimeGuidanceFiles.map((file) => [file, readFileSync(join(process.cwd(), file), "utf8")])
+    ) as Record<(typeof publicAndRuntimeGuidanceFiles)[number], string>;
+    const usdcNotFiatOrPeg = new RegExp(
+      `${DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.quoteAsset}[\\s\\S]{0,160}not fiat USD[\\s\\S]{0,160}not a USDC/USD peg guarantee`,
+      "i"
+    );
+
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toContain(DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE.priceConvention);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(usdcNotFiatOrPeg);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(/official Indexer[\s\S]{0,80}candle evidence/i);
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(
+      /orderbook[\s\S]{0,160}pinned DeepBook SDK|pinned SDK[\s\S]{0,160}orderbook/i
+    );
+    expect(guidanceByFile["docs/MCP_TOOLS.md"]).toMatch(
+      /mid[- ]price[\s\S]{0,160}pinned SDK|pinned SDK[\s\S]{0,160}mid[- ]price/i
+    );
+
+    expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(/official Indexer candle evidence/i);
+    expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(usdcNotFiatOrPeg);
+    expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(/matchedCandle\.close/);
+    expect(guidanceByFile["docs/AGENT_BEHAVIOR.md"]).toMatch(/not[\s\S]{0,160}(route choice|P&L|tax|signing readiness)/i);
+
+    expect(guidanceByFile["docs/SDK_API.md"]).toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
+    expect(guidanceByFile["protocols/deepbook-v3.md"]).toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
+
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain("DeepBookV3 official Indexer candle data");
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toContain("pinned-SDK snapshots");
+    expect(guidanceByFile["src/mcp/serverInfo.ts"]).toMatch(/not fiat USD(?: values)?[\s\S]{0,80}USDC\/USD peg guarantee/i);
+
+    for (const file of [
+      "src/mcp/resources.ts",
+      "src/mcp/prompts.ts",
+      "src/adapters/adapterPromptSurfaces.ts"
+    ] as const) {
+      expect(guidanceByFile[file]).not.toContain(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind);
+      expect(guidanceByFile[file]).not.toContain(DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE.allowedUse);
+      expect(guidanceByFile[file]).not.toContain(DEEPBOOK_SDK_SIMULATION_SOURCE_BASE.simulation);
+    }
+
+    for (const [file, guidance] of Object.entries(guidanceByFile)) {
+      expect(guidance, file).not.toMatch(
+        /official Indexer[\s\S]{0,120}(owns|provides|supports|returns|is used for)\s+(orderbook context|mid-price snapshots?|raw-quantity quotes?|display-amount quotes?|account inventory)/i
+      );
+      expect(guidance, file).not.toMatch(
+        /DeepBook source owner contract[\s\S]{0,160}(FlowX|flowx_aggregator_route|flowx_pinned_registry)/i
+      );
+      expect(guidance, file).not.toMatch(
+        /DeepBookV3 official Indexer[\s\S]{0,120}(supports|provides|enables|returns)\s+(route recommendation|best-price advice|signing readiness|transaction bytes|P&L|tax|cost basis)/i
+      );
+    }
   });
 
   it("keeps DeepBook source-owner unsupported-use rules explicit in the contract", () => {

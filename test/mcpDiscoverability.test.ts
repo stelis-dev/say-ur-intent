@@ -630,6 +630,14 @@ describe("MCP discoverability", () => {
         implementedToolsCount: number;
       };
       expect(payload.data.packageName).toBe(PACKAGE_NAME);
+      const limitations = (payload.data.limitations as string[] | undefined)?.join("\n") ?? "";
+      expect(limitations).toContain("DeepBookV3 official Indexer candle data");
+      expect(limitations).toContain("pinned-SDK snapshots");
+      expect(limitations).toMatch(/not fiat USD(?: values)?[\s\S]{0,80}USDC\/USD peg guarantee/i);
+      expect(limitations).not.toMatch(
+        /official Indexer[\s\S]{0,120}(owns|provides|supports|returns|is used for)\s+(orderbook|mid-price|quote|account inventory)/i
+      );
+      expect(limitations).not.toMatch(/DeepBook source owner contract[\s\S]{0,120}FlowX/i);
       expect(data.implementedToolsCount).toBe(data.implementedTools.length);
       expect(data.failClosedTools).not.toContain(TOOL_NAMES.readQuoteDeepbookAction);
       expect(data.failClosedTools).not.toContain(TOOL_NAMES.readQuoteDeepbookDisplayAmount);
