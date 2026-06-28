@@ -21,8 +21,8 @@ const requiredFiles = [
   "dist/runtime/start.js",
   "dist/review-app/connect.js",
   "dist/review-app/connect.css",
-  "dist/review-app/analytics.js",
-  "dist/review-app/analytics.css",
+  "dist/review-app/account.js",
+  "dist/review-app/account.css",
   "dist/review-app/receipt.js",
   "dist/review-app/receipt.css",
   "dist/review-app/homepage.js",
@@ -112,11 +112,11 @@ function assertLocalFiles(): void {
   if (!existsSync("dist/review-app/connect.css")) {
     throw new Error("dist/review-app/connect.css is required before publishing.");
   }
-  if (!existsSync("dist/review-app/analytics.js")) {
-    throw new Error("dist/review-app/analytics.js is required before publishing.");
+  if (!existsSync("dist/review-app/account.js")) {
+    throw new Error("dist/review-app/account.js is required before publishing.");
   }
-  if (!existsSync("dist/review-app/analytics.css")) {
-    throw new Error("dist/review-app/analytics.css is required before publishing.");
+  if (!existsSync("dist/review-app/account.css")) {
+    throw new Error("dist/review-app/account.css is required before publishing.");
   }
   if (!existsSync("dist/review-app/receipt.js")) {
     throw new Error("dist/review-app/receipt.js is required before publishing.");

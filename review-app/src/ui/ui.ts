@@ -85,10 +85,40 @@ export function field(labelText: string, control: HTMLElement): HTMLLabelElement
   return node;
 }
 
+export function select(options: {
+  value?: string;
+  id?: string;
+  name?: string;
+  choices: ReadonlyArray<{ value: string; label: string }>;
+  onChange?: (value: string) => void;
+}): HTMLSelectElement {
+  const node = document.createElement("select");
+  node.className = "ui-select";
+  for (const choice of options.choices) {
+    const option = document.createElement("option");
+    option.value = choice.value;
+    option.textContent = choice.label;
+    if (options.value === choice.value) {
+      option.selected = true;
+    }
+    node.append(option);
+  }
+  if (options.id) {
+    node.id = options.id;
+  }
+  if (options.name) {
+    node.name = options.name;
+  }
+  if (options.onChange) {
+    node.addEventListener("change", () => options.onChange!(node.value));
+  }
+  return node;
+}
+
 export function card(title?: string): HTMLElement {
   const node = element("section", "ui-card");
   if (title) {
-    node.append(element("h2", "ui-card-title", title));
+    node.append(element("h2", "ui-card-head", title));
   }
   return node;
 }
@@ -121,6 +151,141 @@ export function pill(text: string, kind: PillKind = "neutral"): HTMLElement {
   return element("span", `ui-pill${suffix}`, text);
 }
 
+// Selectable chip (toggle button). The label stays legible in every state and
+// both themes: an unselected chip uses the normal text color, never relying on
+// the selected-state color for legibility.
+export function chip(
+  label: string,
+  options: { selected?: boolean; disabled?: boolean; size?: "sm"; onClick?: () => void } = {}
+): HTMLButtonElement {
+  const node = document.createElement("button");
+  node.type = "button";
+  const classes = ["ui-chip"];
+  if (options.selected) {
+    classes.push("ui-chip--selected");
+  }
+  if (options.size === "sm") {
+    classes.push("ui-chip--sm");
+  }
+  node.className = classes.join(" ");
+  node.textContent = label;
+  node.setAttribute("aria-pressed", options.selected ? "true" : "false");
+  if (options.disabled) {
+    node.disabled = true;
+  }
+  if (options.onClick) {
+    node.addEventListener("click", options.onClick);
+  }
+  return node;
+}
+
+export type StatusKind = "success" | "failure" | "pending" | "neutral";
+
+const STATUS_ICONS: Record<StatusKind, string> = {
+  success:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  failure:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  pending:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  neutral: ""
+};
+
+// Prominent result banner: the single, reusable way to show an outcome (a chain
+// receipt's execution status now, an execution result later) with an icon and
+// color, not color alone.
+export function statusBanner(kind: StatusKind, label: string): HTMLElement {
+  const node = element("div", `ui-status-banner ui-status-banner--${kind}`);
+  node.setAttribute("role", "status");
+  const icon = STATUS_ICONS[kind];
+  if (icon) {
+    const glyph = element("span", "ui-status-icon");
+    glyph.innerHTML = icon;
+    node.append(glyph);
+  }
+  node.append(element("span", undefined, label));
+  return node;
+}
+
+// Reusable transaction-fact block: a headline title, an optional trailing value
+// (monospace, e.g. a signed amount), and muted monospace meta lines that keep the
+// minimal display while exposing the full value via `title`. One component for a
+// receipt's balance/object/Move-call facts and, later, the execution facts.
+export function detailItem(options: {
+  title: string;
+  trailing?: string;
+  // Tints the trailing value for a signed balance/amount: "up" (gain) or "down"
+  // (loss). Reusable for a receipt's balance changes and, later, execution results.
+  trailingTone?: "up" | "down";
+  metas?: ReadonlyArray<{ label?: string; value: string; full?: string }>;
+}): HTMLElement {
+  const item = element("div", "ui-detail-item");
+  const head = element("div", "ui-detail-head");
+  head.append(element("span", "ui-detail-title", options.title));
+  if (options.trailing !== undefined) {
+    const trailing = mono(options.trailing);
+    trailing.classList.add("ui-detail-trailing");
+    if (options.trailingTone) {
+      trailing.classList.add(`ui-detail-trailing--${options.trailingTone}`);
+    }
+    head.append(trailing);
+  }
+  item.append(head);
+  for (const meta of options.metas ?? []) {
+    const line = element("div", "ui-detail-meta");
+    if (meta.label) {
+      line.append(element("span", "ui-detail-metalabel", meta.label));
+    }
+    const value = mono(meta.value);
+    if (meta.full && meta.full !== meta.value) {
+      value.title = meta.full;
+    }
+    line.append(value);
+    item.append(line);
+  }
+  return item;
+}
+
+// Collapsed-by-default disclosure for a secondary fact group. Returns the
+// <details>; the caller appends the group's content into `.body` (kept separate
+// so its padding is consistent). Mirrors the native-<details> pattern the review
+// page already uses for collapsible records.
+export function accordion(summaryText: string, open = false): { details: HTMLDetailsElement; body: HTMLElement } {
+  const details = document.createElement("details");
+  details.className = "ui-accordion";
+  details.open = open;
+  const summary = document.createElement("summary");
+  summary.className = "ui-accordion-summary";
+  summary.append(element("span", undefined, summaryText));
+  const body = element("div", "ui-accordion-body");
+  details.append(summary, body);
+  return { details, body };
+}
+
+const MODAL_CLOSE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
+// Centered modal dialog. The caller renders the returned overlay only while open,
+// so closing is the caller clearing its open flag and re-rendering; click-outside
+// and the close button both invoke onClose. Append page content to `body`.
+export function modal(options: { title: string; onClose: () => void }): { overlay: HTMLElement; body: HTMLElement } {
+  const overlay = element("div", "ui-modal");
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  const dialog = element("div", "ui-modal-dialog");
+  const head = element("div", "ui-modal-head");
+  head.append(element("h2", "ui-modal-title", options.title), iconButton(MODAL_CLOSE_ICON, "Close", options.onClose));
+  const body = element("div", "ui-modal-body");
+  dialog.append(head, body);
+  overlay.append(dialog);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      options.onClose();
+    }
+  });
+  return { overlay, body };
+}
+
 export type FeedbackKind = "ok" | "error";
 
 // Result/error feedback tied to an action: persistent (it stays until the next
@@ -142,6 +307,33 @@ export function placeholder(message: string): HTMLElement {
   return element("div", "ui-placeholder", message);
 }
 
+// Shimmering placeholder bar shown before the first query or while content loads,
+// so a page is never blank. Decorative, so hidden from assistive tech.
+export function skeleton(options: { variant?: "title" | "line" | "block"; width?: "40" | "60" | "80" } = {}): HTMLElement {
+  const width = options.width ? ` ui-skeleton--w${options.width}` : "";
+  const node = element("div", `ui-skeleton ui-skeleton--${options.variant ?? "line"}${width}`);
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+
+// Prompt shown with an empty/loading skeleton: the readable instruction (what to
+// enter) or status (loading) over the quiet ghost.
+export function skeletonHint(text: string): HTMLElement {
+  return element("div", "ui-skeleton-hint", text);
+}
+
+// A label/value pair of skeleton bars matching the .ui-row grid, for previewing a
+// key/value section while it loads.
+export function skeletonRow(): HTMLElement {
+  const node = element("div", "ui-skeleton-row");
+  node.setAttribute("aria-hidden", "true");
+  node.append(
+    element("div", "ui-skeleton ui-skeleton--line ui-skeleton--w40"),
+    element("div", "ui-skeleton ui-skeleton--line")
+  );
+  return node;
+}
+
 export function h1(text: string): HTMLElement {
   return element("h1", "ui-h1", text);
 }
@@ -153,6 +345,39 @@ export function subtitle(text: string): HTMLElement {
 // Quiet boundary/scope note (tier T4).
 export function note(text: string): HTMLElement {
   return element("p", "ui-note", text);
+}
+
+// Page footer: the consistent bottom slot for a page's boundary/disclaimer notes,
+// so every page carries its scope statement in the same place and style.
+export function footer(notes: string[]): HTMLElement {
+  const node = element("footer", "ui-footer");
+  for (const text of notes) {
+    node.append(note(text));
+  }
+  return node;
+}
+
+// Page header: title + description on the left, an optional control (e.g. a search
+// field) aligned to the right; stacks on narrow widths. One layout for every
+// title-with-search page.
+export function pageHeader(options: { title: string; lede: string; ledeTip?: string; aside?: HTMLElement }): HTMLElement {
+  const head = element("div", "ui-page-head");
+  const lead = element("div", "ui-page-head-main");
+  lead.append(h1(options.title));
+  const lede = element("p", "ui-subtitle");
+  if (options.ledeTip) {
+    lede.append(`${options.lede} `, info(options.ledeTip));
+  } else {
+    lede.textContent = options.lede;
+  }
+  lead.append(lede);
+  head.append(lead);
+  if (options.aside) {
+    const aside = element("div", "ui-page-head-aside");
+    aside.append(options.aside);
+    head.append(aside);
+  }
+  return head;
 }
 
 // Monospace span for ids, addresses, and digests.

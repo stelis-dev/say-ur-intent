@@ -174,6 +174,9 @@ import {
   type SuiReadCoreClient,
   type SuiReadServiceOptions,
   type WalletAssetClassificationSummary,
+  type AccountInventorySummary,
+  type AccountNft,
+  type AccountObjectGroup,
   type WalletBalanceInput,
   type WalletBalanceSummary
 ,
@@ -199,6 +202,12 @@ type WalletBalanceClassificationScan = {
 };
 
 const DEFAULT_DEEPBOOK_USDC_PRICE_AT_TIME_MAX_DISTANCE_MINUTES = 360;
+
+// Account inventory object scan: pages of listOwnedObjects to walk (50 objects per
+// page) and the max NFTs to surface. A coin-heavy account may truncate before all
+// objects are seen; the snapshot flags that rather than paging unbounded.
+const ACCOUNT_OBJECT_SCAN_PAGES = 6;
+const ACCOUNT_NFT_LIMIT = 60;
 
 const DEEPBOOK_USDC_PRICE_HISTORY_RESPONSE_SUMMARY = {
   ...deepbookUsdcPriceHistoryResponseSummary()
@@ -624,6 +633,106 @@ export class SuiReadService {
       hasNextPage: summary.hasNextPage,
       cursor: summary.cursor
     };
+  }
+
+  // The public account snapshot for the account page: the SuiNS name, coin
+  // balances (with the held-as split), owned NFTs, and other owned objects grouped
+  // by type. Each part is read independently so a missing name or object scan never
+  // blocks the balances.
+  async summarizeAccountInventory(input: WalletBalanceInput): Promise<AccountInventorySummary> {
+    const [walletSummary, name, owned] = await Promise.all([
+      this.summarizeWalletAssets(input),
+      this.#resolveAccountName(input.account),
+      this.#scanOwnedObjects(input.account)
+    ]);
+    return {
+      status: "ok",
+      account: input.account,
+      fetchedAt: this.#fetchedAt(),
+      name,
+      // Drop coins whose total balance is zero — an emptied coin object or
+      // accumulator residue is not a holding worth listing on the account page.
+      balances: walletSummary.balances.filter((balance) => {
+        try {
+          return BigInt(balance.balance) !== 0n;
+        } catch {
+          return true;
+        }
+      }),
+      nfts: owned.nfts,
+      objectGroups: owned.objectGroups,
+      scannedObjects: owned.scanned,
+      objectsTruncated: owned.truncated
+    };
+  }
+
+  // The account's primary SuiNS name, or null when it has none (the lookup throws
+  // NOT_FOUND) or the call fails — a name is convenience, never gating.
+  async #resolveAccountName(account: string): Promise<string | null> {
+    const resolve = this.#client.core.defaultNameServiceName;
+    if (!resolve) {
+      return null;
+    }
+    try {
+      const response = await resolve.call(this.#client.core, { address: account });
+      return response.data.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Enumerate owned objects (capped) and split them: Coin objects belong to the
+  // balance view, objects carrying a Display name/image are NFTs, and the rest are
+  // grouped by Move type. listOwnedObjects returns all three intermixed, so a
+  // coin-heavy account may truncate before reaching every NFT.
+  async #scanOwnedObjects(
+    account: string
+  ): Promise<{ nfts: AccountNft[]; objectGroups: AccountObjectGroup[]; scanned: number; truncated: boolean }> {
+    const nfts: AccountNft[] = [];
+    const groups = new Map<string, number>();
+    const core = this.#client.core;
+    const listOwnedObjects = core.listOwnedObjects;
+    if (!listOwnedObjects) {
+      return { nfts, objectGroups: [], scanned: 0, truncated: false };
+    }
+    let cursor: string | undefined;
+    let scanned = 0;
+    let truncated = false;
+    for (let page = 0; page < ACCOUNT_OBJECT_SCAN_PAGES; page += 1) {
+      const response = await listOwnedObjects.call(core, {
+        owner: account,
+        include: { display: true },
+        ...(cursor === undefined ? {} : { cursor })
+      });
+      for (const object of response.objects ?? []) {
+        scanned += 1;
+        const type = object.type ?? "";
+        if (type.includes("::coin::Coin<")) {
+          continue;
+        }
+        const output = object.display?.output;
+        const name = typeof output?.name === "string" ? output.name : undefined;
+        const imageUrl = typeof output?.image_url === "string" ? output.image_url : undefined;
+        if (name !== undefined || imageUrl !== undefined) {
+          if (nfts.length < ACCOUNT_NFT_LIMIT) {
+            nfts.push({ objectId: object.objectId, type, name, imageUrl });
+          }
+        } else {
+          groups.set(type, (groups.get(type) ?? 0) + 1);
+        }
+      }
+      if (!response.hasNextPage) {
+        break;
+      }
+      cursor = response.cursor ?? undefined;
+      if (page === ACCOUNT_OBJECT_SCAN_PAGES - 1) {
+        truncated = true;
+      }
+    }
+    const objectGroups = [...groups.entries()]
+      .map(([type, count]) => ({ type, count }))
+      .sort((left, right) => right.count - left.count || left.type.localeCompare(right.type));
+    return { nfts, objectGroups, scanned, truncated };
   }
 
   listSettlementAssetGroups(): SettlementAssetGroupListSummary {
@@ -1879,6 +1988,20 @@ export class SuiReadService {
 
   #fetchedAt(): string {
     return this.#now().toISOString();
+  }
+
+  // Resolve one coin type's verified unit (decimals/symbol) through the shared
+  // coin-metadata cache and DeepBook fallback. Public so other readers (e.g. the
+  // public chain-receipt reader) can render decimal amounts without duplicating
+  // the cache logic. Fails soft to an unavailable unit on an unresolvable type.
+  async resolveCoinUnit(coinType: string): Promise<CoinUnit> {
+    let normalizedCoinType: string;
+    try {
+      normalizedCoinType = normalizeCoinType(coinType);
+    } catch {
+      return unavailableUnit("coin_type_unresolved");
+    }
+    return this.#resolveCoinUnitForNormalizedCoinType(normalizedCoinType);
   }
 
   async #withUnit(balance: SuiClientTypes.Balance): Promise<WalletBalanceWithUnit> {

@@ -332,6 +332,26 @@ input.ui-input {
   color: var(--ui-text-muted);
 }
 
+.ui-select {
+  height: 38px;
+  width: 100%;
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: var(--ui-r);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 0 12px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.ui-select:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
 .ui-input:focus {
   border-color: var(--ui-accent);
   box-shadow: 0 0 0 3px var(--ui-focus);
@@ -397,6 +417,31 @@ input.ui-input {
   margin: 0 0 10px;
 }
 
+/* Card header bar: a slightly raised title strip (surface-2) so the title reads as
+   distinct from the card body (surface). Spans the card's padding via negative
+   margins. Used by the cards built with the card() helper; the homepage keeps the
+   plain .ui-card-title for its icon tiles. */
+.ui-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -16px -18px 14px;
+  padding: 9px 18px;
+  background: var(--ui-surface-2);
+  border-bottom: 0.5px solid var(--ui-border);
+  border-radius: 12px 12px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* The header bar already separates itself; drop the first content item's own top
+   border so the two lines do not double up. */
+.ui-card-head + .ui-detail-item,
+.ui-card-head + .ui-row {
+  border-top: 0;
+}
+
 .ui-section-title {
   font-size: 12px;
   font-weight: 500;
@@ -427,6 +472,7 @@ input.ui-input {
   color: var(--ui-text);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* Badges and pills. */
@@ -469,6 +515,154 @@ input.ui-input {
   color: var(--ui-danger);
 }
 
+/* Selectable chip (toggle): legible label in every state and both themes. The
+   unselected chip uses the normal text color, never the selected-state color. */
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 13px;
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: 999px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.06s;
+}
+
+.ui-chip:hover {
+  border-color: var(--ui-accent);
+}
+
+.ui-chip:active {
+  transform: scale(0.96);
+}
+
+.ui-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
+.ui-chip--selected {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-on-accent);
+}
+
+/* Compact chip for dense selectors (the chart pair list). */
+.ui-chip--sm {
+  min-height: 22px;
+  gap: 4px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.ui-chip--selected:hover {
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent-hover);
+}
+
+.ui-chip:disabled {
+  cursor: not-allowed;
+  color: var(--ui-text-muted);
+  background: var(--ui-surface-2);
+  border-color: var(--ui-border);
+}
+
+/* Result banner: a prominent outcome with an icon and color (not color alone). */
+.ui-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-radius: var(--ui-r);
+  border: 0.5px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ui-status-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.ui-status-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ui-status-banner--success {
+  background: var(--ui-ok-bg);
+  color: var(--ui-ok-text);
+  border-color: transparent;
+}
+
+.ui-status-banner--failure {
+  background: var(--ui-danger-bg);
+  color: var(--ui-danger);
+  border-color: transparent;
+}
+
+.ui-status-banner--pending {
+  color: var(--ui-text-muted);
+}
+
+/* Transaction-fact block: headline + optional trailing value + muted meta lines. */
+.ui-detail-item {
+  padding: 9px 0;
+  border-top: 0.5px solid var(--ui-border);
+}
+
+.ui-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ui-detail-title {
+  font-weight: 500;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+
+.ui-detail-trailing {
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+
+/* Signed amount tint: a gain (up) or loss (down), so a balance change reads at a
+   glance, not by sign alone. */
+.ui-detail-trailing--up {
+  color: var(--ui-up);
+}
+
+.ui-detail-trailing--down {
+  color: var(--ui-down);
+}
+
+.ui-detail-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--ui-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ui-detail-metalabel {
+  flex: none;
+  color: var(--ui-text-muted);
+}
+
 /* Feedback block: tied to an action, persistent, diagnosable. */
 .ui-feedback {
   border: 0.5px solid var(--ui-border);
@@ -507,6 +701,70 @@ input.ui-input {
   font-size: 13.5px;
   color: var(--ui-text-muted);
   text-align: center;
+}
+
+/* Skeleton: a static layout ghost shown before the first query or while content
+   loads, so a page is never blank. Intentionally NOT animated — a shimmer reads as
+   "loading" even when the page is just waiting for input; the prompt text
+   (.ui-skeleton-hint) says what to do instead. Decorative. */
+.ui-skeleton {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--ui-surface-2);
+}
+
+.ui-skeleton--title {
+  height: 15px;
+  width: 38%;
+  margin-bottom: 14px;
+}
+
+.ui-skeleton--line {
+  height: 12px;
+  margin: 8px 0;
+}
+
+.ui-skeleton--block {
+  height: 240px;
+  margin: 4px 0;
+}
+
+.ui-skeleton--w40 {
+  width: 40%;
+}
+
+.ui-skeleton--w60 {
+  width: 60%;
+}
+
+.ui-skeleton--w80 {
+  width: 80%;
+}
+
+.ui-skeleton-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.34fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--ui-border);
+}
+
+.ui-skeleton-row:first-child {
+  border-top: 0;
+}
+
+.ui-skeleton-row .ui-skeleton {
+  margin: 0;
+}
+
+/* Prompt shown with the empty/loading skeleton: tells the user what to enter (or
+   that content is loading), the readable focal point over the quiet ghost. */
+.ui-skeleton-hint {
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ui-text-muted);
+  line-height: 1.6;
 }
 
 /* Full-page loading overlay: set aria-busy="true" on the shell to lock the page
@@ -563,6 +821,50 @@ input.ui-input {
   }
 }
 
+/* Modal dialog: a centered overlay panel (e.g. the chart's settings). Rendered
+   only while open, so visibility needs no toggle class. */
+.ui-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--ui-bg) 55%, transparent);
+}
+
+.ui-modal-dialog {
+  width: min(440px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--ui-surface);
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: 14px;
+}
+
+.ui-modal-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--ui-surface);
+  border-bottom: 0.5px solid var(--ui-border);
+}
+
+.ui-modal-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.ui-modal-body {
+  padding: 14px 16px;
+}
+
 .ui-h1 {
   font-size: 19px;
   font-weight: 500;
@@ -584,17 +886,75 @@ input.ui-input {
   margin: 12px 0 0;
 }
 
+/* Page header: title + description on the left, an optional control (search field)
+   aligned to the right. Stacks on narrow widths. */
+.ui-page-head {
+  display: flex;
+  justify-content: space-between;
+  /* Bottom-align the search with the title block so its bottom edge matches the
+     description's — an even gap down to the first card. */
+  align-items: flex-end;
+  gap: 20px;
+  margin: 0 0 18px;
+}
+
+.ui-page-head-main {
+  min-width: 0;
+}
+
+.ui-page-head-main .ui-h1 {
+  margin-bottom: 4px;
+}
+
+.ui-page-head-main .ui-subtitle {
+  margin: 0;
+}
+
+.ui-page-head-aside {
+  flex: none;
+  width: min(360px, 44%);
+}
+
+@media (max-width: 640px) {
+  .ui-page-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .ui-page-head-aside {
+    width: 100%;
+  }
+}
+
+/* Page footer: the consistent bottom slot for boundary/disclaimer notes. */
+.ui-footer {
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--ui-border);
+}
+
+.ui-footer .ui-note {
+  margin: 6px 0 0;
+}
+
+.ui-footer .ui-note:first-child {
+  margin-top: 0;
+}
+
 /* Inline info marker: minimal label stays visible, the detail is a tooltip. */
 .ui-info {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-left: 5px;
+  /* Sized in em so the marker tracks the surrounding font size (≈ 1em circle)
+     instead of looming over small text as a fixed-px badge. */
+  width: 1.3em;
+  height: 1.3em;
+  margin-left: 0.3em;
   border: 0.5px solid var(--ui-border-strong);
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 0.72em;
   font-weight: 500;
   font-style: normal;
   line-height: 1;
@@ -608,4 +968,161 @@ input.ui-input {
   outline: none;
   border-color: var(--ui-accent);
   color: var(--ui-accent);
+}
+
+/* PTB graph: the rendered Mermaid SVG container. Mermaid's own injected <style>
+   does not apply in this page context (SVG defaults to black fills), so the
+   flowchart is painted from these always-applied token rules, theming it for both
+   light and dark. The same render mechanism feeds the review and receipt pages. */
+.ui-ptb-graph {
+  overflow-x: auto;
+  min-height: 60px;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+}
+
+.ui-ptb-graph svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.ui-ptb-graph--error {
+  color: var(--ui-danger);
+}
+
+.ui-ptb-graph svg .node rect,
+.ui-ptb-graph svg .node polygon,
+.ui-ptb-graph svg .node circle {
+  fill: var(--ui-surface-2);
+  stroke: var(--ui-border-strong);
+  stroke-width: 1px;
+}
+
+.ui-ptb-graph svg .edgePaths path,
+.ui-ptb-graph svg path.flowchart-link {
+  fill: none !important;
+  stroke: var(--ui-border-strong);
+  stroke-width: 1.5px;
+}
+
+.ui-ptb-graph svg marker path {
+  fill: var(--ui-border-strong) !important;
+  stroke: none;
+}
+
+.ui-ptb-graph svg .nodeLabel,
+.ui-ptb-graph svg .edgeLabel,
+.ui-ptb-graph svg text {
+  color: var(--ui-text);
+  fill: var(--ui-text);
+  font-size: 12px;
+}
+
+.ui-ptb-graph svg .edgeLabel rect {
+  fill: var(--ui-surface);
+}
+
+/* Pan/zoom mode: a fixed-height clipping viewport with a transformed content
+   layer (wheel zooms toward the cursor, drag pans) and a controls overlay. */
+.ui-ptb-graph--interactive {
+  position: relative;
+  height: 420px;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.ui-ptb-graph--grabbing {
+  cursor: grabbing;
+}
+
+.ui-ptb-graph-content {
+  width: 100%;
+  transform-origin: 0 0;
+}
+
+.ui-ptb-graph-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Compact controls so they do not crowd the graph. */
+.ui-ptb-graph-controls .ui-icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.ui-ptb-graph-controls .ui-icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Accordion: a collapsed-by-default disclosure for secondary fact groups
+   (inputs, Move calls, object changes, events). Native <details>/<summary> with
+   a custom chevron; no script. */
+.ui-accordion {
+  border: 0.5px solid var(--ui-border);
+  border-radius: var(--ui-r);
+  background: var(--ui-surface);
+  margin: 0 0 8px;
+}
+
+.ui-accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ui-text);
+  list-style: none;
+  /* Summary strip is surface-2 so it reads as distinct from the body (surface). */
+  background: var(--ui-surface-2);
+  border-radius: var(--ui-r);
+}
+
+.ui-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ui-accordion-summary:hover {
+  color: var(--ui-accent);
+}
+
+.ui-accordion-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ui-focus);
+  border-radius: var(--ui-r);
+}
+
+.ui-accordion-summary::after {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--ui-text-muted);
+  border-bottom: 1.5px solid var(--ui-text-muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.ui-accordion[open] .ui-accordion-summary::after {
+  transform: rotate(-135deg);
+}
+
+.ui-accordion[open] .ui-accordion-summary {
+  border-bottom: 0.5px solid var(--ui-border);
+  border-radius: var(--ui-r) var(--ui-r) 0 0;
+}
+
+.ui-accordion-body {
+  padding: 4px 14px 12px;
 }

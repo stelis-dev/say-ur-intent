@@ -1200,7 +1200,7 @@ describe("review HTTP server", () => {
     }
   });
 
-  it("serves the public analytics page and asset endpoint without a token", async () => {
+  it("serves the public account page and asset endpoint without a token", async () => {
     const store = createSessionStore();
     const validAddress = `0x${"0".repeat(63)}2`;
     const server = await createReviewHttpServer({
@@ -1208,7 +1208,7 @@ describe("review HTTP server", () => {
       store,
       logger,
       readService: {
-        summarizeWalletAssets: async ({ account }: { account?: string }) => ({
+        summarizeAccountInventory: async ({ account }: { account?: string }) => ({
           account,
           fetchedAt: "2026-06-28T00:00:00.000Z",
           balances: []
@@ -1222,36 +1222,36 @@ describe("review HTTP server", () => {
       // Public page: opens with no token and references its own bundle. It binds
       // no wallet and reads only same-origin APIs, so its CSP keeps connect-src to
       // 'self' and does not allow the Sui fullnode origin.
-      const page = await fetch(`${base}/analytics`);
+      const page = await fetch(`${base}/account`);
       expect(page.status).toBe(200);
       const html = await page.text();
-      expect(html).toContain("/review-assets/analytics.js");
-      expect(html).toContain("/review-assets/analytics.css");
-      expect(html).toContain('id="analytics-app"');
-      const analyticsCsp = page.headers.get("content-security-policy") ?? "";
-      expect(analyticsCsp).toContain("connect-src 'self'");
-      expect(analyticsCsp).not.toContain("https://fullnode.mainnet.sui.io");
+      expect(html).toContain("/review-assets/account.js");
+      expect(html).toContain("/review-assets/account.css");
+      expect(html).toContain('id="account-app"');
+      const accountCsp = page.headers.get("content-security-policy") ?? "";
+      expect(accountCsp).toContain("connect-src 'self'");
+      expect(accountCsp).not.toContain("https://fullnode.mainnet.sui.io");
 
       // A token in the URL is rejected on the public page and endpoint.
-      const pageToken = await fetch(`${base}/analytics?token=secret`);
+      const pageToken = await fetch(`${base}/account?token=secret`);
       expect(pageToken.status).toBe(400);
-      const apiToken = await fetch(`${base}/api/analytics/assets?address=${validAddress}&token=secret`);
+      const apiToken = await fetch(`${base}/api/account/assets?address=${validAddress}&token=secret`);
       expect(apiToken.status).toBe(400);
 
       // Missing or malformed address → 400; no token is involved.
-      const missing = await fetch(`${base}/api/analytics/assets`);
+      const missing = await fetch(`${base}/api/account/assets`);
       expect(missing.status).toBe(400);
-      const malformed = await fetch(`${base}/api/analytics/assets?address=not-an-address`);
+      const malformed = await fetch(`${base}/api/account/assets?address=not-an-address`);
       expect(malformed.status).toBe(400);
 
       // A valid address returns the public summary with no token.
-      const ok = await fetch(`${base}/api/analytics/assets?address=${validAddress}`);
+      const ok = await fetch(`${base}/api/account/assets?address=${validAddress}`);
       expect(ok.status).toBe(200);
       expect(await ok.json()).toMatchObject({ balances: [] });
 
       // A header token grants no privilege on the public endpoint: it is neither
       // required nor rejected, so the read behaves the same as without it.
-      const withHeaderToken = await fetch(`${base}/api/analytics/assets?address=${validAddress}`, {
+      const withHeaderToken = await fetch(`${base}/api/account/assets?address=${validAddress}`, {
         headers: { "x-say-ur-intent-token": "any-token" }
       });
       expect(withHeaderToken.status).toBe(200);
@@ -1259,10 +1259,10 @@ describe("review HTTP server", () => {
       // The active-account default endpoint is public. This server has no activity
       // store, so it reports no bound account, and a URL token is rejected like the
       // other public endpoints.
-      const activeNone = await fetch(`${base}/api/analytics/active-account`);
+      const activeNone = await fetch(`${base}/api/account/active-account`);
       expect(activeNone.status).toBe(200);
       expect(await activeNone.json()).toEqual({ address: null });
-      const activeToken = await fetch(`${base}/api/analytics/active-account?token=secret`);
+      const activeToken = await fetch(`${base}/api/account/active-account?token=secret`);
       expect(activeToken.status).toBe(400);
 
       // The old analysis page and its API endpoints are gone with no alias.
@@ -1277,7 +1277,7 @@ describe("review HTTP server", () => {
     }
   });
 
-  it("defaults the analytics active-account endpoint to the bound account", async () => {
+  it("defaults the account active-account endpoint to the bound account", async () => {
     const store = createSessionStore();
     const activityStore = new InMemoryActivityStore();
     const boundAddress = `0x${"0".repeat(63)}3`;
@@ -1286,7 +1286,7 @@ describe("review HTTP server", () => {
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const active = await fetch(`${base}/api/analytics/active-account`);
+      const active = await fetch(`${base}/api/account/active-account`);
       expect(active.status).toBe(200);
       expect(await active.json()).toEqual({ address: boundAddress });
     } finally {
@@ -1302,7 +1302,7 @@ describe("review HTTP server", () => {
       store,
       logger,
       readService: {
-        summarizeWalletAssets: async () => {
+        summarizeAccountInventory: async () => {
           throw new Error("upstream read failed");
         }
       }
@@ -1310,7 +1310,7 @@ describe("review HTTP server", () => {
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const failed = await fetch(`${base}/api/analytics/assets?address=${validAddress}`);
+      const failed = await fetch(`${base}/api/account/assets?address=${validAddress}`);
       expect(failed.status).toBe(502);
       expect(await failed.json()).toMatchObject({ error: "wallet_read_failed" });
     } finally {
@@ -1326,8 +1326,8 @@ describe("review HTTP server", () => {
     writeFileSync(join(assetsDir, "receipt.css"), ".receipt-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "connect.js"), "export const wallet = true;\n", "utf8");
     writeFileSync(join(assetsDir, "connect.css"), ".wallet-shell { color: #15201b; }\n", "utf8");
-    writeFileSync(join(assetsDir, "analytics.js"), "export const analytics = true;\n", "utf8");
-    writeFileSync(join(assetsDir, "analytics.css"), ".analytics-shell { color: #15201b; }\n", "utf8");
+    writeFileSync(join(assetsDir, "account.js"), "export const account = true;\n", "utf8");
+    writeFileSync(join(assetsDir, "account.css"), ".account-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "settings.js"), "export const settings = true;\n", "utf8");
     writeFileSync(join(assetsDir, "settings.css"), ".settings-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "deepbookUsdcChart.js"), "export const deepbookUsdcChart = true;\n", "utf8");
@@ -1561,6 +1561,19 @@ describe("review HTTP server", () => {
               }
             ],
             objectTypes: {},
+            gas: {
+              totalMist: "1000",
+              computationMist: "1000",
+              storageMist: "0",
+              storageRebateMist: "0",
+              nonRefundableStorageMist: "0",
+              budgetMist: "2000",
+              priceMist: "1",
+              paymentObjectId: "0xpay"
+            },
+            inputs: [],
+            events: [],
+            ptbGraph: undefined,
             chainIdentifier: "abcdefgh",
             // Fixed so two identical reads return byte-identical bodies; lets the
             // header-token case below assert the response is unchanged.
@@ -2421,12 +2434,15 @@ describe("review page content security policy", () => {
 });
 
 describe("page security rules across all pages", () => {
-  const publicPaths = ["/analytics", "/receipt", "/charts/deepbook-usdc"];
+  const publicPaths = ["/account", "/receipt", "/charts/deepbook-usdc"];
 
-  // Receipt Analytics and the chart still render the public nav server-side.
-  // Analytics renders its nav through the shared shell (Plan B Unit B1), so its
-  // server HTML is a mount plus the shared stylesheet, not a server-rendered nav.
-  const serverNavPaths = ["/receipt", "/charts/deepbook-usdc"];
+  // Every public page now renders its nav through the shared shell, so the server
+  // HTML is a mount plus the shared stylesheet, not a server-rendered nav.
+  const shellPaths: Array<{ path: string; mount: string }> = [
+    { path: "/account", mount: 'id="account-app"' },
+    { path: "/receipt", mount: 'id="receipt-app"' },
+    { path: "/charts/deepbook-usdc", mount: 'id="deepbook-usdc-chart-app"' }
+  ];
 
   it("public pages serve without a token, reject a query token, and never link to a token page", async () => {
     const store = createSessionStore();
@@ -2451,23 +2467,14 @@ describe("page security rules across all pages", () => {
         expect(await withToken.json()).toEqual({ error: "token_query_not_supported" });
       }
 
-      // Pages not yet migrated to the shared shell keep the server-rendered nav
-      // that links to the other public pages and marks the current one.
-      for (const path of serverNavPaths) {
+      // Shell-rendered public pages: the server HTML is the mount plus the shared
+      // stylesheet, with no server-rendered nav.
+      for (const { path, mount } of shellPaths) {
         const html = await (await fetch(`${base}${path}`)).text();
-        expect(html, `${path} public-nav`).toContain('class="public-nav"');
-        expect(html, `${path} marks current`).toContain('aria-current="page"');
-        for (const other of publicPaths.filter((candidate) => candidate !== path)) {
-          expect(html, `${path} links ${other}`).toContain(`href="${other}"`);
-        }
+        expect(html, `${path} mount`).toContain(mount);
+        expect(html, `${path} links ui.css`).toContain('href="/review-assets/ui.css"');
+        expect(html, `${path} nav is shell-rendered`).not.toContain('class="public-nav"');
       }
-
-      // Analytics renders its nav through the shared shell: the server HTML is the
-      // mount plus the shared stylesheet, with no server-rendered nav.
-      const analyticsHtml = await (await fetch(`${base}/analytics`)).text();
-      expect(analyticsHtml).toContain('id="analytics-app"');
-      expect(analyticsHtml).toContain('href="/review-assets/ui.css"');
-      expect(analyticsHtml, "analytics nav is shell-rendered").not.toContain('class="public-nav"');
     } finally {
       await server.close();
     }
@@ -2492,7 +2499,7 @@ describe("page security rules across all pages", () => {
         expect(res.status, path).toBe(200);
         const html = await res.text();
         expect(html, `${path} has no public-nav`).not.toContain('class="public-nav"');
-        for (const publicLink of ['href="/analytics"', 'href="/receipt"', 'href="/charts/deepbook-usdc"']) {
+        for (const publicLink of ['href="/account"', 'href="/receipt"', 'href="/charts/deepbook-usdc"']) {
           expect(html, `${path} must not link ${publicLink}`).not.toContain(publicLink);
         }
       }
@@ -2552,10 +2559,10 @@ describe("page security rules across all pages", () => {
     try {
       const base = `http://${server.host}:${server.port}`;
       // A single global guard rejects a query token before any read, so every
-      // public read endpoint — analytics, receipt, and the chart pools/candles
+      // public read endpoint — account, receipt, and the chart pools/candles
       // APIs alike — answers identically and none can accept a token in the URL.
       const publicReadEndpoints = [
-        `/api/analytics/assets?address=${walletAccount}&token=secret`,
+        `/api/account/assets?address=${walletAccount}&token=secret`,
         `/api/receipt?digest=anything&token=secret`,
         `/api/charts/deepbook-usdc/pools?token=secret`,
         `/api/charts/deepbook-usdc/candles?token=secret`

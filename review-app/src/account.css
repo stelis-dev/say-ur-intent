@@ -1,0 +1,74 @@
+/* Account page layout only. All component styling comes from the shared UI
+   module (ui.css); this file declares no `.ui-*` rule and no bare interactive
+   element rule. */
+
+.account-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* One coin's holdings as a list item: symbol on the left, total on the right with
+   an info marker whose tooltip shows the held-as split (object vs account). */
+.account-asset {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 0.5px solid var(--ui-border);
+  font-size: 14px;
+}
+
+.account-asset-symbol {
+  font-weight: 500;
+}
+
+.account-asset-total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* NFT grid: square image tiles with a name caption. Images load from external
+   hosts (page CSP allows external https) and are lazy + no-referrer. */
+.account-nfts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.account-nft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-nft-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  /* Square corners (no radius) so the artwork's own frame/border is not clipped. */
+  background: var(--ui-surface);
+  border: 0.5px solid var(--ui-border);
+}
+
+.account-nft-noimg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--ui-text-muted);
+}
+
+.account-nft-name {
+  font-size: 12px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

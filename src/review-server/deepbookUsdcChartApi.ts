@@ -15,6 +15,7 @@ import {
   deepbookUsdcPriceHistoryQuantitySemantics,
   deepbookUsdcPriceHistoryResponseSummary
 } from "../core/read/deepbookReadHelpers.js";
+import { curateUsdcChartPools } from "../core/read/deepbookRegistry.js";
 import {
   DEEPBOOK_USDC_PRICE_HISTORY_UNSUPPORTED_CLAIMS,
   type DeepbookUsdcPriceHistoryPair,
@@ -167,8 +168,10 @@ export function createDeepbookUsdcChartApi(options: DeepbookUsdcChartApiOptions 
         ...chartCommonFields()
       });
     }
-    const pools = selectDeepbookOfficialIndexerCanonicalUsdcPools(poolResult.pools).map(
-      deepbookUsdcPriceHistoryPairFromOfficialPool
+    // Curate to the hand-picked allowlist of meaningful pairs (SUI/USDC, DEEP/USDC,
+    // …), in display order; the indexer's dead/dust pools never appear.
+    const pools = curateUsdcChartPools(
+      selectDeepbookOfficialIndexerCanonicalUsdcPools(poolResult.pools).map(deepbookUsdcPriceHistoryPairFromOfficialPool)
     );
     return routeResult(200, {
       status: "ok",

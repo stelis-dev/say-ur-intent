@@ -18,7 +18,7 @@ const CHART_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14h16"/><path d="M8 15l3-3 3 2 4-5"/></svg>';
 
 const CARDS: ReadonlyArray<{ href: string; icon: string; title: string; desc: string }> = [
-  { href: "/analytics", icon: WALLET_ICON, title: t.home.cards.analytics.title, desc: t.home.cards.analytics.desc },
+  { href: "/account", icon: WALLET_ICON, title: t.home.cards.account.title, desc: t.home.cards.account.desc },
   { href: "/receipt", icon: RECEIPT_ICON, title: t.home.cards.receipt.title, desc: t.home.cards.receipt.desc },
   { href: "/charts/deepbook-usdc", icon: CHART_ICON, title: t.home.cards.chart.title, desc: t.home.cards.chart.desc }
 ];

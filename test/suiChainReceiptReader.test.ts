@@ -4,12 +4,14 @@ import {
   readPublicChainReceipt,
   type PublicChainReceiptReaderClient
 } from "../src/core/action/suiChainReceiptReader.js";
+import { SUI_METADATA_UNIT_SOURCE } from "../src/core/read/coinMetadata.js";
 
 type ChainReceiptInclude = {
   transaction: true;
   effects: true;
   balanceChanges: true;
   objectTypes: true;
+  events: true;
 };
 
 type FixtureClient = PublicChainReceiptReaderClient & {
@@ -91,7 +93,7 @@ function transactionFixture(
       unchangedConsensusObjects: [],
       auxiliaryDataDigest: null
     },
-    events: undefined,
+    events: [],
     objectTypes: {
       [objectId]: "0x2::coin::Coin<0x2::sui::SUI>"
     },
@@ -202,5 +204,125 @@ describe("public chain receipt reader", () => {
 
     expect(result.status).toBe("unavailable");
     expect(client.calls).toHaveLength(0);
+  });
+
+  it("relabels registered packages and shortens unknown addresses in the receipt PTB graph", async () => {
+    const suiFramework = `0x${"0".repeat(63)}2`;
+    const base = transactionFixture();
+    const client = createClient(
+      transactionFixture({
+        transaction: {
+          ...base.transaction,
+          commands: [
+            { MoveCall: { package: suiFramework, module: "coin", function: "zero", typeArguments: [], arguments: [] } },
+            { MoveCall: { package: packageId, module: "pool", function: "swap", typeArguments: [], arguments: [] } }
+          ]
+        }
+      })
+    );
+
+    const result = await readWith(client);
+
+    expect(result.status).toBe("found");
+    if (result.status !== "found") {
+      throw new Error("reader did not return a receipt");
+    }
+    const mermaid = result.receipt.ptbGraph?.mermaid ?? "";
+    // A registered framework package shows its Move alias, not the raw address.
+    expect(mermaid).toContain("sui::coin::zero");
+    expect(mermaid).not.toContain(`${suiFramework}::`);
+    // An unregistered package address is shortened, never shown full-length.
+    expect(mermaid).toContain("0xcccccc...cccc::pool::swap");
+    expect(mermaid).not.toContain(packageId);
+  });
+
+  it("surfaces a pure input's raw bytes as 0x-hex", async () => {
+    const base = transactionFixture();
+    const client = createClient(
+      transactionFixture({
+        transaction: {
+          ...base.transaction,
+          inputs: [{ Pure: { bytes: "AA==" } }, { Pure: { bytes: "mMJ29jIAAAA=" } }]
+        }
+      })
+    );
+
+    const result = await readWith(client);
+
+    expect(result.status).toBe("found");
+    if (result.status !== "found") {
+      throw new Error("reader did not return a receipt");
+    }
+    // base64 "AA==" → 0x00, "mMJ29jIAAAA=" → the u64-width raw bytes. The receipt
+    // surfaces the verifiable bytes; it does not guess a scalar type.
+    expect(result.receipt.inputs).toEqual([
+      { index: 0, kind: "pure", objectId: undefined, bytes: "0x00" },
+      { index: 1, kind: "pure", objectId: undefined, bytes: "0x98c276f632000000" }
+    ]);
+  });
+
+  it("enriches balance changes with verified decimals and symbol when a resolver is provided", async () => {
+    const client = createClient(transactionFixture());
+
+    const result = await readPublicChainReceipt(
+      {
+        client,
+        network: "mainnet",
+        expectedChainIdentifier: "mainnet-chain",
+        resolveCoinUnit: async () => ({
+          status: "available",
+          source: SUI_METADATA_UNIT_SOURCE,
+          decimals: 9,
+          symbol: "SUI",
+          name: "Sui"
+        })
+      },
+      { digest, now }
+    );
+
+    expect(result.status).toBe("found");
+    if (result.status !== "found") {
+      throw new Error("reader did not return a receipt");
+    }
+    // Each change carries the verified unit so the page renders a decimal amount.
+    expect(result.receipt.balanceChanges[0]).toMatchObject({ amountRaw: "-1000", decimals: 9, symbol: "SUI" });
+  });
+
+  it("leaves balance changes on raw amounts when decimals are unresolved (best-effort, never fails the receipt)", async () => {
+    const unavailable = createClient(transactionFixture());
+    const unresolved = await readPublicChainReceipt(
+      {
+        client: unavailable,
+        network: "mainnet",
+        expectedChainIdentifier: "mainnet-chain",
+        resolveCoinUnit: async () => ({ status: "unavailable", reason: "metadata_not_found" })
+      },
+      { digest, now }
+    );
+    expect(unresolved.status).toBe("found");
+    if (unresolved.status !== "found") {
+      throw new Error("reader did not return a receipt");
+    }
+    expect(unresolved.receipt.balanceChanges[0]).not.toHaveProperty("decimals");
+    expect(unresolved.receipt.balanceChanges[0]?.amountRaw).toBe("-1000");
+
+    // A resolver that throws (a metadata outage) must also leave the receipt intact.
+    const outage = createClient(transactionFixture());
+    const throwing = await readPublicChainReceipt(
+      {
+        client: outage,
+        network: "mainnet",
+        expectedChainIdentifier: "mainnet-chain",
+        resolveCoinUnit: async () => {
+          throw new Error("coin metadata service unavailable");
+        }
+      },
+      { digest, now }
+    );
+    expect(throwing.status).toBe("found");
+    if (throwing.status !== "found") {
+      throw new Error("reader did not return a receipt");
+    }
+    expect(throwing.receipt.balanceChanges[0]).not.toHaveProperty("decimals");
   });
 });

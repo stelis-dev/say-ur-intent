@@ -246,7 +246,7 @@ describe("source policy", () => {
     // page reads on-chain receipt facts by transaction digest.
     expect(publicAndRuntimeSurface).toMatch(/public [Rr]eceipt [Aa]nalytics page/);
     expect(publicAndRuntimeSurface).toMatch(/receipt facts (for|by)[\s\S]{0,80}digest/i);
-    expect(publicAndRuntimeSurface).toMatch(/public Analytics page/i);
+    expect(publicAndRuntimeSurface).toMatch(/public Account page/i);
     // The per-session review-execution-analysis page and its route were removed.
     expect(publicAndRuntimeSurface).not.toMatch(/review execution analysis page/i);
     expect(publicAndRuntimeSurface).not.toMatch(/\/review\/[^\s)]*\/analysis/);

@@ -1,5 +1,13 @@
-import type { PublicChainReceipt, PublicChainReceiptBalanceChange } from "../../src/core/action/suiChainReceiptReader.js";
+import type {
+  PublicChainReceipt,
+  PublicChainReceiptBalanceChange,
+  PublicChainReceiptEvent,
+  PublicChainReceiptGas,
+  PublicChainReceiptInput,
+  PublicChainReceiptPtbGraph
+} from "../../src/core/action/suiChainReceiptReader.js";
 import type { SuiChainReceiptEffectsStatus, SuiChainReceiptPackageCall } from "../../src/core/action/suiChainReceiptEvidence.js";
+import { asRecord } from "./parse.js";
 
 // Pure, DOM-free validation of the /api/receipt response against the shared
 // server SOT types. Kept out of receipt.ts so the fail-closed behaviour is unit
@@ -7,9 +15,9 @@ import type { SuiChainReceiptEffectsStatus, SuiChainReceiptPackageCall } from ".
 // source grep.
 //
 // It validates EVERY field the page renders, down to each balance-change,
-// Move-call, and object-type entry, and CONSTRUCTS the typed result instead of
-// casting an unchecked value. A cast would lie about nested fields, so a drifted
-// entry (e.g. a numeric amountRaw or a missing address) could render
+// Move-call, input, event, and object-type entry, and CONSTRUCTS the typed result
+// instead of casting an unchecked value. A cast would lie about nested fields, so a
+// drifted entry (e.g. a numeric amountRaw or a missing address) could render
 // "undefined ..."; here any drift returns null and the page shows an error.
 // Building the object also makes a future field added to the type a compile
 // error here, so the validator cannot silently fall behind the type.
@@ -46,6 +54,22 @@ export function parseReceipt(value: unknown): PublicChainReceipt | null {
   if (!objectTypes) {
     return null;
   }
+  const gas = parseGas(r.gas);
+  if (!gas) {
+    return null;
+  }
+  const inputs = parseInputs(r.inputs);
+  if (!inputs) {
+    return null;
+  }
+  const events = parseEvents(r.events);
+  if (!events) {
+    return null;
+  }
+  const ptbGraph = parsePtbGraph(r.ptbGraph);
+  if (!ptbGraph.ok) {
+    return null;
+  }
   return {
     txDigest: r.txDigest,
     sender: r.sender,
@@ -53,6 +77,10 @@ export function parseReceipt(value: unknown): PublicChainReceipt | null {
     packageCalls,
     balanceChanges,
     objectTypes,
+    gas,
+    inputs,
+    events,
+    ptbGraph: ptbGraph.graph,
     chainIdentifier: r.chainIdentifier,
     fetchedAt: r.fetchedAt
   };
@@ -101,13 +129,27 @@ function parseBalanceChanges(value: unknown): PublicChainReceiptBalanceChange[] 
     if (r.direction !== "increase" && r.direction !== "decrease" && r.direction !== "zero") {
       return null;
     }
-    changes.push({
+    // decimals + symbol are optional best-effort enrichment: absent is valid, a
+    // present-but-wrong-typed value is drift and fails closed.
+    const decimals = optionalNumber(r.decimals);
+    const symbol = optionalString(r.symbol);
+    if (decimals === INVALID || symbol === INVALID) {
+      return null;
+    }
+    const change: PublicChainReceiptBalanceChange = {
       index: r.index,
       address: r.address,
       coinType: r.coinType,
       amountRaw: r.amountRaw,
       direction: r.direction
-    });
+    };
+    if (decimals !== undefined) {
+      change.decimals = decimals;
+    }
+    if (symbol !== undefined) {
+      change.symbol = symbol;
+    }
+    changes.push(change);
   }
   return changes;
 }
@@ -162,6 +204,123 @@ function parseObjectTypes(value: unknown): Record<string, string> | null {
   return objectTypes;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+function parseGas(value: unknown): PublicChainReceiptGas | null {
+  const r = asRecord(value);
+  if (!r) {
+    return null;
+  }
+  if (
+    typeof r.totalMist !== "string" ||
+    typeof r.computationMist !== "string" ||
+    typeof r.storageMist !== "string" ||
+    typeof r.storageRebateMist !== "string" ||
+    typeof r.nonRefundableStorageMist !== "string"
+  ) {
+    return null;
+  }
+  const budgetMist = optionalString(r.budgetMist);
+  const priceMist = optionalString(r.priceMist);
+  const paymentObjectId = optionalString(r.paymentObjectId);
+  if (budgetMist === INVALID || priceMist === INVALID || paymentObjectId === INVALID) {
+    return null;
+  }
+  return {
+    totalMist: r.totalMist,
+    computationMist: r.computationMist,
+    storageMist: r.storageMist,
+    storageRebateMist: r.storageRebateMist,
+    nonRefundableStorageMist: r.nonRefundableStorageMist,
+    budgetMist,
+    priceMist,
+    paymentObjectId
+  };
+}
+
+function parseInputs(value: unknown): PublicChainReceiptInput[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const inputs: PublicChainReceiptInput[] = [];
+  for (const entry of value) {
+    const r = asRecord(entry);
+    if (!r || typeof r.index !== "number") {
+      return null;
+    }
+    const kind = r.kind;
+    if (
+      kind !== "object" &&
+      kind !== "shared_object" &&
+      kind !== "receiving" &&
+      kind !== "pure" &&
+      kind !== "withdrawal" &&
+      kind !== "unknown"
+    ) {
+      return null;
+    }
+    const objectId = optionalString(r.objectId);
+    const bytes = optionalString(r.bytes);
+    if (objectId === INVALID || bytes === INVALID) {
+      return null;
+    }
+    const parsedInput: PublicChainReceiptInput = { index: r.index, kind, objectId };
+    if (bytes !== undefined) {
+      parsedInput.bytes = bytes;
+    }
+    inputs.push(parsedInput);
+  }
+  return inputs;
+}
+
+function parseEvents(value: unknown): PublicChainReceiptEvent[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const events: PublicChainReceiptEvent[] = [];
+  for (const entry of value) {
+    const r = asRecord(entry);
+    if (!r || typeof r.index !== "number") {
+      return null;
+    }
+    if (
+      typeof r.packageId !== "string" ||
+      typeof r.module !== "string" ||
+      typeof r.eventType !== "string" ||
+      typeof r.sender !== "string"
+    ) {
+      return null;
+    }
+    events.push({ index: r.index, packageId: r.packageId, module: r.module, eventType: r.eventType, sender: r.sender });
+  }
+  return events;
+}
+
+// The PTB graph is optional: absent is valid (undefined), a present-but-malformed
+// value fails closed.
+function parsePtbGraph(value: unknown): { ok: true; graph: PublicChainReceiptPtbGraph | undefined } | { ok: false } {
+  if (value === undefined || value === null) {
+    return { ok: true, graph: undefined };
+  }
+  const r = asRecord(value);
+  if (!r || typeof r.mermaid !== "string") {
+    return { ok: false };
+  }
+  return { ok: true, graph: { mermaid: r.mermaid } };
+}
+
+const INVALID = Symbol("invalid");
+
+// undefined → valid absent; string → valid; anything else → INVALID sentinel.
+function optionalString(value: unknown): string | undefined | typeof INVALID {
+  if (value === undefined) {
+    return undefined;
+  }
+  return typeof value === "string" ? value : INVALID;
+}
+
+// undefined → valid absent; number → valid; anything else → INVALID sentinel.
+function optionalNumber(value: unknown): number | undefined | typeof INVALID {
+  if (value === undefined) {
+    return undefined;
+  }
+  return typeof value === "number" ? value : INVALID;
 }

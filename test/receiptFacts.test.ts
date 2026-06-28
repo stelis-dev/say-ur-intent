@@ -32,6 +32,29 @@ function validReceipt(): Record<string, unknown> {
       "0x00c958f578c4544acba1b894246855b91678dc4a25c0f67d508d8da3e51d9022":
         "0x2::coin::Coin<0x2::sui::SUI>"
     },
+    gas: {
+      totalMist: "275256",
+      computationMist: "100000",
+      storageMist: "17525600",
+      storageRebateMist: "17350344",
+      nonRefundableStorageMist: "0",
+      budgetMist: "1353376",
+      priceMist: "1000",
+      paymentObjectId: "0x4ea9f70b72c77973309a90674cf25f87669939511dbf3d161d30c9ef867439dd"
+    },
+    inputs: [
+      { index: 0, kind: "pure", objectId: undefined },
+      { index: 1, kind: "object", objectId: "0x00c958f578c4544acba1b894246855b91678dc4a25c0f67d508d8da3e51d9022" }
+    ],
+    events: [
+      {
+        index: 0,
+        packageId: "0x0000000000000000000000000000000000000000000000000000000000000002",
+        module: "coin",
+        eventType: "0x0000000000000000000000000000000000000000000000000000000000000002::coin::CoinEvent",
+        sender: "0xea016e020478a34bdb8e2a8400166e5d54a4132e747bf085c37ca71f3d46e3a0"
+      }
+    ],
     chainIdentifier: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
     fetchedAt: "2026-06-28T03:49:37.181Z"
   };
@@ -138,5 +161,60 @@ describe("parseReceipt", () => {
 
   it("rejects an object-type entry whose value is not a string", () => {
     expect(parseReceipt({ ...validReceipt(), objectTypes: { "0xobj": 42 } })).toBeNull();
+  });
+
+  it("validates gas, inputs, events, and the optional PTB graph", () => {
+    // Gas: a required mist field must be a string, not a number.
+    expect(parseReceipt({ ...validReceipt(), gas: { totalMist: 275256 } })).toBeNull();
+    // Inputs: an unrecognized kind is drift.
+    expect(parseReceipt({ ...validReceipt(), inputs: [{ index: 0, kind: "weird", objectId: undefined }] })).toBeNull();
+    // Inputs: a non-string bytes is drift; a string bytes is surfaced.
+    expect(
+      parseReceipt({ ...validReceipt(), inputs: [{ index: 0, kind: "pure", objectId: undefined, bytes: 5 }] })
+    ).toBeNull();
+    const withBytes = parseReceipt({
+      ...validReceipt(),
+      inputs: [{ index: 0, kind: "pure", objectId: undefined, bytes: "0x98c276f632000000" }]
+    });
+    expect(withBytes?.inputs[0]).toMatchObject({ kind: "pure", bytes: "0x98c276f632000000" });
+    // Events: a non-string eventType is drift.
+    expect(
+      parseReceipt({ ...validReceipt(), events: [{ index: 0, packageId: "0x2", module: "m", eventType: 1, sender: "0x1" }] })
+    ).toBeNull();
+    // The PTB graph is optional: absent is valid, a present non-string mermaid is drift.
+    expect(parseReceipt({ ...validReceipt(), ptbGraph: undefined })).not.toBeNull();
+    expect(parseReceipt({ ...validReceipt(), ptbGraph: { mermaid: 5 } })).toBeNull();
+    const withGraph = parseReceipt({ ...validReceipt(), ptbGraph: { mermaid: "flowchart LR" } });
+    expect(withGraph?.ptbGraph).toEqual({ mermaid: "flowchart LR" });
+  });
+
+  it("accepts optional balance-change decimals/symbol and fails closed on wrong-typed ones", () => {
+    const base = `0x${"e".repeat(64)}`;
+    // Present and well-typed: surfaced so the page can render a decimal amount.
+    const enriched = parseReceipt({
+      ...validReceipt(),
+      balanceChanges: [
+        { index: 0, address: base, coinType: "0x2::sui::SUI", amountRaw: "1193043120", direction: "increase", decimals: 9, symbol: "SUI" }
+      ]
+    });
+    expect(enriched?.balanceChanges[0]).toMatchObject({ decimals: 9, symbol: "SUI" });
+    // Absent is valid: enrichment is best-effort.
+    expect(parseReceipt(validReceipt())).not.toBeNull();
+    // Present-but-wrong-typed is drift and fails closed (so the page never renders
+    // a malformed amount or "undefined SYMBOL").
+    expect(
+      parseReceipt({
+        ...validReceipt(),
+        balanceChanges: [{ index: 0, address: base, coinType: "0x2::sui::SUI", amountRaw: "1", direction: "increase", decimals: "9" }]
+      }),
+      "string decimals"
+    ).toBeNull();
+    expect(
+      parseReceipt({
+        ...validReceipt(),
+        balanceChanges: [{ index: 0, address: base, coinType: "0x2::sui::SUI", amountRaw: "1", direction: "increase", symbol: 5 }]
+      }),
+      "numeric symbol"
+    ).toBeNull();
   });
 });

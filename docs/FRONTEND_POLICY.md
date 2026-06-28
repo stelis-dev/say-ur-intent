@@ -4,7 +4,7 @@ Say Ur Intent frontend pages are local review and wallet-context surfaces. They
 exist to show server-validated facts, capture explicit wallet gestures, and
 keep AI reasoning separate from wallet authority.
 
-The current release ships the Connect page, the public Analytics page, the local
+The current release ships the Connect page, the public Account page, the local
 settings page, a review page that can display server-computed review state, the
 public Receipt Analytics page, and the DeepBook USDC chart page. The review server may build local unsigned
 DeepBook or FlowX swap transaction material during account-bound review, but the
@@ -180,7 +180,7 @@ execution result. There is no separate per-session analysis page.
 The public Receipt Analytics page is served from `/receipt` and reads on-chain
 receipt facts for any transaction digest through `GET /api/receipt?digest=`. It
 is separate from the Connect page at `/connect/:id`, which binds the active
-account, and the public Analytics page at `/analytics`, which reads public
+account, and the public Account page at `/account`, which reads public
 on-chain asset balances for an address. It takes no session token; a `?token`
 query is rejected.
 
@@ -292,7 +292,7 @@ mark for the active theme.
 
 ## Navigation
 
-The public pages share one navigation menu: Analytics (`/analytics`), Receipt
+The public pages share one navigation menu: Account (`/account`), Receipt
 Analytics (`/receipt`), and the DeepBook USDC chart (`/charts/deepbook-usdc`).
 The menu links only to public pages and never to a token page. It is
 server-rendered outside the page's `main` element, so the page script, which owns
@@ -337,7 +337,7 @@ The frontend must not add:
 
 The exclusions above target automatic, background-indexed, or
 recommendation-style surfaces. User-requested local record views are allowed
-only inside their narrow surfaces: the public Analytics page shows a wallet
+only inside their narrow surfaces: the public Account page shows a wallet
 asset snapshot at a fetched timestamp for an address from public on-chain reads,
 and the public Receipt Analytics page shows server-read on-chain receipt facts
 for one transaction digest. Summaries of

@@ -14,7 +14,7 @@ export default defineConfig({
       input: {
         review: resolve("review-app/src/review.ts"),
         connect: resolve("review-app/src/connect.ts"),
-        analytics: resolve("review-app/src/analytics.ts"),
+        account: resolve("review-app/src/account.ts"),
         receipt: resolve("review-app/src/receipt.ts"),
         settings: resolve("review-app/src/settings.ts"),
         deepbookUsdcChart: resolve("review-app/src/deepbookUsdcChart.ts"),
@@ -27,7 +27,7 @@ export default defineConfig({
         assetFileNames: (assetInfo) =>
           assetInfo.name === "review.css" ||
           assetInfo.name === "connect.css" ||
-          assetInfo.name === "analytics.css" ||
+          assetInfo.name === "account.css" ||
           assetInfo.name === "receipt.css" ||
           assetInfo.name === "settings.css" ||
           assetInfo.name === "deepbookUsdcChart.css" ||

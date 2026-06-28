@@ -2,7 +2,8 @@ import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from
 import "./review.css";
 import { Transaction } from "@mysten/sui/transactions";
 import { getWalletUniqueIdentifier, type UiWallet } from "@mysten/dapp-kit-core";
-import mermaid from "mermaid";
+import { createPtbGraphView } from "./ui/ptbDiagram.js";
+import { rawToDisplay } from "./format.js";
 import { createLocalDAppKit, hasStoredWalletSelection, suiMainnetClient } from "./dappKitClient.js";
 import { isWalletStandardUserRejected } from "./walletStatus.js";
 import { readPageToken, tokenHeaders } from "./token.js";
@@ -233,10 +234,6 @@ let message = "";
 let errorMessage = "";
 let loading = false;
 
-mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { useMaxWidth: true } });
-let ptbRenderSequence = 0;
-const ptbSvgCache = new Map<string, string>();
-let lastPtbSvg: string | undefined;
 const QUOTE_AUTOREFRESH_LEAD_S = 3;
 
 const dAppKit = createLocalDAppKit();
@@ -768,14 +765,6 @@ function renderStoppedPanel(payload: ReviewSessionPayload): HTMLElement {
   return panel;
 }
 
-function rawToDisplay(raw: string, decimals: number): string {
-  const value = BigInt(raw);
-  const base = 10n ** BigInt(decimals);
-  const whole = value / base;
-  const fraction = (value % base).toString().padStart(decimals, "0").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : whole.toString();
-}
-
 function renderTransactionCard(payload: ReviewSessionPayload): HTMLElement {
   const panel = card("Transaction");
   panel.classList.add("transaction-card");
@@ -1276,40 +1265,13 @@ function renderPtbVisualization(artifact: PtbVisualizationArtifact): HTMLElement
   const hasNames = namedText !== rawText;
   let showingNames = hasNames;
 
-  const graph = document.createElement("div");
-  graph.className = "ptb-visualization-graph";
-  graph.textContent = "Rendering PTB graph...";
-
-  const renderGraph = (text: string): void => {
-    graph.classList.remove("error");
-    const cached = ptbSvgCache.get(text);
-    if (cached) {
-      // Already rendered this exact graph: inject synchronously, no flash.
-      graph.innerHTML = cached;
-      lastPtbSvg = cached;
-      return;
-    }
-    // Keep the previous graph visible while the new one renders so a refresh
-    // never blanks to a "Rendering..." placeholder.
-    if (lastPtbSvg) {
-      graph.innerHTML = lastPtbSvg;
-    } else {
-      graph.textContent = "Rendering PTB graph...";
-    }
-    ptbRenderSequence += 1;
-    void mermaid
-      .render(`ptb-graph-${ptbRenderSequence}`, text)
-      .then((rendered) => {
-        ptbSvgCache.set(text, rendered.svg);
-        lastPtbSvg = rendered.svg;
-        graph.innerHTML = rendered.svg;
-      })
-      .catch((error: unknown) => {
-        // Do not hide render errors behind the text fallback; name the failure.
-        graph.textContent = `PTB graph rendering failed: ${error instanceof Error ? error.message : String(error)}`;
-        graph.classList.add("error");
-      });
-  };
+  // Render through the shared PTB graph view (caching, no-flash refresh, error
+  // handling live there); keep the review page's existing graph-box styling
+  // (.ptb-visualization-graph in review.css) until B4 migrates this page.
+  const view = createPtbGraphView({ rendering: "Rendering PTB graph...", failed: "PTB graph rendering failed" });
+  const graph = view.element;
+  graph.classList.add("ptb-visualization-graph");
+  const renderGraph = (text: string): void => view.render(text);
 
   if (hasNames) {
     // Default shows registered package names; the toggle reveals raw addresses.

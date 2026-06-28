@@ -18,6 +18,37 @@ import {
 
 export const PINNED_DEEPBOOK_COINS = mainnetCoins as DeepBookCoinRegistry;
 
+// Curated DeepBook USDC chart pairs: the meaningful Sui-ecosystem base tokens worth
+// featuring against USDC, in display order. This is a deliberate editorial allowlist
+// — NOT a dynamic volume cut — so the chart shows a stable, hand-picked set and never
+// surfaces the dead/dust pools the indexer also lists (stable-vs-stable, wrapped
+// duplicates, single-trade listings). Each entry is a token judged worth registering
+// on its own merits:
+//   SUI  — Sui L1 gas / native token
+//   DEEP — DeepBook protocol token (this venue's own token)
+//   WAL  — Walrus decentralized storage (Mysten)
+//   NS   — SuiNS name service
+//   IKA  — Ika MPC / dWallet network
+//   XBTC — Bitcoin on Sui
+//   USDT — Tether USD stablecoin
+// Edit this list to change which pairs the chart offers; order here is display order.
+const CURATED_USDC_CHART_BASE_ORDER: ReadonlyMap<string, number> = new Map(
+  ["SUI", "DEEP", "WAL", "NS", "IKA", "XBTC", "USDT"].map((symbol, index) => [symbol, index])
+);
+
+// Filter the chart pool list to the curated base tokens (by symbol) in curated
+// display order. Matching is by base SYMBOL because the indexer's pool name can
+// differ from the SDK pool key (e.g. BWETH_USDC vs BETH_USDC).
+export function curateUsdcChartPools<T extends { baseAsset: { symbol: string } }>(pools: readonly T[]): T[] {
+  return pools
+    .filter((pool) => CURATED_USDC_CHART_BASE_ORDER.has(pool.baseAsset.symbol))
+    .sort(
+      (left, right) =>
+        (CURATED_USDC_CHART_BASE_ORDER.get(left.baseAsset.symbol) ?? 0) -
+        (CURATED_USDC_CHART_BASE_ORDER.get(right.baseAsset.symbol) ?? 0)
+    );
+}
+
 type DeepbookCoinEntry = { symbol: string; coin: Coin };
 
 export function listDeepbookTokenRegistry(

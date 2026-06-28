@@ -172,7 +172,7 @@ ul {
   height: auto;
 }
 
-.ptb-visualization-graph.error {
+.ptb-visualization-graph.ui-ptb-graph--error {
   color: #b00020;
 }
 

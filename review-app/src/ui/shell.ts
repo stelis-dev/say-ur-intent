@@ -9,7 +9,7 @@ import { t } from "../i18n/i18n.js";
 // Public pages pass their nav key (the shared nav shows, with that link current);
 // "home" shows the nav with no current link (the homepage/not-found page); token
 // pages pass "token" for no navigation and no exit path.
-export type ShellNav = "home" | "analytics" | "receipt" | "chart" | "token";
+export type ShellNav = "home" | "account" | "receipt" | "chart" | "token";
 
 export type Shell = {
   root: HTMLElement;
@@ -18,7 +18,7 @@ export type Shell = {
 };
 
 const PUBLIC_NAV: ReadonlyArray<{ key: ShellNav; label: string; href: string }> = [
-  { key: "analytics", label: t.shell.nav.analytics, href: "/analytics" },
+  { key: "account", label: t.shell.nav.account, href: "/account" },
   { key: "receipt", label: t.shell.nav.receipt, href: "/receipt" },
   { key: "chart", label: t.shell.nav.chart, href: "/charts/deepbook-usdc" }
 ];

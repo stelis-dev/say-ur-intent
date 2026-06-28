@@ -81,13 +81,13 @@ export function connectHtml(sessionId: string): string {
   });
 }
 
-export function analyticsHtml(): string {
+export function accountHtml(): string {
   return pageDocument({
-    title: "Say Ur Intent Analytics",
-    css: "analytics.css",
-    js: "analytics.js",
+    title: "Say Ur Intent Account",
+    css: "account.css",
+    js: "account.js",
     ui: true,
-    body: `    <div id="analytics-app"></div>`
+    body: `    <div id="account-app"></div>`
   });
 }
 
@@ -96,12 +96,8 @@ export function receiptHtml(): string {
     title: "Say Ur Intent Receipt Analytics",
     css: "receipt.css",
     js: "receipt.js",
-    ui: false,
-    body: `    ${publicNavHtml("receipt")}
-    <main id="receipt-app">
-      <h1>Receipt Analytics</h1>
-      <p>Loading public on-chain receipt facts...</p>
-    </main>`
+    ui: true,
+    body: `    <div id="receipt-app"></div>`
   });
 }
 
@@ -123,32 +119,9 @@ export function deepbookUsdcChartHtml(): string {
     title: "DeepBook USDC Candles",
     css: "deepbookUsdcChart.css",
     js: "deepbookUsdcChart.js",
-    ui: false,
-    body: `    ${publicNavHtml("chart")}
-    <main id="deepbook-usdc-chart-app">
-      <h1>DeepBook USDC candles</h1>
-      <p>Loading local chart page...</p>
-    </main>`
+    ui: true,
+    body: `    <div id="deepbook-usdc-chart-app"></div>`
   });
-}
-
-// Shared navigation for the public pages not yet migrated to the shared shell
-// (Receipt Analytics and the DeepBook chart). It links to public pages only,
-// never to a token page, and is rendered outside <main>, which the page script
-// owns and clears, so the menu survives a re-render. Migrated public pages render
-// their navigation through the shared shell instead.
-function publicNavHtml(current: "receipt" | "chart"): string {
-  const links: Array<{ key: "analytics" | "receipt" | "chart"; href: string; label: string }> = [
-    { key: "analytics", href: "/analytics", label: "Analytics" },
-    { key: "receipt", href: "/receipt", label: "Receipt Analytics" },
-    { key: "chart", href: "/charts/deepbook-usdc", label: "DeepBook USDC Chart" }
-  ];
-  const items = links.map((link) =>
-    link.key === current
-      ? `<span aria-current="page">${link.label}</span>`
-      : `<a href="${link.href}">${link.label}</a>`
-  );
-  return `<nav class="public-nav" aria-label="Public pages">${items.join(" | ")}</nav>`;
 }
 
 function escapeHtml(value: string): string {

@@ -17,6 +17,26 @@ import type {
   DeepbookUsdcChartPoolsResponse
 } from "../../src/review-server/deepbookUsdcChartApi.js";
 import type { DeepbookOfficialIndexerInterval } from "../../src/core/read/deepbookOfficialIndexerSource.js";
+import { renderShell } from "./ui/shell.js";
+import {
+  accordion,
+  button,
+  card,
+  chip,
+  element,
+  feedback,
+  field,
+  footer,
+  iconButton,
+  input,
+  modal,
+  pageHeader,
+  placeholder,
+  row,
+  sectionTitle,
+  select
+} from "./ui/ui.js";
+import { t } from "./i18n/i18n.js";
 import "./deepbookUsdcChart.css";
 
 type PoolsOkResponse = Extract<DeepbookUsdcChartPoolsResponse, { status: "ok" }>;
@@ -31,6 +51,15 @@ export type CandleDataset = {
 
 export const DEEPBOOK_USDC_CHART_MAX_SELECTED_POOLS = 5;
 export const DEEPBOOK_USDC_CHART_SHORTCUTS = ["Latest 500", "Last 24h", "Last 7d", "Last 30d"] as const;
+
+// Major base-token chips shown up front = the Sui Foundation tokens at the head of
+// the curated order (SUI, DEEP, WAL, NS); everything after them — third-party
+// tokens such as IKA, plus stable/wrapped pairs that may have no recent trades —
+// is reachable through the "…" chip.
+const MAJOR_POOL_CHIP_COUNT = 4;
+
+const SETTINGS_GEAR_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 
 export type DeepbookUsdcChartShortcut = (typeof DEEPBOOK_USDC_CHART_SHORTCUTS)[number];
 
@@ -51,6 +80,7 @@ export type DeepbookUsdcChartCandleQuery = {
 };
 
 type AppState = {
+  main: HTMLElement;
   pools: ChartPool[];
   intervals: DeepbookOfficialIndexerInterval[];
   selectedPoolNames: string[];
@@ -59,6 +89,9 @@ type AppState = {
   endInput: string;
   limitInput: string;
   poolFilter: string;
+  showMore: boolean;
+  showAdvanced: boolean;
+  settingsOpen: boolean;
   loadingPools: boolean;
   loadingCandles: boolean;
   message: string;
@@ -75,7 +108,9 @@ if (root) {
 }
 
 async function startDeepbookUsdcChart(rootElement: HTMLElement): Promise<void> {
+  const shell = renderShell(rootElement, "chart");
   const state: AppState = {
+    main: shell.main,
     pools: [],
     intervals: ["15m"],
     selectedPoolNames: ["SUI_USDC"],
@@ -84,23 +119,26 @@ async function startDeepbookUsdcChart(rootElement: HTMLElement): Promise<void> {
     endInput: "",
     limitInput: "500",
     poolFilter: "",
+    showMore: false,
+    showAdvanced: false,
+    settingsOpen: false,
     loadingPools: true,
     loadingCandles: false,
-    message: "Loading official DeepBook USDC pools from the local server.",
+    message: t.chart.loadingPools,
     error: "",
     datasets: [],
     lastUpdated: "",
     chart: undefined
   };
 
-  render(rootElement, state);
+  render(state);
   try {
     const pools = await requestJson<DeepbookUsdcChartPoolsResponse>("/api/charts/deepbook-usdc/pools");
     if (pools.status !== "ok") {
       state.loadingPools = false;
       state.error = chartStatusText(pools);
       state.message = "";
-      render(rootElement, state);
+      render(state);
       return;
     }
     state.pools = pools.pools;
@@ -108,18 +146,18 @@ async function startDeepbookUsdcChart(rootElement: HTMLElement): Promise<void> {
     state.interval = pools.defaultInterval;
     state.selectedPoolNames = initialSelectedPools(pools.pools);
     state.loadingPools = false;
-    state.message = "Official pool list loaded.";
-    render(rootElement, state);
-    await loadCandles(rootElement, state);
+    state.message = "";
+    render(state);
+    await loadCandles(state);
   } catch {
     state.loadingPools = false;
-    state.error = "The local server could not load official DeepBook USDC pools.";
+    state.error = t.chart.errorPools;
     state.message = "";
-    render(rootElement, state);
+    render(state);
   }
 }
 
-async function loadCandles(rootElement: HTMLElement, state: AppState): Promise<void> {
+async function loadCandles(state: AppState): Promise<void> {
   let queries: DeepbookUsdcChartCandleQuery[];
   try {
     queries = buildSelectedPoolCandleQueries({
@@ -133,14 +171,14 @@ async function loadCandles(rootElement: HTMLElement, state: AppState): Promise<v
     state.error = error instanceof Error ? error.message : "Invalid chart query.";
     state.message = "";
     state.datasets = [];
-    render(rootElement, state);
+    render(state);
     return;
   }
 
   state.loadingCandles = true;
   state.error = "";
   state.message = "Loading selected pools through the local chart API.";
-  render(rootElement, state);
+  render(state);
 
   const datasets: CandleDataset[] = [];
   const failures: string[] = [];
@@ -169,195 +207,250 @@ async function loadCandles(rootElement: HTMLElement, state: AppState): Promise<v
       : datasets.length > 0
         ? "Selected pool candles loaded."
         : "No selected pool candles were loaded.";
-  render(rootElement, state);
+  render(state);
 }
 
-function render(rootElement: HTMLElement, state: AppState): void {
+function render(state: AppState): void {
   state.chart?.remove();
   state.chart = undefined;
 
-  const shell = element("section", "chart-shell");
-  shell.append(renderSidebar(rootElement, state), renderMain(rootElement, state));
-  rootElement.replaceChildren(shell);
+  const nodes: Node[] = [
+    pageHeader({ title: t.chart.title, lede: t.chart.lede, ledeTip: t.chart.ledeTip }),
+    pairCard(state),
+    chartCard(state),
+    footer([t.chart.boundaryUsdc, t.chart.boundaryScope, t.chart.source])
+  ];
+  if (state.settingsOpen) {
+    nodes.push(settingsModal(state));
+  }
+  state.main.replaceChildren(...nodes);
 
-  const chartContainer = rootElement.querySelector<HTMLElement>("[data-chart-container]");
-  const legend = rootElement.querySelector<HTMLElement>("[data-chart-legend]");
-  if (chartContainer && legend && state.datasets.length > 0) {
-    state.chart = renderChart(chartContainer, legend, state.datasets);
+  const container = state.main.querySelector<HTMLElement>("[data-chart-container]");
+  const legend = state.main.querySelector<HTMLElement>("[data-chart-legend]");
+  if (container && legend && state.datasets.length > 0) {
+    state.chart = renderChart(container, legend, state.datasets);
   }
 }
 
-function renderSidebar(rootElement: HTMLElement, state: AppState): HTMLElement {
-  const sidebar = element("aside", "chart-sidebar");
-  sidebar.append(element("h1", undefined, "DeepBook USDC candles"));
-  sidebar.append(
-    element(
-      "p",
-      "chart-copy",
-      "Read-only DeepBookV3 official Indexer candles quoted in USDC. USDC is a token reference asset here, not fiat USD."
+// Pair selector: a row of major base-token chips (each vs USDC, in the curated
+// featured-first order) plus a "…" chip that reveals the full searchable list. A
+// settings gear in the card title opens the chart settings.
+function pairCard(state: AppState): HTMLElement {
+  const node = card();
+  const head = element("h2", "ui-card-head");
+  head.append(element("span", undefined, t.chart.pair));
+  head.append(
+    iconButton(SETTINGS_GEAR_ICON, t.chart.settings, () => {
+      state.settingsOpen = true;
+      render(state);
+    })
+  );
+  node.append(head);
+
+  if (state.loadingPools) {
+    node.append(placeholder(t.chart.loadingPools));
+    return node;
+  }
+
+  const chips = element("div", "chart-chip-row");
+  for (const pool of majorPools(state)) {
+    chips.append(poolChip(state, pool));
+  }
+  // The "…" chip toggles the full list inline, so the long tail needs no extra
+  // button on its own line.
+  const moreChip = chip("…", {
+    size: "sm",
+    selected: state.showMore,
+    onClick: () => {
+      state.showMore = !state.showMore;
+      render(state);
+    }
+  });
+  moreChip.setAttribute("aria-label", t.chart.more);
+  moreChip.title = t.chart.more;
+  chips.append(moreChip);
+  node.append(chips);
+
+  if (state.showMore) {
+    node.append(morePanel(state));
+  }
+  return node;
+}
+
+function poolChip(state: AppState, pool: ChartPool): HTMLButtonElement {
+  return chip(pool.baseAsset.symbol, {
+    selected: state.selectedPoolNames.includes(pool.poolName),
+    size: "sm",
+    onClick: () => selectPool(state, pool.poolName)
+  });
+}
+
+// The "…" panel searches the long-tail pools (those not already a major chip),
+// updating only the chip row as the user types so the search keeps focus.
+function morePanel(state: AppState): HTMLElement {
+  const panel = element("div", "chart-more");
+  const majorNames = new Set(majorPools(state).map((pool) => pool.poolName));
+  const longTail = state.pools.filter((pool) => !majorNames.has(pool.poolName));
+  const chipsBox = element("div", "chart-chip-row");
+  const renderChips = (): void => {
+    const matches = filteredPools(longTail, state.poolFilter);
+    if (matches.length === 0) {
+      chipsBox.replaceChildren(placeholder(t.chart.noPools));
+      return;
+    }
+    chipsBox.replaceChildren(...matches.map((pool) => poolChip(state, pool)));
+  };
+  const search = input({ type: "search", value: state.poolFilter, placeholder: t.chart.searchPlaceholder });
+  search.spellcheck = false;
+  search.addEventListener("input", () => {
+    state.poolFilter = search.value;
+    renderChips();
+  });
+  renderChips();
+  panel.append(search, chipsBox);
+  return panel;
+}
+
+// Settings modal: interval, range shortcuts, a custom-range disclosure, and the
+// query detail facts. A modal keeps the page balanced (no tall side card).
+function settingsModal(state: AppState): HTMLElement {
+  const { overlay, body } = modal({
+    title: t.chart.settings,
+    onClose: () => {
+      state.settingsOpen = false;
+      render(state);
+    }
+  });
+
+  body.append(
+    field(
+      t.chart.interval,
+      select({
+        value: state.interval,
+        choices: state.intervals.map((interval) => ({ value: interval, label: interval })),
+        onChange: (value) => {
+          state.interval = value as DeepbookOfficialIndexerInterval;
+          void loadCandles(state);
+        }
+      })
     )
   );
 
-  const poolFilterLabel = label("Filter pools");
-  const poolFilter = input("search", state.poolFilter, "SUI, DEEP, WAL...");
-  poolFilter.autocomplete = "off";
-  poolFilter.oninput = () => {
-    state.poolFilter = poolFilter.value;
-    render(rootElement, state);
-  };
-  poolFilterLabel.append(poolFilter);
-  sidebar.append(poolFilterLabel);
-
-  const selectedCount = element(
-    "p",
-    "selected-count",
-    `${state.selectedPoolNames.length}/${DEEPBOOK_USDC_CHART_MAX_SELECTED_POOLS} selected`
-  );
-  sidebar.append(selectedCount);
-
-  const poolList = element("div", "pool-list");
-  const pools = filteredPools(state.pools, state.poolFilter);
-  if (state.loadingPools) {
-    poolList.append(element("p", "status", "Loading official pools..."));
-  } else if (pools.length === 0) {
-    poolList.append(element("p", "status", "No official USDC pools match the filter."));
-  } else {
-    for (const pool of pools) {
-      const item = document.createElement("label");
-      item.className = "pool-option";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = state.selectedPoolNames.includes(pool.poolName);
-      checkbox.onchange = () => {
-        if (checkbox.checked) {
-          if (state.selectedPoolNames.length >= DEEPBOOK_USDC_CHART_MAX_SELECTED_POOLS) {
-            state.message = `Select at most ${DEEPBOOK_USDC_CHART_MAX_SELECTED_POOLS} pools.`;
-            checkbox.checked = false;
-            render(rootElement, state);
-            return;
-          }
-          state.selectedPoolNames = [...state.selectedPoolNames, pool.poolName];
-        } else {
-          const next = state.selectedPoolNames.filter((name) => name !== pool.poolName);
-          state.selectedPoolNames = next.length > 0 ? next : [pool.poolName];
-        }
-        void loadCandles(rootElement, state);
-      };
-      item.append(checkbox, element("span", undefined, pool.poolName), element("small", undefined, pool.baseAsset.symbol));
-      poolList.append(item);
-    }
+  const ranges = element("div", "chart-chip-row");
+  for (const shortcut of DEEPBOOK_USDC_CHART_SHORTCUTS) {
+    ranges.append(
+      button(
+        shortcut,
+        () => {
+          const next = shortcutQuery(shortcut, new Date());
+          state.startInput = next.startInput;
+          state.endInput = next.endInput;
+          state.limitInput = next.limitInput;
+          void loadCandles(state);
+        },
+        "secondary"
+      )
+    );
   }
-  sidebar.append(poolList);
+  body.append(field(t.chart.range, ranges));
 
-  sidebar.append(
-    element("p", "source-note", "Source: local server reading the DeepBookV3 official Indexer."),
-    element("p", "source-note", "TradingView Lightweight Charts is used for rendering."),
-    element("p", "source-note", "No wallet, session token, signing, order entry, or route selection is used on this page.")
-  );
-  return sidebar;
-}
-
-function renderMain(rootElement: HTMLElement, state: AppState): HTMLElement {
-  const main = element("main", "chart-main");
-  const toolbar = element("section", "query-toolbar");
-
-  const intervalLabel = label("Interval");
-  const intervalSelect = document.createElement("select");
-  for (const interval of state.intervals) {
-    const option = document.createElement("option");
-    option.value = interval;
-    option.textContent = interval;
-    option.selected = interval === state.interval;
-    intervalSelect.append(option);
-  }
-  intervalSelect.onchange = () => {
-    state.interval = intervalSelect.value as DeepbookOfficialIndexerInterval;
-    void loadCandles(rootElement, state);
-  };
-  intervalLabel.append(intervalSelect);
-
-  const startLabel = label("UTC start");
-  const startInput = input("text", state.startInput, "YYYY-MM-DDTHH:mm");
-  startInput.oninput = () => {
+  const advanced = accordion(t.chart.advanced, state.showAdvanced);
+  advanced.details.addEventListener("toggle", () => {
+    state.showAdvanced = advanced.details.open;
+  });
+  const startInput = input({ type: "text", value: state.startInput, placeholder: "YYYY-MM-DDTHH:mm" });
+  startInput.addEventListener("input", () => {
     state.startInput = startInput.value;
-  };
-  startLabel.append(startInput);
-
-  const endLabel = label("UTC end");
-  const endInput = input("text", state.endInput, "YYYY-MM-DDTHH:mm");
-  endInput.oninput = () => {
+  });
+  const endInput = input({ type: "text", value: state.endInput, placeholder: "YYYY-MM-DDTHH:mm" });
+  endInput.addEventListener("input", () => {
     state.endInput = endInput.value;
-  };
-  endLabel.append(endInput);
-
-  const limitLabel = label("Limit");
-  const limitInput = input("number", state.limitInput, "500");
+  });
+  const limitInput = input({ type: "number", value: state.limitInput, placeholder: "500" });
   limitInput.min = "1";
   limitInput.max = "10000";
   limitInput.step = "1";
-  limitInput.oninput = () => {
+  limitInput.addEventListener("input", () => {
     state.limitInput = limitInput.value;
-  };
-  limitLabel.append(limitInput);
+  });
+  advanced.body.append(
+    field(t.chart.utcStart, startInput),
+    field(t.chart.utcEnd, endInput),
+    field(t.chart.limit, limitInput),
+    button(t.chart.reload, () => void loadCandles(state))
+  );
+  body.append(advanced.details);
 
-  const reload = button("Reload", () => void loadCandles(rootElement, state));
-  toolbar.append(intervalLabel, startLabel, endLabel, limitLabel, reload);
+  body.append(sectionTitle(t.chart.details));
+  body.append(
+    row(t.chart.window, currentWindowText(state)),
+    row(t.chart.returnedCandles, String(totalCandleCount(state.datasets))),
+    row(t.chart.lastReload, state.lastUpdated || "—")
+  );
+  return overlay;
+}
 
-  const shortcuts = element("div", "shortcut-row");
-  for (const shortcut of DEEPBOOK_USDC_CHART_SHORTCUTS) {
-    shortcuts.append(
-      button(shortcut, () => {
-        const next = shortcutQuery(shortcut, new Date());
-        state.startInput = next.startInput;
-        state.endInput = next.endInput;
-        state.limitInput = next.limitInput;
-        void loadCandles(rootElement, state);
-      }, "secondary")
-    );
-  }
-
-  const header = element("header", "chart-header");
+// Chart card: a minimal header (pair + latest close) over a full-bleed chart area.
+function chartCard(state: AppState): HTMLElement {
+  const node = card();
   const primary = primaryDataset(state.datasets);
   const latest = latestCandle(primary?.response);
-  header.append(
-    element("p", "eyebrow", state.selectedPoolNames.length === 1 ? "Single-pool candle chart" : "Multi-pool close-price panes"),
-    element("h2", undefined, state.selectedPoolNames.join(", ") || "No selected pool"),
-    element(
-      "p",
-      "chart-meta",
-      [
-        `Interval ${state.interval}`,
-        `Limit ${state.limitInput || "500"}`,
-        `Candles ${totalCandleCount(state.datasets)}`,
-        latest ? `Latest close ${latest.close} USDC/${primary?.response.pair.baseAsset.symbol}` : "Latest close unavailable"
-      ].join(" | ")
-    )
-  );
 
-  const status = element("p", state.error ? "status error" : "status", state.error || state.message || "Ready.");
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
+  const head = element("h2", "ui-card-head");
+  head.append(element("span", undefined, state.selectedPoolNames.join(", ") || "—"));
+  if (latest && primary) {
+    head.append(element("span", "chart-close", `${latest.close} USDC/${primary.response.pair.baseAsset.symbol}`));
+  }
+  node.append(head);
 
-  const chartWrapper = element("section", "chart-area");
+  if (state.error) {
+    node.append(feedback("error", state.error));
+    return node;
+  }
+  node.append(chartArea(state));
+  return node;
+}
+
+function chartArea(state: AppState): HTMLElement {
+  const area = element("div", "chart-area");
+  if (state.loadingCandles) {
+    // While loading, blur the previous chart and cover it with a loading overlay so
+    // the stale graph is never shown as if it were the new selection's data.
+    area.classList.add("chart-area--loading");
+  }
   const legend = element("div", "chart-legend");
   legend.setAttribute("data-chart-legend", "true");
-  legend.textContent = legendTextForLatest(state.datasets);
-  const chartCanvas = element("div", "chart-canvas");
-  chartCanvas.setAttribute("data-chart-container", "true");
-  chartWrapper.append(legend, chartCanvas);
+  legend.textContent = legendTextForDatasets(state.datasets);
+  area.append(legend);
+  if (state.datasets.length > 0) {
+    const canvas = element("div", "chart-canvas");
+    canvas.setAttribute("data-chart-container", "true");
+    area.append(canvas);
+  } else if (!state.loadingCandles) {
+    area.append(element("div", "chart-empty", t.chart.noCandles));
+  }
+  if (state.loadingCandles) {
+    area.append(element("div", "chart-loading", t.chart.loadingCandles));
+  }
+  return area;
+}
 
-  const details = element("section", "chart-details");
-  details.append(
-    row("Selected pools", state.selectedPoolNames.join(", ") || "none"),
-    row("UTC window", currentWindowText(state)),
-    row("Returned candles", String(totalCandleCount(state.datasets))),
-    row("Last local reload", state.lastUpdated || "not loaded yet"),
-    element("p", "source-note", "USDC is a token-denominated reference asset, not fiat USD and not a USDC/USD peg guarantee."),
-    element("p", "source-note", "This page shows official DeepBookV3 Indexer candles. It is not a live quote, route recommendation, P&L, tax, cost-basis, or signing tool.")
-  );
+// Single-pool selection: clicking a chip views that token vs USDC. (Compare was
+// removed; the chart always shows one pool's candlestick + volume.)
+function selectPool(state: AppState, poolName: string): void {
+  if (state.selectedPoolNames.length === 1 && state.selectedPoolNames[0] === poolName) {
+    return;
+  }
+  state.selectedPoolNames = [poolName];
+  render(state);
+  void loadCandles(state);
+}
 
-  main.append(toolbar, shortcuts, header, status, chartWrapper, details);
-  return main;
+// Major chips are the first pools in the server's curated order (featured Sui
+// tokens first). The order is fixed, so a chip never moves when it is selected; the
+// long tail is reachable through the "…" chip.
+function majorPools(state: AppState): ChartPool[] {
+  return state.pools.slice(0, MAJOR_POOL_CHIP_COUNT);
 }
 
 function renderChart(container: HTMLElement, legend: HTMLElement, datasets: CandleDataset[]): IChartApi {
@@ -600,10 +693,6 @@ export function legendTextForDatasets(datasets: CandleDataset[]): string {
   return legendTextForCandle(primary?.poolName ?? "No pool", candle);
 }
 
-function legendTextForLatest(datasets: CandleDataset[]): string {
-  return legendTextForDatasets(datasets);
-}
-
 function legendTextForCandle(poolName: string, candle: ChartCandle | undefined): string {
   if (!candle) {
     return `${poolName}: no candle selected`;
@@ -638,49 +727,4 @@ function currentWindowText(state: AppState): string {
 
 function lineColor(index: number): string {
   return ["#1f6feb", "#8957e5", "#bf8700", "#0a7f78", "#cf222e"][index % 5]!;
-}
-
-function row(labelText: string, value: string): HTMLElement {
-  const wrapper = element("div", "detail-row");
-  wrapper.append(element("span", "detail-label", labelText), element("span", "detail-value", value));
-  return wrapper;
-}
-
-function label(text: string): HTMLLabelElement {
-  const node = document.createElement("label");
-  node.className = "field";
-  node.append(element("span", undefined, text));
-  return node;
-}
-
-function input(type: string, value: string, placeholder: string): HTMLInputElement {
-  const node = document.createElement("input");
-  node.type = type;
-  node.value = value;
-  node.placeholder = placeholder;
-  return node;
-}
-
-function button(text: string, onClick: () => void, variant = "primary"): HTMLButtonElement {
-  const node = document.createElement("button");
-  node.type = "button";
-  node.className = variant;
-  node.textContent = text;
-  node.onclick = onClick;
-  return node;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tagName: K,
-  className?: string,
-  textContent?: string
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tagName);
-  if (className) {
-    node.className = className;
-  }
-  if (textContent !== undefined) {
-    node.textContent = textContent;
-  }
-  return node;
 }

@@ -18,13 +18,13 @@ describe("shared shell navigation (Plan B B1)", () => {
   });
 
   it("public pages get the three public links, the active one marked, none a token route, with a home exit", () => {
-    const items = shellNavItems("analytics");
-    expect(items.map((item) => item.href)).toEqual(["/analytics", "/receipt", "/charts/deepbook-usdc"]);
-    expect(items.filter((item) => item.current).map((item) => item.key)).toEqual(["analytics"]);
+    const items = shellNavItems("account");
+    expect(items.map((item) => item.href)).toEqual(["/account", "/receipt", "/charts/deepbook-usdc"]);
+    expect(items.filter((item) => item.current).map((item) => item.key)).toEqual(["account"]);
     for (const item of items) {
       expect(/^\/(connect|review|settings)\//.test(item.href), `${item.href} must not be a token route`).toBe(false);
     }
-    expect(shellBrandIsLink("analytics")).toBe(true);
+    expect(shellBrandIsLink("account")).toBe(true);
   });
 
   it("the homepage shows the public nav with no current link", () => {
@@ -70,8 +70,15 @@ describe("shared-vs-page styling boundary (Plan B B1)", () => {
       ".ui-row",
       ".ui-badge",
       ".ui-pill",
+      ".ui-chip",
+      ".ui-select",
+      ".ui-status-banner",
+      ".ui-detail-item",
+      ".ui-ptb-graph",
+      ".ui-accordion",
       ".ui-feedback",
       ".ui-placeholder",
+      ".ui-skeleton",
       ".ui-overlay"
     ];
     for (const atom of atoms) {
@@ -82,9 +89,11 @@ describe("shared-vs-page styling boundary (Plan B B1)", () => {
   // Pages migrated onto the shared module in Unit B1. Later units add their pages
   // to this list as they migrate.
   const migratedPageCss = [
-    "review-app/src/analytics.css",
+    "review-app/src/account.css",
     "review-app/src/homepage.css",
-    "review-app/src/notFound.css"
+    "review-app/src/notFound.css",
+    "review-app/src/receipt.css",
+    "review-app/src/deepbookUsdcChart.css"
   ];
 
   it("migrated page stylesheets declare no ui- class rule and no bare interactive-element rule", () => {

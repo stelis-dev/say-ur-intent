@@ -1,103 +1,28 @@
-body {
-  margin: 0;
-  color: #15201b;
-  background: #f7f8f6;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+/* Receipt analytics layout only. All component styling comes from the shared UI
+   module (ui.css); this file declares no `.ui-*` rule and no bare interactive
+   element rule. */
+
+.receipt-gas {
+  margin-bottom: 6px;
 }
 
-.receipt-shell {
-  max-width: 640px;
-  margin: 48px auto;
-  padding: 0 20px;
+/* The PTB graph is the layout centerpiece. Mermaid renders its own light theme
+   here (the receipt page CSP permits Mermaid's injected styles), so the slot keeps
+   a light background in BOTH the light and dark app themes — the diagram reads on
+   its intended light surface instead of clashing with a dark panel.
+
+   Full-bleed: pull up under the card header (cancel its 14px gap) and out to the
+   card's left/right/bottom edges (offset the card's 18px side / 16px bottom
+   padding), so the white graph fills the card body edge-to-edge with no margin. */
+.receipt-ptb {
+  margin: -14px -18px -16px;
+  background: #ffffff;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
 }
 
-h1 {
-  font-size: 28px;
-  line-height: 1.2;
-  margin: 0 0 16px;
-}
-
-.receipt-subheading {
-  font-size: 18px;
-  line-height: 1.3;
-  margin: 24px 0 12px;
-}
-
-p {
-  font-size: 15px;
-  line-height: 1.5;
-  margin: 0 0 16px;
-}
-
-.status {
-  color: #47524c;
-  overflow-wrap: anywhere;
-}
-
-.error {
-  color: #8a2f1f;
-}
-
-.boundary-note {
-  color: #6b746f;
-  font-size: 13px;
-}
-
-.digest-form {
-  display: grid;
-  gap: 8px;
-  margin: 20px 0;
-}
-
-.digest-form label {
-  font-size: 14px;
-  color: #47524c;
-}
-
-.digest-form input {
-  min-height: 42px;
-  border: 1px solid #c9d3cc;
-  border-radius: 8px;
-  background: #fff;
-  color: #15201b;
-  font: inherit;
-  padding: 10px 12px;
-}
-
-.receipt-panel ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.receipt-panel li {
-  font-size: 14px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-button {
-  min-height: 42px;
-  border: 1px solid #c9d3cc;
-  border-radius: 8px;
-  background: #fff;
-  color: #15201b;
-  font: inherit;
-  text-align: left;
-  padding: 10px 12px;
-  cursor: pointer;
-}
-
-.copy-markdown {
-  display: block;
-  width: fit-content;
-  margin: 4px 0 16px auto;
-}
-
-button:hover:not(:disabled) {
-  border-color: #6f8f7d;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  color: #7b857f;
+.receipt-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
 }

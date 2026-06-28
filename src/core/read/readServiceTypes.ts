@@ -1316,7 +1316,47 @@ export type SuiReadCoreClient = {
   core: {
     listBalances(options: SuiClientTypes.ListBalancesOptions): Promise<SuiClientTypes.ListBalancesResponse>;
     getCoinMetadata(options: SuiClientTypes.GetCoinMetadataOptions): Promise<SuiClientTypes.GetCoinMetadataResponse>;
+    // Optional client capabilities used only by the account inventory snapshot.
+    // The production SuiGrpcClient implements both; a client without them yields an
+    // empty inventory (no name, no objects) rather than failing.
+    listOwnedObjects?: (
+      options: SuiClientTypes.ListOwnedObjectsOptions<{ display: true }>
+    ) => Promise<SuiClientTypes.ListOwnedObjectsResponse<{ display: true }>>;
+    defaultNameServiceName?: (
+      options: SuiClientTypes.DefaultNameServiceNameOptions
+    ) => Promise<SuiClientTypes.DefaultNameServiceNameResponse>;
   };
+};
+
+// One owned NFT (an object that carries a Display name/image). `name`/`imageUrl`
+// are optional because Display templates vary; the image is loaded directly by the
+// browser on the public account page (img-src allows external https).
+export type AccountNft = {
+  objectId: string;
+  type: string;
+  name: string | undefined;
+  imageUrl: string | undefined;
+};
+
+// A count of owned non-coin, non-NFT objects sharing one Move type.
+export type AccountObjectGroup = {
+  type: string;
+  count: number;
+};
+
+// The public account snapshot: SuiNS name, coin balances, NFTs, and other owned
+// objects grouped by type. Object enumeration is capped (a coin-heavy account can
+// truncate), so `objectsTruncated` flags when not every object was scanned.
+export type AccountInventorySummary = {
+  status: "ok";
+  account: string;
+  fetchedAt: string;
+  name: string | null;
+  balances: WalletBalanceWithUnit[];
+  nfts: AccountNft[];
+  objectGroups: AccountObjectGroup[];
+  scannedObjects: number;
+  objectsTruncated: boolean;
 };
 
 export type SuiReadServiceOptions = {

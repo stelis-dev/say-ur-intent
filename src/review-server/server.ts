@@ -38,7 +38,7 @@ import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
 import { createDeepbookUsdcChartApi } from "./deepbookUsdcChartApi.js";
 import {
-  analyticsHtml,
+  accountHtml,
   connectHtml,
   deepbookUsdcChartHtml,
   homeHtml,
@@ -57,7 +57,7 @@ type ReviewHttpServerOptions = {
   logger: Logger;
   reviewAssetsDir?: string;
   activityStore?: ActivityStore | undefined;
-  readService?: { summarizeWalletAssets(input: { account?: string }): Promise<unknown> } | undefined;
+  readService?: { summarizeAccountInventory(input: { account?: string }): Promise<unknown> } | undefined;
   localSettings?: LocalSettingsService | undefined;
   localData?: LocalDataService | undefined;
   deepbookOfficialIndexerSource?: DeepbookOfficialIndexerSourceClient | undefined;
@@ -193,12 +193,12 @@ async function routeRequest(
   const apiReviewResultMatch = /^\/api\/review\/([^/]+)\/result$/.exec(url.pathname);
   const apiResultMatch = /^\/api\/result\/([^/]+)$/.exec(url.pathname);
   const connectMatch = /^\/connect\/([^/]+)$/.exec(url.pathname);
-  const analyticsMatch = /^\/analytics$/.exec(url.pathname);
+  const accountMatch = /^\/account$/.exec(url.pathname);
   const receiptMatch = /^\/receipt$/.exec(url.pathname);
   const apiReviewHandoffMatch = /^\/api\/review\/([^/]+)\/handoff$/.exec(url.pathname);
   const apiReviewHandoffCancelMatch = /^\/api\/review\/([^/]+)\/handoff\/cancel$/.exec(url.pathname);
-  const apiAnalyticsAssetsMatch = /^\/api\/analytics\/assets$/.exec(url.pathname);
-  const apiAnalyticsActiveAccountMatch = /^\/api\/analytics\/active-account$/.exec(url.pathname);
+  const apiAccountAssetsMatch = /^\/api\/account\/assets$/.exec(url.pathname);
+  const apiAccountActiveAccountMatch = /^\/api\/account\/active-account$/.exec(url.pathname);
   const apiReceiptMatch = /^\/api\/receipt$/.exec(url.pathname);
   const apiWalletOpenedMatch = /^\/api\/wallet\/([^/]+)\/opened$/.exec(url.pathname);
   const apiWalletConnectingMatch = /^\/api\/wallet\/([^/]+)\/connecting$/.exec(url.pathname);
@@ -285,17 +285,20 @@ async function routeRequest(
     return;
   }
 
-  if (request.method === "GET" && analyticsMatch) {
-    sendHtml(response, analyticsHtml(), {
+  if (request.method === "GET" && accountMatch) {
+    sendHtml(response, accountHtml(), {
       "content-security-policy": [
         "default-src 'none'",
         "base-uri 'none'",
-        // Same-origin only: the page reads the public analytics APIs and binds no
-        // wallet, so it never talks to the Sui fullnode directly.
+        // connect-src stays 'self' (the page reads the public account APIs and
+        // binds no wallet, so it never talks to the Sui fullnode). img-src allows
+        // external https so owned NFT images load directly from their host: the
+        // page has no secrets and script-src stays 'self', so an external image can
+        // neither execute nor exfiltrate — only the host learns the image was viewed.
         "connect-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
+        "img-src 'self' data: https:",
         "form-action 'none'"
       ].join("; ")
     });
@@ -347,18 +350,18 @@ async function routeRequest(
     return;
   }
 
-  if (request.method === "GET" && apiAnalyticsAssetsMatch) {
+  if (request.method === "GET" && apiAccountAssetsMatch) {
     const address = parseSuiAddress(url.searchParams.get("address") ?? "");
     if (!address) {
       sendJson(response, 400, { error: "address_invalid" });
       return;
     }
     if (!options.readService) {
-      sendJson(response, 503, { error: "analytics_data_unavailable" });
+      sendJson(response, 503, { error: "account_data_unavailable" });
       return;
     }
     try {
-      const summary = await options.readService.summarizeWalletAssets({ account: address });
+      const summary = await options.readService.summarizeAccountInventory({ account: address });
       sendJson(response, 200, summary as Record<string, unknown>);
     } catch {
       sendJson(response, 502, { error: "wallet_read_failed" });
@@ -366,8 +369,8 @@ async function routeRequest(
     return;
   }
 
-  if (request.method === "GET" && apiAnalyticsActiveAccountMatch) {
-    // Public loopback read of the local active account address so the Analytics
+  if (request.method === "GET" && apiAccountActiveAccountMatch) {
+    // Public loopback read of the local active account address so the Account
     // page can default to the connected wallet (FRONTEND_POLICY: the user can see
     // the active account). It returns only the address, never a token, session, or
     // signing authority, and is null when no account is bound.

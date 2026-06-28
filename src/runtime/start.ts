@@ -126,7 +126,8 @@ async function main(): Promise<void> {
         {
           client: suiClient,
           network: config.network,
-          expectedChainIdentifier: config.expectedChainIdentifier
+          expectedChainIdentifier: config.expectedChainIdentifier,
+          resolveCoinUnit: (coinType) => readService.resolveCoinUnit(coinType)
         },
         input
       );

@@ -30,7 +30,7 @@ export function createLocalDAppKit() {
 // page submits signed transaction bytes through it directly. Submission stays on
 // the page because not every wallet exposes sign-and-execute (Agent-Q signs only).
 // The base URL host is allowlisted in the wallet pages' CSP connect-src (Connect,
-// Review & Execution, Analytics; src/review-server/reviewServerPolicy.ts
+// Review & Execution; src/review-server/reviewServerPolicy.ts
 // SUI_BROWSER_EXECUTION_ORIGIN); keep the two in sync or the browser submission
 // is blocked by CSP.
 export const suiMainnetClient = new SuiGrpcClient({
@@ -39,7 +39,7 @@ export const suiMainnetClient = new SuiGrpcClient({
 });
 
 // localStorage key dapp-kit uses to remember the selected wallet+address for
-// per-origin autoConnect. The Connect, Review & Execution, and Analytics pages
+// per-origin autoConnect. The Connect and Review & Execution pages
 // read it to show a "reconnecting" placeholder until autoConnect settles, instead
 // of flashing the wallet picker first.
 export const WALLET_SELECTION_STORAGE_KEY = "mysten-dapp-kit:selected-wallet-and-address";
@@ -53,8 +53,7 @@ export function hasStoredWalletSelection(): boolean {
 }
 
 // Parse the stored selection the same way dapp-kit's autoConnect does: the value
-// is "<walletId>:<address>:<intents>". The public Analytics page (which has no
-// server session to read a bound wallet from) uses the walletId to offer a
+// is "<walletId>:<address>:<intents>". A wallet page uses the walletId to offer a
 // reconnect of that one stored wallet, never a wallet picker.
 export function getStoredWalletSelection(): { walletId: string; address: string } | null {
   try {

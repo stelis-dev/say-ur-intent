@@ -60,6 +60,12 @@ function createService(
   options: {
     listBalances?: (options: SuiClientTypes.ListBalancesOptions) => Promise<SuiClientTypes.ListBalancesResponse>;
     getCoinMetadata?: (options: SuiClientTypes.GetCoinMetadataOptions) => Promise<SuiClientTypes.GetCoinMetadataResponse>;
+    listOwnedObjects?: (
+      options: SuiClientTypes.ListOwnedObjectsOptions<{ display: true }>
+    ) => Promise<SuiClientTypes.ListOwnedObjectsResponse<{ display: true }>>;
+    defaultNameServiceName?: (
+      options: SuiClientTypes.DefaultNameServiceNameOptions
+    ) => Promise<SuiClientTypes.DefaultNameServiceNameResponse>;
     deepbook?: Partial<DeepBookReadClient>;
     coinMetadataCache?: CoinMetadataCache;
     coinMetadataTtlMs?: number;
@@ -158,6 +164,20 @@ function createService(
               iconUrl: null
             }
           };
+        },
+        async listOwnedObjects(listOptions) {
+          if (options.listOwnedObjects) {
+            return options.listOwnedObjects(listOptions);
+          }
+          return { objects: [], hasNextPage: false, cursor: null } as SuiClientTypes.ListOwnedObjectsResponse<{
+            display: true;
+          }>;
+        },
+        async defaultNameServiceName(nameOptions) {
+          if (options.defaultNameServiceName) {
+            return options.defaultNameServiceName(nameOptions);
+          }
+          return { data: { name: null } };
         }
       }
     }
@@ -443,6 +463,63 @@ describe("SuiReadService", () => {
     expect(listBalancesOptions).toEqual({ owner: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", cursor: "cursor-1" });
     expect(result.cursor).toBe("next-cursor");
     expect(result.hasNextPage).toBe(true);
+  });
+
+  it("summarizeAccountInventory splits coins, NFTs, and other objects and resolves the SuiNS name", async () => {
+    const account = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const result = await createService({
+      defaultNameServiceName: async () => ({ data: { name: "alice.sui" } }),
+      listOwnedObjects: async () =>
+        ({
+          objects: [
+            { objectId: "0xc1", type: "0x2::coin::Coin<0x2::sui::SUI>", display: null },
+            {
+              objectId: "0xn1",
+              type: "0xabc::art::Piece",
+              display: { output: { name: "Cool NFT", image_url: "https://example.test/y.png" } }
+            },
+            { objectId: "0xo1", type: "0xabc::game::Sword", display: null },
+            { objectId: "0xo2", type: "0xabc::game::Sword", display: null }
+          ],
+          hasNextPage: false,
+          cursor: null
+        }) as unknown as SuiClientTypes.ListOwnedObjectsResponse<{ display: true }>
+    }).summarizeAccountInventory({ account });
+
+    expect(result.name).toBe("alice.sui");
+    // The Coin object stays in the balance view; only the NFT and the grouped
+    // other objects come from the object scan.
+    expect(result.nfts).toEqual([
+      { objectId: "0xn1", type: "0xabc::art::Piece", name: "Cool NFT", imageUrl: "https://example.test/y.png" }
+    ]);
+    expect(result.objectGroups).toEqual([{ type: "0xabc::game::Sword", count: 2 }]);
+    expect(result.objectsTruncated).toBe(false);
+    expect(result.balances.length).toBeGreaterThan(0);
+  });
+
+  it("summarizeAccountInventory reports a null name when the account has none", async () => {
+    const result = await createService({
+      defaultNameServiceName: async () => {
+        throw new Error("NOT_FOUND");
+      }
+    }).summarizeAccountInventory({ account: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    expect(result.name).toBeNull();
+  });
+
+  it("summarizeAccountInventory drops zero-balance coins from the list", async () => {
+    const result = await createService({
+      listBalances: async () => ({
+        balances: [
+          { coinType: "0x2::sui::SUI", balance: "100", coinBalance: "100", addressBalance: "0" },
+          { coinType: "0xdead::z::Z", balance: "0", coinBalance: "0", addressBalance: "0" }
+        ],
+        hasNextPage: false,
+        cursor: null
+      })
+    }).summarizeAccountInventory({ account: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    const coinTypes = result.balances.map((balance) => balance.coinType);
+    expect(coinTypes).toContain("0x2::sui::SUI");
+    expect(coinTypes).not.toContain("0xdead::z::Z");
   });
 
   it("classifies wallet coin balances with spendability and roles", async () => {
