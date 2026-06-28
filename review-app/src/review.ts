@@ -5,6 +5,7 @@ import { getWalletUniqueIdentifier, type UiWallet } from "@mysten/dapp-kit-core"
 import mermaid from "mermaid";
 import { createLocalDAppKit, hasStoredWalletSelection, suiMainnetClient } from "./dappKitClient.js";
 import { isWalletStandardUserRejected } from "./walletStatus.js";
+import { readPageToken, tokenHeaders } from "./token.js";
 
 type GuardianCheck = {
   id: string;
@@ -224,7 +225,7 @@ if (!root) {
 }
 const rootElement = root;
 const reviewSessionId = rootElement.dataset.reviewSessionId ?? "";
-const token = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+const token = readPageToken();
 
 let sessionPayload: ReviewSessionPayload | undefined;
 let selectedPlanId: string | undefined;
@@ -1147,14 +1148,6 @@ function renderExecutionResultPanel(result: NonNullable<ReviewSessionPayload["ex
       )
     ));
   }
-  const actions = document.createElement("div");
-  actions.className = "actions";
-  const analysisLink = document.createElement("a");
-  analysisLink.className = "analysis-link";
-  analysisLink.href = `/review/${encodeURIComponent(reviewSessionId)}/analysis#${encodeURIComponent(token)}`;
-  analysisLink.textContent = "Open execution analysis";
-  actions.append(analysisLink);
-  panel.append(actions);
   panel.append(
     element(
       "p",
@@ -1817,11 +1810,10 @@ function base64ToBytes(value: string): Uint8Array {
 async function requestJson<T = unknown>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    headers: {
+    headers: tokenHeaders(token, {
       "content-type": "application/json",
-      "x-say-ur-intent-token": token,
-      ...(init.headers ?? {})
-    }
+      ...((init.headers as Record<string, string> | undefined) ?? {})
+    })
   });
   if (!response.ok) {
     throw new HttpJsonRequestError(response.status, await errorCodeFromResponse(response));

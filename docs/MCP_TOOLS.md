@@ -687,10 +687,10 @@ or FlowX swap review reaches `ready_for_wallet_review` and the local review
 page offers a digest-gated byte handoff, user-controlled wallet signing, and
 signed-digest reporting. After the page reports the signed transaction digest,
 the review server re-reads Sui mainnet and records normalized chain receipt
-evidence. Terminal review sessions can open a read-only review execution
-analysis page from the local review page; that page displays stored review
-evidence and server-read receipt facts only, not transaction bytes or MCP
-execution authority.
+evidence. The local review page shows server-read chain receipt facts inline,
+and a public Receipt Analytics page reads on-chain receipt facts for any
+transaction digest; both display server-read receipt facts only, not transaction
+bytes or MCP execution authority.
 
 The MCP layer never signs, executes, or returns transaction bytes; the
 digest-verified bytes stay in the local review-server session and reach the
@@ -895,10 +895,11 @@ chain transaction fails digest, sender, or receipt validation checks, execution
 polling can return `failure` with
 `failureReason: "receipt_verification_failed"`.
 
-The local review page can link terminal sessions to the read-only review
-execution analysis page for detailed browser inspection of the stored review
-evidence and server-read receipt facts. That page is not a wallet action, MCP
-execution path, route verdict, or signing-readiness signal.
+The local review page shows server-read receipt facts inline on terminal
+sessions, and a public Receipt Analytics page reads on-chain receipt facts by
+transaction digest for browser inspection of server-read receipt facts. Neither
+is a wallet action, MCP execution path, route verdict, or signing-readiness
+signal.
 
 `executionResult.chainReceipt` is a server-read execution fact for the reported
 transaction digest. It is not transaction bytes, not raw BCS, not wallet

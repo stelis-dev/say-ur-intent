@@ -17,25 +17,6 @@ export function reviewHtml(sessionId: string): string {
 </html>`;
 }
 
-export function reviewExecutionAnalysisHtml(sessionId: string): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Say Ur Intent Review Execution Analysis</title>
-    <link rel="stylesheet" href="/review-assets/reviewExecutionAnalysis.css">
-  </head>
-  <body>
-    <main id="review-execution-analysis-app" data-review-session-id="${escapeHtml(sessionId)}">
-      <h1>Review Execution Analysis</h1>
-      <p>Loading local review execution analysis...</p>
-    </main>
-    <script type="module" src="/review-assets/reviewExecutionAnalysis.js"></script>
-  </body>
-</html>`;
-}
-
 export function connectHtml(sessionId: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -70,6 +51,25 @@ export function analyticsHtml(): string {
       <p>Loading public on-chain asset analytics...</p>
     </main>
     <script type="module" src="/review-assets/analytics.js"></script>
+  </body>
+</html>`;
+}
+
+export function receiptHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Say Ur Intent Receipt Analytics</title>
+    <link rel="stylesheet" href="/review-assets/receipt.css">
+  </head>
+  <body>
+    <main id="receipt-app">
+      <h1>Receipt Analytics</h1>
+      <p>Loading public on-chain receipt facts...</p>
+    </main>
+    <script type="module" src="/review-assets/receipt.js"></script>
   </body>
 </html>`;
 }

@@ -666,6 +666,11 @@ describe("review HTTP server", () => {
       });
       expect(badOrigin.status).toBe(403);
 
+      // The token rides in the URL fragment, never the query.
+      const queryToken = await fetch(`${base}/review/${session.id}?token=secret`);
+      expect(queryToken.status).toBe(400);
+      expect(await queryToken.json()).toEqual({ error: "token_query_not_supported" });
+
       const response = await fetch(`${base}/review/${session.id}`);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
@@ -682,9 +687,8 @@ describe("review HTTP server", () => {
     }
   });
 
-  it("serves review execution analysis HTML as a separate bundled app shell", async () => {
+  it("serves the public receipt analytics page shell without a token", async () => {
     const store = createSessionStore();
-    const { session } = await store.createReviewSession([plan]);
     const server = await createReviewHttpServer({
       host: "127.0.0.1",
       store,
@@ -693,221 +697,51 @@ describe("review HTTP server", () => {
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const badOrigin = await fetch(`${base}/review/${session.id}/analysis`, {
-        headers: { origin: "http://evil.example" }
-      });
-      expect(badOrigin.status).toBe(403);
-
-      const queryToken = await fetch(`${base}/review/${session.id}/analysis?token=secret`);
+      const queryToken = await fetch(`${base}/receipt?token=secret`);
       expect(queryToken.status).toBe(400);
       expect(await queryToken.json()).toEqual({ error: "token_query_not_supported" });
 
-      const response = await fetch(`${base}/review/${session.id}/analysis`);
+      const response = await fetch(`${base}/receipt`);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
       expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
       const html = await response.text();
-      expect(html).toContain("/review-assets/reviewExecutionAnalysis.js");
-      expect(html).toContain("/review-assets/reviewExecutionAnalysis.css");
-      expect(html).toContain(`data-review-session-id="${session.id}"`);
-      expect(html).not.toContain("/review-assets/analysis.js");
-      expect(html).not.toContain("data-wallet-session-id");
+      expect(html).toContain("/review-assets/receipt.js");
+      expect(html).toContain("/review-assets/receipt.css");
+      expect(html).toContain('id="receipt-app"');
       expect(html).not.toContain("x-say-ur-intent-token");
+      expect(html).not.toContain("data-review-session-id");
+      expect(html).not.toContain("data-wallet-session-id");
     } finally {
       await server.close();
     }
   });
 
-  it("creates wallet identity sessions from token-authorized review sessions", async () => {
-    const activityStore = new InMemoryActivityStore();
-    const store = createSessionStore({ activityStore });
+  it("removes the per-session analysis and review wallet-identity routes", async () => {
+    const store = createSessionStore();
     const { session, token } = await store.createReviewSession([plan]);
     const server = await createReviewHttpServer({
       host: "127.0.0.1",
       store,
-      logger,
-      activityStore
+      logger
     }).start(0);
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const missingToken = await fetch(`${base}/api/review/${session.id}/wallet-identity`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: base },
-        body: "{}"
-      });
-      expect(missingToken.status).toBe(401);
+      const analysisPage = await fetch(`${base}/review/${session.id}/analysis`);
+      expect(analysisPage.status).toBe(404);
 
-      await fetch(`${base}/api/review/${session.id}/opened`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-say-ur-intent-token": token, origin: base },
-        body: "{}"
-      });
-      const created = await fetch(`${base}/api/review/${session.id}/wallet-identity`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-say-ur-intent-token": token, origin: base },
-        body: "{}"
-      });
-      expect(created.status).toBe(200);
-      const walletJson = (await created.json()) as { walletSessionId: string; walletUrl: string; openTarget: string };
-      expect(walletJson.openTarget).toBe("system_browser");
-      expect(walletJson.walletUrl).toContain(`/connect/${walletJson.walletSessionId}#`);
-
-      await store.recordWalletIdentityOpened(walletJson.walletSessionId);
-      await store.recordWalletIdentityConnecting(walletJson.walletSessionId);
-      await store.recordWalletIdentityResult(walletJson.walletSessionId, {
-        status: "connected",
-        account: walletAccount,
-        chain: "sui:mainnet",
-        walletName: "Test Wallet"
-      });
-
-      const status = await fetch(`${base}/api/review/${session.id}`, {
+      const analysisApi = await fetch(`${base}/api/review/${session.id}/analysis`, {
         headers: { "x-say-ur-intent-token": token, origin: base }
       });
-      expect(status.status).toBe(200);
-      await expect(status.json()).resolves.toMatchObject({
-        activeAccount: {
-          account: walletAccount,
-          source: "wallet_identity"
-        }
-      });
-    } finally {
-      await server.close();
-    }
-  });
+      expect(analysisApi.status).toBe(404);
 
-  it("rejects review wallet identity sessions outside mutable review states", async () => {
-    const store = createSessionStore();
-    const { session: proposedSession, token: proposedToken } = await store.createReviewSession([plan]);
-    const { session: expiredSession, token: expiredToken } = await store.createReviewSession(
-      [{ ...plan, id: "plan_expired" }],
-      new Date(0)
-    );
-    const { session: pendingSession, token: pendingToken } = await store.createReviewSession(
-      [{ ...plan, id: "plan_pending" }]
-    );
-    await openAndConnectReview(store, pendingSession.id);
-    await store.recordReviewState(pendingSession.id, {
-      planId: "plan_pending",
-      reviewSessionId: pendingSession.id,
-      account: walletAccount,
-      status: "ready_for_wallet_review",
-      checks: [],
-      updatedAt: new Date().toISOString()
-    });
-    await store.recordExecutionResult(pendingSession.id, {
-      reviewSessionId: pendingSession.id,
-      planId: "plan_pending",
-      status: "signed_pending_result",
-      txDigest: "digest_pending",
-      recordedAt: new Date().toISOString()
-    });
-    const { session: successSession, token: successToken } = await store.createReviewSession(
-      [{ ...plan, id: "plan_success" }]
-    );
-    await openAndConnectReview(store, successSession.id);
-    await store.recordReviewState(successSession.id, {
-      planId: "plan_success",
-      reviewSessionId: successSession.id,
-      account: walletAccount,
-      status: "ready_for_wallet_review",
-      checks: [],
-      updatedAt: new Date().toISOString()
-    });
-    await store.recordExecutionResult(successSession.id, {
-      reviewSessionId: successSession.id,
-      planId: "plan_success",
-      status: "signed_pending_result",
-      txDigest: chainReceiptDigest,
-      recordedAt: new Date().toISOString()
-    });
-    await store.recordChainExecutionResult(successSession.id, {
-      reviewSessionId: successSession.id,
-      planId: "plan_success",
-      status: "success",
-      txDigest: chainReceiptDigest,
-      chainReceipt: chainReceiptFixture(),
-      recordedAt: new Date().toISOString()
-    });
-    const server = await createReviewHttpServer({
-      host: "127.0.0.1",
-      store,
-      logger
-    }).start(0);
-
-    try {
-      const base = `http://${server.host}:${server.port}`;
-      const cases = [
-        { sessionId: proposedSession.id, token: proposedToken, status: 409, error: "invalid_session_transition" },
-        { sessionId: expiredSession.id, token: expiredToken, status: 410, error: "session_expired" },
-        { sessionId: pendingSession.id, token: pendingToken, status: 409, error: "invalid_session_transition" },
-        { sessionId: successSession.id, token: successToken, status: 409, error: "invalid_session_transition" }
-      ];
-
-      for (const item of cases) {
-        const before = (await store.listWalletIdentitySessions()).length;
-        const response = await fetch(`${base}/api/review/${item.sessionId}/wallet-identity`, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-say-ur-intent-token": item.token, origin: base },
-          body: "{}"
-        });
-        expect(response.status, item.error).toBe(item.status);
-        await expect(response.json()).resolves.toMatchObject({ error: item.error });
-        await expect(store.listWalletIdentitySessions()).resolves.toHaveLength(before);
-      }
-    } finally {
-      await server.close();
-    }
-  });
-
-  it("records review page opening with token and origin checks", async () => {
-    const store = createSessionStore();
-    const { session, token } = await store.createReviewSession([plan]);
-    const server = await createReviewHttpServer({
-      host: "127.0.0.1",
-      store,
-      logger
-    }).start(0);
-
-    try {
-      const base = `http://${server.host}:${server.port}`;
-      const missingToken = await fetch(`${base}/api/review/${session.id}/opened`, {
+      const walletIdentity = await fetch(`${base}/api/review/${session.id}/wallet-identity`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: base },
+        headers: { "content-type": "application/json", "x-say-ur-intent-token": token, origin: base },
         body: "{}"
       });
-      expect(missingToken.status).toBe(401);
-
-      const badOrigin = await fetch(`${base}/api/review/${session.id}/opened`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-say-ur-intent-token": token,
-          origin: "http://evil.example"
-        },
-        body: "{}"
-      });
-      expect(badOrigin.status).toBe(403);
-
-      const opened = await fetch(`${base}/api/review/${session.id}/opened`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-say-ur-intent-token": token,
-          origin: base
-        },
-        body: "{}"
-      });
-      expect(opened.status).toBe(200);
-      const json = (await opened.json()) as {
-        internalStatus: string;
-        pollingStatus: string;
-        lastActivityAt: string;
-      };
-      expect(json.internalStatus).toBe("awaiting_wallet");
-      expect(json.pollingStatus).toBe("awaiting_wallet");
-      expect(typeof json.lastActivityAt).toBe("string");
+      expect(walletIdentity.status).toBe(404);
     } finally {
       await server.close();
     }
@@ -1455,8 +1289,8 @@ describe("review HTTP server", () => {
     const assetsDir = mkdtempSync(join(tmpdir(), "say-ur-intent-assets-"));
     writeFileSync(join(assetsDir, "review.js"), "export const review = true;\n", "utf8");
     writeFileSync(join(assetsDir, "review.css"), ".review-shell { color: #15201b; }\n", "utf8");
-    writeFileSync(join(assetsDir, "reviewExecutionAnalysis.js"), "export const reviewAnalysis = true;\n", "utf8");
-    writeFileSync(join(assetsDir, "reviewExecutionAnalysis.css"), ".analysis-shell { color: #15201b; }\n", "utf8");
+    writeFileSync(join(assetsDir, "receipt.js"), "export const receipt = true;\n", "utf8");
+    writeFileSync(join(assetsDir, "receipt.css"), ".receipt-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "connect.js"), "export const wallet = true;\n", "utf8");
     writeFileSync(join(assetsDir, "connect.css"), ".wallet-shell { color: #15201b; }\n", "utf8");
     writeFileSync(join(assetsDir, "analytics.js"), "export const analytics = true;\n", "utf8");
@@ -1495,15 +1329,15 @@ describe("review HTTP server", () => {
       expect(reviewCss.headers.get("content-type")).toBe("text/css; charset=utf-8");
       expect(await reviewCss.text()).toContain(".review-shell");
 
-      const reviewAnalysisAsset = await fetch(`${base}/review-assets/reviewExecutionAnalysis.js`);
-      expect(reviewAnalysisAsset.status).toBe(200);
-      expect(reviewAnalysisAsset.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
-      expect(await reviewAnalysisAsset.text()).toContain("reviewAnalysis = true");
+      const receiptAsset = await fetch(`${base}/review-assets/receipt.js`);
+      expect(receiptAsset.status).toBe(200);
+      expect(receiptAsset.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+      expect(await receiptAsset.text()).toContain("receipt = true");
 
-      const reviewAnalysisCss = await fetch(`${base}/review-assets/reviewExecutionAnalysis.css`);
-      expect(reviewAnalysisCss.status).toBe(200);
-      expect(reviewAnalysisCss.headers.get("content-type")).toBe("text/css; charset=utf-8");
-      expect(await reviewAnalysisCss.text()).toContain(".analysis-shell");
+      const receiptCss = await fetch(`${base}/review-assets/receipt.css`);
+      expect(receiptCss.status).toBe(200);
+      expect(receiptCss.headers.get("content-type")).toBe("text/css; charset=utf-8");
+      expect(await receiptCss.text()).toContain(".receipt-shell");
 
       const settingsAsset = await fetch(`${base}/review-assets/settings.js`);
       expect(settingsAsset.status).toBe(200);
@@ -1659,82 +1493,123 @@ describe("review HTTP server", () => {
     }
   });
 
-  it("serves review execution analysis payload through token-authorized lazy finalization", async () => {
+  it("serves public receipt facts by digest without a token", async () => {
     const store = createSessionStore();
-    const now = new Date();
-    const { session, token } = await store.createReviewSession([plan], now);
-    await openAndConnectReview(store, session.id, walletAccount, now);
-    await store.recordReviewState(
-      session.id,
-      {
-        planId: plan.id,
-        reviewSessionId: session.id,
-        account: walletAccount,
-        status: "ready_for_wallet_review",
-        checks: [],
-        updatedAt: now.toISOString()
-      },
-      now
-    );
-    attachReviewedCommitment(store, session.id);
-    await store.recordExecutionResult(
-      session.id,
-      {
-        reviewSessionId: session.id,
-        planId: plan.id,
-        status: "signed_pending_result",
-        txDigest: chainReceiptDigest,
-        recordedAt: now.toISOString()
-      },
-      now
-    );
-    const verifierCalls: unknown[] = [];
+    const readerDigests: string[] = [];
     const server = await createReviewHttpServer({
       host: "127.0.0.1",
       store,
       logger,
-      chainReceiptVerifier: async (input) => {
-        verifierCalls.push(input);
-        return { status: "verified_success", receipt: chainReceiptFixture() };
+      publicChainReceiptReader: async (input) => {
+        readerDigests.push(input.digest);
+        if (input.digest === "bad") {
+          return { status: "invalid_digest" };
+        }
+        if (input.digest === "missing") {
+          return { status: "not_found" };
+        }
+        if (input.digest === "down") {
+          return { status: "unavailable", message: "Sui mainnet transaction lookup failed." };
+        }
+        return {
+          status: "found",
+          receipt: {
+            txDigest: "0xabc",
+            sender: walletAccount,
+            effectsStatus: { success: true },
+            packageCalls: [],
+            balanceChanges: [
+              {
+                index: 0,
+                address: walletAccount,
+                coinType: "0x2::sui::SUI",
+                amountRaw: "-1000",
+                direction: "decrease"
+              }
+            ],
+            objectTypes: {},
+            chainIdentifier: "abcdefgh",
+            // Fixed so two identical reads return byte-identical bodies; lets the
+            // header-token case below assert the response is unchanged.
+            fetchedAt: "2026-06-28T00:00:00.000Z"
+          }
+        };
       }
     }).start(0);
 
     try {
       const base = `http://${server.host}:${server.port}`;
-      const unauthenticated = await fetch(`${base}/api/review/${session.id}/analysis`);
-      expect(unauthenticated.status).toBe(401);
 
-      const response = await fetch(`${base}/api/review/${session.id}/analysis`, {
-        headers: { "x-say-ur-intent-token": token, origin: base }
+      // Public endpoint: no token required, and a query token is rejected before
+      // the reader is consulted.
+      const queryToken = await fetch(`${base}/api/receipt?digest=ok&token=secret`);
+      expect(queryToken.status).toBe(400);
+      expect(await queryToken.json()).toEqual({ error: "token_query_not_supported" });
+
+      const invalid = await fetch(`${base}/api/receipt?digest=bad`);
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toEqual({ error: "digest_invalid" });
+
+      const missing = await fetch(`${base}/api/receipt?digest=missing`);
+      expect(missing.status).toBe(404);
+      expect(await missing.json()).toEqual({ error: "receipt_not_found" });
+
+      const down = await fetch(`${base}/api/receipt?digest=down`);
+      expect(down.status).toBe(502);
+      expect(await down.json()).toEqual({ error: "receipt_unavailable" });
+
+      const ok = await fetch(`${base}/api/receipt?digest=ok`);
+      expect(ok.status).toBe(200);
+      const json = (await ok.json()) as Record<string, unknown>;
+      expect(json).toMatchObject({
+        txDigest: "0xabc",
+        sender: walletAccount,
+        effectsStatus: { success: true }
       });
-      expect(response.status).toBe(200);
-      const json = (await response.json()) as {
-        kind: string;
-        reviewedRequest?: { planId: string; adapterData?: unknown };
-        execution: { state: string; chainReceipt?: { sender?: string } };
-        labeledSessionFacts: Array<{ id: string; value: string; source: string }>;
-      };
-      expect(json.kind).toBe("review_execution_analysis_v1");
-      expect(json.reviewedRequest).toEqual(expect.objectContaining({ planId: plan.id }));
-      expect(json.reviewedRequest).not.toHaveProperty("adapterData");
-      expect(json.execution).toEqual(expect.objectContaining({
-        state: "success",
-        chainReceipt: expect.objectContaining({ sender: walletAccount })
-      }));
-      expect(json.labeledSessionFacts).toContainEqual(
-        expect.objectContaining({
-          id: "chain-effects-status",
-          value: "success",
-          source: "chain_receipt"
-        })
-      );
-      expect(verifierCalls).toEqual([
-        expect.objectContaining({
-          txDigest: chainReceiptDigest,
-          reviewedTransactionDigest: chainReceiptDigest,
-          account: walletAccount
-        })
-      ]);
+      // Public receipt facts never carry review/session/wallet/signing material.
+      for (const forbidden of [
+        "token",
+        "reviewSessionId",
+        "walletSessionId",
+        "reviewedRequest",
+        "reviewState",
+        "labeledSessionFacts",
+        "transactionBytes",
+        "signingReadiness",
+        "walletReviewAdapterContract"
+      ]) {
+        expect(json).not.toHaveProperty(forbidden);
+      }
+
+      // A header token grants NO authority on this public endpoint: the same
+      // request carrying x-say-ur-intent-token returns the identical public
+      // facts, never extra or token-gated data. This pins the public boundary so
+      // a future change cannot quietly make /api/receipt header-authorized.
+      const withHeaderToken = await fetch(`${base}/api/receipt?digest=ok`, {
+        headers: { "x-say-ur-intent-token": "secret" }
+      });
+      expect(withHeaderToken.status).toBe(200);
+      expect(await withHeaderToken.json()).toEqual(json);
+
+      expect(readerDigests).toEqual(["bad", "missing", "down", "ok", "ok"]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns 503 for receipt reads when no public receipt reader is configured", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({
+      host: "127.0.0.1",
+      store,
+      logger
+    }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const response = await fetch(`${base}/api/receipt?digest=anything`);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: "receipt_data_unavailable" });
     } finally {
       await server.close();
     }

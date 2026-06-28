@@ -239,7 +239,13 @@ async function loadAssets(address: string): Promise<void> {
     if (!response.ok) {
       throw new HttpJsonRequestError(response.status, await errorCodeFromResponse(response));
     }
-    assetsPayload = (await response.json()) as Record<string, unknown>;
+    const raw = (await response.json()) as Record<string, unknown>;
+    if (!Array.isArray(raw.balances)) {
+      // Fail closed: an unexpected shape becomes an error, not a false-negative
+      // "no coin balances" snapshot.
+      throw new Error("The local server returned an unexpected asset snapshot shape.");
+    }
+    assetsPayload = raw;
   } catch (error) {
     assetsError = messageForHttpError(error, "The local server could not return public asset data for this address.");
   }

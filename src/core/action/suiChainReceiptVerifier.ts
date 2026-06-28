@@ -3,14 +3,20 @@ import { assertNoForbiddenMcpFields } from "./forbiddenFields.js";
 import {
   SUI_CHAIN_RECEIPT_REQUIRED_INCLUDE,
   type SuiChainReceiptAccountBalanceChange,
-  type SuiChainReceiptEffectsStatus,
   type SuiChainReceiptEvidence,
   type SuiChainReceiptIncludeField,
-  type SuiChainReceiptPackageCall,
   suiChainReceiptEvidenceSchema
 } from "./suiChainReceiptEvidence.js";
 import { normalizeCoinType } from "../read/coinMetadata.js";
 import { parseSuiAddress, suiTransactionDigestSchema } from "../suiAddress.js";
+import {
+  effectsStatusFromSdk,
+  isReceiptNotFoundError,
+  objectTypesFromSdk,
+  packageCallsFromTransaction,
+  receiptErrorMessage,
+  requireReceiptAddress
+} from "./suiChainReceiptMapping.js";
 
 type ChainReceiptInclude = { [Field in SuiChainReceiptIncludeField]: true };
 
@@ -80,7 +86,7 @@ export async function verifySuiChainReceipt(
     const chainIdentifierResult = await options.client.core.getChainIdentifier();
     chainIdentifier = chainIdentifierResult.chainIdentifier;
   } catch (error) {
-    return verificationFailed(errorMessage(error, "Sui mainnet chain identifier lookup failed."));
+    return verificationFailed(receiptErrorMessage(error, "Sui mainnet chain identifier lookup failed."));
   }
   if (chainIdentifier !== options.expectedChainIdentifier) {
     return verificationFailed("Chain receipt verification requires a verified Sui mainnet endpoint.");
@@ -93,14 +99,14 @@ export async function verifySuiChainReceipt(
       include: SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE
     });
   } catch (error) {
-    if (isReceiptUnavailableError(error)) {
+    if (isReceiptNotFoundError(error)) {
       return {
         status: "not_found",
         failureReason: "chain_receipt_unavailable",
         message: "Sui mainnet did not return a transaction for the signed digest."
       };
     }
-    return verificationFailed(errorMessage(error, "Sui mainnet transaction lookup failed."));
+    return verificationFailed(receiptErrorMessage(error, "Sui mainnet transaction lookup failed."));
   }
 
   try {
@@ -123,7 +129,7 @@ export async function verifySuiChainReceipt(
     }
     return { status: "verified_success", receipt };
   } catch (error) {
-    return verificationFailed(errorMessage(error, "Sui mainnet transaction receipt could not be verified."));
+    return verificationFailed(receiptErrorMessage(error, "Sui mainnet transaction receipt could not be verified."));
   }
 }
 
@@ -183,12 +189,7 @@ function createSuiChainReceiptEvidenceFromTransaction(input: {
   if (effects.transactionDigest !== input.txDigest) {
     throw new Error("Sui mainnet receipt effects digest does not match the signed digest.");
   }
-  const sender = transactionData.sender === null || transactionData.sender === undefined
-    ? undefined
-    : parseSuiAddress(transactionData.sender);
-  if (!sender) {
-    throw new Error("Sui mainnet receipt is missing a valid sender.");
-  }
+  const sender = requireReceiptAddress(transactionData.sender, "Sui mainnet receipt is missing a valid sender.");
   if (sender !== input.account) {
     throw new Error("Sui mainnet receipt sender does not match the reviewed account.");
   }
@@ -220,53 +221,15 @@ function createSuiChainReceiptEvidenceFromTransaction(input: {
   return parsed;
 }
 
-function packageCallsFromTransaction(
-  transaction: SuiClientTypes.TransactionData
-): SuiChainReceiptPackageCall[] {
-  return transaction.commands.flatMap((command, commandIndex) => {
-    const moveCall = moveCallFromCommand(command);
-    if (!moveCall) {
-      return [];
-    }
-    const packageId = parseSuiAddress(moveCall.package);
-    if (!packageId) {
-      throw new Error("Sui mainnet receipt contains a Move call with an invalid package id.");
-    }
-    return [{
-      commandIndex,
-      packageId,
-      module: moveCall.module,
-      function: moveCall.function,
-      target: `${packageId}::${moveCall.module}::${moveCall.function}`
-    }];
-  });
-}
-
-function moveCallFromCommand(
-  command: SuiClientTypes.TransactionData["commands"][number]
-): { package: string; module: string; function: string } | undefined {
-  const maybeCommand = command as {
-    $kind?: string;
-    MoveCall?: { package: string; module: string; function: string };
-  };
-  if (!maybeCommand.MoveCall) {
-    return undefined;
-  }
-  if (maybeCommand.$kind !== undefined && maybeCommand.$kind !== "MoveCall") {
-    return undefined;
-  }
-  return maybeCommand.MoveCall;
-}
-
 function accountBalanceChangesFromSdk(
   balanceChanges: SuiClientTypes.BalanceChange[],
   account: string
 ): SuiChainReceiptAccountBalanceChange[] {
   return balanceChanges.flatMap((change, index) => {
-    const address = parseSuiAddress(change.address);
-    if (!address) {
-      throw new Error("Sui mainnet receipt contains a balance change with an invalid address.");
-    }
+    const address = requireReceiptAddress(
+      change.address,
+      "Sui mainnet receipt contains a balance change with an invalid address."
+    );
     if (address !== account) {
       return [];
     }
@@ -280,36 +243,6 @@ function accountBalanceChangesFromSdk(
   });
 }
 
-function objectTypesFromSdk(objectTypes: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(objectTypes).map(([objectId, objectType]) => {
-    const normalizedObjectId = parseSuiAddress(objectId);
-    if (!normalizedObjectId) {
-      throw new Error("Sui mainnet receipt contains an invalid object id in objectTypes.");
-    }
-    return [normalizedObjectId, objectType];
-  }));
-}
-
-function effectsStatusFromSdk(status: SuiClientTypes.ExecutionStatus): SuiChainReceiptEffectsStatus {
-  if (status.success) {
-    return { success: true };
-  }
-  const error = status.error;
-  const errorKind = typeof error === "object" && error !== null && typeof error.$kind === "string"
-    ? error.$kind.slice(0, 200)
-    : undefined;
-  const errorMessage = typeof error === "object" && error !== null &&
-    typeof error.message === "string" &&
-    error.message.length > 0
-    ? error.message.slice(0, 2000)
-    : undefined;
-  return {
-    success: false,
-    ...(errorKind === undefined ? {} : { errorKind }),
-    ...(errorMessage === undefined ? {} : { errorMessage })
-  };
-}
-
 function verificationFailed(message: string): SuiChainReceiptVerificationResult {
   return {
     status: "verification_failed",
@@ -318,42 +251,3 @@ function verificationFailed(message: string): SuiChainReceiptVerificationResult 
   };
 }
 
-function isReceiptUnavailableError(error: unknown): boolean {
-  const code = errorCode(error);
-  if (
-    code === "NOT_FOUND" ||
-    code === "NotFound" ||
-    code === "NOT_FOUND_ERROR" ||
-    code === 5
-  ) {
-    return true;
-  }
-  return /\b(not found|not indexed|not available|could not find|unable to find|no transaction)\b/i.test(
-    errorMessage(error, "")
-  );
-}
-
-function errorCode(error: unknown): string | number | undefined {
-  if (typeof error !== "object" || error === null) {
-    return undefined;
-  }
-  const value = (error as { code?: unknown; status?: unknown }).code ??
-    (error as { status?: unknown }).status;
-  return typeof value === "string" || typeof value === "number" ? value : undefined;
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) {
-    return error.message || fallback;
-  }
-  if (typeof error === "string") {
-    return error || fallback;
-  }
-  if (typeof error === "object" && error !== null) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message.length > 0) {
-      return message;
-    }
-  }
-  return fallback;
-}

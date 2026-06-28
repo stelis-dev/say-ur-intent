@@ -13,9 +13,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         review: resolve("review-app/src/review.ts"),
-        reviewExecutionAnalysis: resolve("review-app/src/reviewExecutionAnalysis.ts"),
         connect: resolve("review-app/src/connect.ts"),
         analytics: resolve("review-app/src/analytics.ts"),
+        receipt: resolve("review-app/src/receipt.ts"),
         settings: resolve("review-app/src/settings.ts"),
         deepbookUsdcChart: resolve("review-app/src/deepbookUsdcChart.ts")
       },
@@ -24,9 +24,9 @@ export default defineConfig({
         chunkFileNames: "[name]-[hash].js",
         assetFileNames: (assetInfo) =>
           assetInfo.name === "review.css" ||
-          assetInfo.name === "reviewExecutionAnalysis.css" ||
           assetInfo.name === "connect.css" ||
           assetInfo.name === "analytics.css" ||
+          assetInfo.name === "receipt.css" ||
           assetInfo.name === "settings.css" ||
           assetInfo.name === "deepbookUsdcChart.css"
             ? "[name][extname]"

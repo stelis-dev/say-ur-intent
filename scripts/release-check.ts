@@ -23,6 +23,8 @@ const requiredFiles = [
   "dist/review-app/connect.css",
   "dist/review-app/analytics.js",
   "dist/review-app/analytics.css",
+  "dist/review-app/receipt.js",
+  "dist/review-app/receipt.css",
   "docs/UTILITY_INDEX.md",
   ...MCP_RESOURCES.map((resource) => resource.path)
 ] as const;
@@ -107,6 +109,12 @@ function assertLocalFiles(): void {
   }
   if (!existsSync("dist/review-app/analytics.css")) {
     throw new Error("dist/review-app/analytics.css is required before publishing.");
+  }
+  if (!existsSync("dist/review-app/receipt.js")) {
+    throw new Error("dist/review-app/receipt.js is required before publishing.");
+  }
+  if (!existsSync("dist/review-app/receipt.css")) {
+    throw new Error("dist/review-app/receipt.css is required before publishing.");
   }
 
   const startJs = readFileSync("dist/runtime/start.js", "utf8");

@@ -166,25 +166,21 @@ describe("source policy", () => {
     expect(source).not.toContain("execution_result_unavailable");
   });
 
-  it("keeps the review execution analysis page display-only and server-payload owned", () => {
-    const pageSource = readFileSync(join(process.cwd(), "review-app/src/reviewExecutionAnalysis.ts"), "utf8");
-    const builderSource = readFileSync(join(process.cwd(), "src/core/session/reviewExecutionAnalysis.ts"), "utf8");
+  it("keeps the public receipt analytics page display-only and server-fact owned", () => {
+    const pageSource = readFileSync(join(process.cwd(), "review-app/src/receipt.ts"), "utf8");
 
-    expect(pageSource).toContain("/api/review/${encodeURIComponent(reviewSessionId)}/analysis");
-    expect(pageSource).toContain("import type { ReviewExecutionAnalysisPayload }");
-    expect(pageSource).toContain("renderSimulationBalanceChanges");
-    expect(pageSource).toContain("renderSimulationObjectChanges");
-    expect(pageSource).toContain("TransactionSimulationBalanceChange");
-    expect(pageSource).toContain("TransactionSimulationObjectChange");
+    // Reads public on-chain facts through the server endpoint only.
+    expect(pageSource).toContain("/api/receipt?digest=");
+    // Fail closed against shape drift: types the response with the shared
+    // server SOT type and validates it before rendering.
+    expect(pageSource).toContain("PublicChainReceipt");
+    expect(pageSource).toContain("parseReceipt");
+    // No wallet, no Sui client, no signing or execution from this page.
     expect(pageSource).not.toMatch(/@mysten\/sui|dappKit|createLocalDAppKit|suiMainnetClient|executeTransactionBlock/i);
     expect(pageSource).not.toMatch(/all matched|safe to sign|ready to sign/i);
-    expect(pageSource).not.toMatch(/JSON\.stringify\(record\)|renderRecordList/);
-    expect(pageSource).not.toMatch(/Record<string, unknown>\[\]|stringField\(record/);
-    expect(builderSource).toContain("assertNoForbiddenMcpFields(parsed)");
-    expect(builderSource).toContain("buildReviewedRequest(plan)");
-    expect(builderSource).not.toMatch(/\badapterData\b/);
-    expect(builderSource).not.toMatch(/not_available/);
-    expect(builderSource).not.toMatch(/all matched|safe to sign|ready to sign/i);
+    // Public page: never carries a session token or review/session evidence.
+    expect(pageSource).not.toMatch(/x-say-ur-intent-token|readPageToken|tokenHeaders/);
+    expect(pageSource).not.toMatch(/reviewedRequest|labeledSessionFacts|walletReviewAdapterContract|reviewState/);
   });
 
   it("documents chain receipts as server-read execution evidence without expanding authority", () => {
@@ -199,20 +195,23 @@ describe("source policy", () => {
       "src/mcp/serverInfo.ts",
       "src/mcp/prompts.ts"
     ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+    // Collapse whitespace so line-wrapped forbidden phrases cannot slip past the
+    // negative guards below.
+    const publicAndRuntimeSurfaceNormalized = publicAndRuntimeSurface.replace(/\s+/g, " ");
 
     expect(publicAndRuntimeSurface).toMatch(/server re-reads Sui mainnet[\s\S]{0,220}chain receipt/i);
     expect(publicAndRuntimeSurface).toMatch(/chain receipts are server-read execution facts/i);
     expect(publicAndRuntimeSurface).toMatch(/not transaction bytes[\s\S]{0,220}signing readiness/i);
     expect(publicAndRuntimeSurface).toMatch(/not execution guarantees[\s\S]{0,180}route quality[\s\S]{0,180}P&L/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/server-side receipt verification against chain state/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/receipt verification against chain state is not implemented/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/execution receipts happen on the local review page/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/page records the execution receipt/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/Execution result transitions are owned by the local review-server browser flow/i);
+    expect(publicAndRuntimeSurfaceNormalized).not.toMatch(/server-side receipt verification against chain state/i);
+    expect(publicAndRuntimeSurfaceNormalized).not.toMatch(/receipt verification against chain state is not implemented/i);
+    expect(publicAndRuntimeSurfaceNormalized).not.toMatch(/execution receipts happen on the local review page/i);
+    expect(publicAndRuntimeSurfaceNormalized).not.toMatch(/page records the execution receipt/i);
+    expect(publicAndRuntimeSurfaceNormalized).not.toMatch(/Execution result transitions are owned by the local review-server browser flow/i);
   });
 
-  it("documents review execution analysis as a read-only current surface", () => {
-    const publicAndRuntimeSurface = [
+  it("documents the public receipt analytics surface and the removed per-session analysis page", () => {
+    const rawSurface = [
       "AGENTS.md",
       "README.md",
       "docs/AGENT_BEHAVIOR.md",
@@ -220,15 +219,18 @@ describe("source policy", () => {
       "docs/MCP_TOOLS.md",
       "src/mcp/serverInfo.ts"
     ].map((file) => readFileSync(join(process.cwd(), file), "utf8")).join("\n");
+    // Collapse all whitespace (including newlines) so a line-wrapped phrase such
+    // as "review execution\nanalysis page" cannot slip past these guards.
+    const publicAndRuntimeSurface = rawSurface.replace(/\s+/g, " ");
 
-    expect(publicAndRuntimeSurface).toMatch(/read-only review execution analysis page/i);
-    expect(publicAndRuntimeSurface).toMatch(/stored review evidence[\s\S]{0,160}server-read (chain )?receipt facts/i);
+    // The review page shows the chain receipt inline; a public Receipt Analytics
+    // page reads on-chain receipt facts by transaction digest.
+    expect(publicAndRuntimeSurface).toMatch(/public [Rr]eceipt [Aa]nalytics page/);
+    expect(publicAndRuntimeSurface).toMatch(/receipt facts (for|by)[\s\S]{0,80}digest/i);
     expect(publicAndRuntimeSurface).toMatch(/public Analytics page/i);
-    expect(publicAndRuntimeSurface).toMatch(/review execution analysis page/i);
-    expect(publicAndRuntimeSurface).toMatch(/separate\s+from the Connect page/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/full analysis page is not implemented/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/review execution analysis page is not implemented/i);
-    expect(publicAndRuntimeSurface).not.toMatch(/browser-owned chain truth/i);
+    // The per-session review-execution-analysis page and its route were removed.
+    expect(publicAndRuntimeSurface).not.toMatch(/review execution analysis page/i);
+    expect(publicAndRuntimeSurface).not.toMatch(/\/review\/[^\s)]*\/analysis/);
     expect(publicAndRuntimeSurface).not.toMatch(/all matched/i);
     expect(publicAndRuntimeSurface).not.toMatch(/safe to sign/i);
     expect(publicAndRuntimeSurface).not.toMatch(/ready to sign/i);

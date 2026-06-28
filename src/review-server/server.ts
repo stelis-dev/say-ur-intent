@@ -20,7 +20,6 @@ import {
   type ReviewComputationDeps
 } from "../core/review/reviewComputation.js";
 import { SessionStoreError, type SessionStore } from "../core/session/sessionStore.js";
-import { buildReviewExecutionAnalysisPayload } from "../core/session/reviewExecutionAnalysis.js";
 import { getExecutionPollingStatus } from "../core/session/status.js";
 import {
   DeepbookOfficialIndexerSource,
@@ -32,16 +31,16 @@ import {
   type WalletIdentitySession
 } from "../core/session/walletIdentity.js";
 import { parseSuiAddress } from "../core/suiAddress.js";
+import type { PublicChainReceiptResult } from "../core/action/suiChainReceiptReader.js";
 import type { Logger } from "../runtime/logger.js";
 import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
 import { createDeepbookUsdcChartApi } from "./deepbookUsdcChartApi.js";
-import { analyticsHtml, connectHtml, deepbookUsdcChartHtml, reviewExecutionAnalysisHtml, reviewHtml, settingsHtml } from "./html.js";
+import { analyticsHtml, connectHtml, deepbookUsdcChartHtml, receiptHtml, reviewHtml, settingsHtml } from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
 import { routeSettingsApi } from "./settingsApi.js";
-import { walletIdentitySessionResponse } from "./walletIdentityResponse.js";
 
 type ReviewHttpServerOptions = {
   host: "127.0.0.1";
@@ -54,6 +53,9 @@ type ReviewHttpServerOptions = {
   localData?: LocalDataService | undefined;
   deepbookOfficialIndexerSource?: DeepbookOfficialIndexerSourceClient | undefined;
   chainReceiptVerifier?: ChainReceiptVerifier | undefined;
+  publicChainReceiptReader?:
+    | ((input: { digest: string; now: Date }) => Promise<PublicChainReceiptResult>)
+    | undefined;
   reviewComputationDeps?: ReviewComputationDeps | undefined;
   serverInfo?: {
     name: string;
@@ -67,14 +69,6 @@ type StartedReviewServer = {
   port: number;
   close(): Promise<void>;
 };
-
-const REVIEW_WALLET_IDENTITY_STATUSES = new Set<InternalSessionStatus>([
-  "awaiting_wallet",
-  "wallet_connected",
-  "ready_for_wallet_review",
-  "refresh_required",
-  "blocked"
-]);
 
 export function createReviewHttpServer(options: ReviewHttpServerOptions) {
   const deepbookUsdcChartApi = createDeepbookUsdcChartApi({
@@ -175,19 +169,18 @@ async function routeRequest(
   }
 
   const reviewMatch = /^\/review\/([^/]+)$/.exec(url.pathname);
-  const reviewExecutionAnalysisMatch = /^\/review\/([^/]+)\/analysis$/.exec(url.pathname);
   const apiReviewMatch = /^\/api\/review\/([^/]+)$/.exec(url.pathname);
-  const apiReviewExecutionAnalysisMatch = /^\/api\/review\/([^/]+)\/analysis$/.exec(url.pathname);
-  const apiReviewWalletIdentityMatch = /^\/api\/review\/([^/]+)\/wallet-identity$/.exec(url.pathname);
   const apiReviewOpenedMatch = /^\/api\/review\/([^/]+)\/opened$/.exec(url.pathname);
   const apiReviewStateMatch = /^\/api\/review\/([^/]+)\/state$/.exec(url.pathname);
   const apiReviewResultMatch = /^\/api\/review\/([^/]+)\/result$/.exec(url.pathname);
   const apiResultMatch = /^\/api\/result\/([^/]+)$/.exec(url.pathname);
   const connectMatch = /^\/connect\/([^/]+)$/.exec(url.pathname);
   const analyticsMatch = /^\/analytics$/.exec(url.pathname);
+  const receiptMatch = /^\/receipt$/.exec(url.pathname);
   const apiReviewHandoffMatch = /^\/api\/review\/([^/]+)\/handoff$/.exec(url.pathname);
   const apiReviewHandoffCancelMatch = /^\/api\/review\/([^/]+)\/handoff\/cancel$/.exec(url.pathname);
   const apiAnalyticsAssetsMatch = /^\/api\/analytics\/assets$/.exec(url.pathname);
+  const apiReceiptMatch = /^\/api\/receipt$/.exec(url.pathname);
   const apiWalletOpenedMatch = /^\/api\/wallet\/([^/]+)\/opened$/.exec(url.pathname);
   const apiWalletConnectingMatch = /^\/api\/wallet\/([^/]+)\/connecting$/.exec(url.pathname);
   const apiWalletResultMatch = /^\/api\/wallet\/([^/]+)\/result$/.exec(url.pathname);
@@ -208,6 +201,11 @@ async function routeRequest(
   const reviewAssetMatch = /^\/review-assets\/(.+)$/.exec(url.pathname);
 
   if (request.method === "GET" && reviewMatch?.[1]) {
+    // Token-gated page: the token rides in the URL fragment, never the query.
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
+      return;
+    }
     sendHtml(response, reviewHtml(reviewMatch[1]), {
       "content-security-policy": [
         "default-src 'none'",
@@ -225,18 +223,18 @@ async function routeRequest(
     return;
   }
 
-  if (request.method === "GET" && reviewExecutionAnalysisMatch?.[1]) {
+  if (request.method === "GET" && receiptMatch) {
+    // Public page: no token in the URL; reads on-chain facts via /api/receipt.
     if (url.searchParams.has("token")) {
       sendJson(response, 400, { error: "token_query_not_supported" });
       return;
     }
-    sendHtml(response, reviewExecutionAnalysisHtml(reviewExecutionAnalysisMatch[1]), {
+    sendHtml(response, receiptHtml(), {
       "content-security-policy": [
         "default-src 'none'",
         "base-uri 'none'",
         "connect-src 'self'",
         "script-src 'self'",
-        // Inline styles are allowed for mermaid's SVG styling; scripts stay 'self'-only.
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "form-action 'none'"
@@ -360,6 +358,32 @@ async function routeRequest(
     return;
   }
 
+  if (request.method === "GET" && apiReceiptMatch) {
+    // Public endpoint: on-chain receipt facts by digest, no token, no session.
+    if (url.searchParams.has("token")) {
+      sendJson(response, 400, { error: "token_query_not_supported" });
+      return;
+    }
+    if (!options.publicChainReceiptReader) {
+      sendJson(response, 503, { error: "receipt_data_unavailable" });
+      return;
+    }
+    const result = await options.publicChainReceiptReader({
+      digest: url.searchParams.get("digest") ?? "",
+      now: new Date()
+    });
+    if (result.status === "invalid_digest") {
+      sendJson(response, 400, { error: "digest_invalid" });
+    } else if (result.status === "not_found") {
+      sendJson(response, 404, { error: "receipt_not_found" });
+    } else if (result.status === "unavailable") {
+      sendJson(response, 502, { error: "receipt_unavailable" });
+    } else {
+      sendJson(response, 200, result.receipt as unknown as Record<string, unknown>);
+    }
+    return;
+  }
+
   if (request.method === "GET" && settingsMatch?.[1]) {
     if (url.searchParams.has("token")) {
       sendJson(response, 400, { error: "token_query_not_supported" });
@@ -469,42 +493,6 @@ async function routeRequest(
       reviewState: session.reviewState,
       plans: session.plans
     });
-    return;
-  }
-
-  if (request.method === "GET" && apiReviewExecutionAnalysisMatch?.[1]) {
-    const sessionId = apiReviewExecutionAnalysisMatch[1];
-    const session = await requireLazyFinalizedReviewSession(options, sessionId, request, response);
-    if (!session) {
-      return;
-    }
-    sendJson(response, 200, buildReviewExecutionAnalysisPayload(session));
-    return;
-  }
-
-  if (request.method === "POST" && apiReviewWalletIdentityMatch?.[1]) {
-
-    const sessionId = apiReviewWalletIdentityMatch[1];
-    const token = await requireReviewSessionToken(options.store, sessionId, request, response);
-    if (!token) {
-      return;
-    }
-    await readJsonBody(request);
-    const session = await options.store.getReviewSession(sessionId);
-    if (!session) {
-      sendJson(response, 404, { error: "session_not_found" });
-      return;
-    }
-    if (session.status === "expired") {
-      sendJson(response, 410, { error: "session_expired" });
-      return;
-    }
-    if (!REVIEW_WALLET_IDENTITY_STATUSES.has(session.status)) {
-      sendJson(response, 409, { error: "invalid_session_transition" });
-      return;
-    }
-    const wallet = await options.store.createWalletIdentitySession();
-    sendJson(response, 200, walletIdentitySessionResponse(wallet, requestBaseUrl(request)));
     return;
   }
 
@@ -773,13 +761,6 @@ function isFailureReason(value: string | undefined): value is FailureReason {
   return value !== undefined && (FAILURE_REASONS as readonly string[]).includes(value);
 }
 
-function requestBaseUrl(request: IncomingMessage): string {
-  const host = request.headers.host;
-  if (!host) {
-    throw new HttpError(400, "host_required");
-  }
-  return `http://${host}`;
-}
 
 function publicWalletIdentitySession(session: WalletIdentitySession) {
   return {

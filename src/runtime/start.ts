@@ -20,6 +20,7 @@ import { TransactionActivityService } from "../core/activity/transactionActivity
 import { createSuiReadService } from "../core/read/readService.js";
 import { createTransactionObjectOwnershipProducer } from "../core/action/transactionObjectOwnershipProducer.js";
 import { verifySuiChainReceipt } from "../core/action/suiChainReceiptVerifier.js";
+import { readPublicChainReceipt } from "../core/action/suiChainReceiptReader.js";
 import { createReviewTimeSimulationProducer } from "../core/action/reviewTimeSimulationEvidence.js";
 import { producePtbVisualizationArtifact } from "../core/action/ptbVisualizationProducer.js";
 import { LocalSessionStore } from "../core/session/sessionStore.js";
@@ -120,6 +121,15 @@ async function main(): Promise<void> {
         },
         input
       );
+    const publicChainReceiptReader = (input: Parameters<typeof readPublicChainReceipt>[1]) =>
+      readPublicChainReceipt(
+        {
+          client: suiClient,
+          network: config.network,
+          expectedChainIdentifier: config.expectedChainIdentifier
+        },
+        input
+      );
     const reviewServerFactory = createReviewHttpServer({
       host: config.reviewHost,
       store: sessions,
@@ -128,6 +138,7 @@ async function main(): Promise<void> {
       localSettings,
       localData,
       chainReceiptVerifier,
+      publicChainReceiptReader,
       readService,
       reviewComputationDeps: {
         validateAdapterLifecycle: validateSupportedAdapterLifecycle,
