@@ -779,12 +779,16 @@ describe("review HTTP server", () => {
         body: "{}"
       });
       expect(missingToken.status).toBe(401);
+      // A query token is rejected outright by the global guard (the token only
+      // ever rides in the header), rather than being silently ignored and then
+      // failing as missing auth.
       const queryToken = await fetch(`${base}/api/wallet/${session.id}/opened?token=${token}`, {
         method: "POST",
         headers: { "content-type": "application/json", origin: base },
         body: "{}"
       });
-      expect(queryToken.status).toBe(401);
+      expect(queryToken.status).toBe(400);
+      expect(await queryToken.json()).toMatchObject({ error: "token_query_not_supported" });
 
       // A present-but-wrong header token is rejected like a missing one, so the
       // Connect page treats `opened` failure as an invalid token and shows no
@@ -2381,6 +2385,97 @@ describe("review page content security policy", () => {
       // browser's default-port (443) request.
       expect(connectSrc).toContain("https://fullnode.mainnet.sui.io");
       expect(connectSrc).not.toContain("fullnode.mainnet.sui.io:443");
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe("page security rules across all pages", () => {
+  const publicPaths = ["/analytics", "/receipt", "/charts/deepbook-usdc"];
+
+  it("public pages serve without a token, reject a query token, and link only to other public pages", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      for (const path of publicPaths) {
+        const ok = await fetch(`${base}${path}`);
+        expect(ok.status, `${path} without a token`).toBe(200);
+        const html = await ok.text();
+
+        // Shared public navigation that links to the OTHER public pages and
+        // marks the current one.
+        expect(html, `${path} public-nav`).toContain('class="public-nav"');
+        expect(html, `${path} marks current`).toContain('aria-current="page"');
+        for (const other of publicPaths.filter((candidate) => candidate !== path)) {
+          expect(html, `${path} links ${other}`).toContain(`href="${other}"`);
+        }
+        // A public page never links to a token page route (/connect/:id,
+        // /review/:id, /settings/:id). The trailing slash keeps this from
+        // matching the /review-assets/ stylesheet and script paths.
+        for (const tokenPrefix of ['href="/connect/', 'href="/review/', 'href="/settings/']) {
+          expect(html, `${path} must not link ${tokenPrefix}`).not.toContain(tokenPrefix);
+        }
+
+        const withToken = await fetch(`${base}${path}?token=secret`);
+        expect(withToken.status, `${path} with a query token`).toBe(400);
+        expect(await withToken.json()).toEqual({ error: "token_query_not_supported" });
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("token pages serve no cross-page navigation", async () => {
+    const store = createSessionStore();
+    const review = await store.createReviewSession([plan]);
+    const wallet = await store.createWalletIdentitySession();
+    const settings = await store.createSettingsSession();
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const tokenPaths = [
+        `/review/${review.session.id}`,
+        `/connect/${wallet.session.id}`,
+        `/settings/${settings.session.id}`
+      ];
+      for (const path of tokenPaths) {
+        const res = await fetch(`${base}${path}`);
+        expect(res.status, path).toBe(200);
+        const html = await res.text();
+        expect(html, `${path} has no public-nav`).not.toContain('class="public-nav"');
+        for (const publicLink of ['href="/analytics"', 'href="/receipt"', 'href="/charts/deepbook-usdc"']) {
+          expect(html, `${path} must not link ${publicLink}`).not.toContain(publicLink);
+        }
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("every public read endpoint rejects a query token uniformly", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      // A single global guard rejects a query token before any read, so every
+      // public read endpoint — analytics, receipt, and the chart pools/candles
+      // APIs alike — answers identically and none can accept a token in the URL.
+      const publicReadEndpoints = [
+        `/api/analytics/assets?address=${walletAccount}&token=secret`,
+        `/api/receipt?digest=anything&token=secret`,
+        `/api/charts/deepbook-usdc/pools?token=secret`,
+        `/api/charts/deepbook-usdc/candles?token=secret`
+      ];
+      for (const endpoint of publicReadEndpoints) {
+        const res = await fetch(`${base}${endpoint}`);
+        expect(res.status, endpoint).toBe(400);
+        expect(await res.json(), endpoint).toMatchObject({ error: "token_query_not_supported" });
+      }
     } finally {
       await server.close();
     }

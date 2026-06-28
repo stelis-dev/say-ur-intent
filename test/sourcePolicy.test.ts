@@ -183,6 +183,25 @@ describe("source policy", () => {
     expect(pageSource).not.toMatch(/reviewedRequest|labeledSessionFacts|walletReviewAdapterContract|reviewState/);
   });
 
+  it("wires transaction signing and the byte handoff only on the Review & Execution page", () => {
+    const directory = join(process.cwd(), "review-app/src");
+    const frontendFiles = readdirSync(directory).filter((file) => file.endsWith(".ts"));
+    // The digest-gated byte handoff and wallet signing are the only transaction
+    // exit; they must live on review.ts alone, never on a public or other token
+    // page.
+    const signingMarker = /signTransaction|\/handoff/;
+    let reviewWiresSigning = false;
+    for (const file of frontendFiles) {
+      const source = readFileSync(join(directory, file), "utf8");
+      if (file === "review.ts") {
+        reviewWiresSigning = signingMarker.test(source);
+      } else {
+        expect(signingMarker.test(source), `${file} must not wire signing or the byte handoff`).toBe(false);
+      }
+    }
+    expect(reviewWiresSigning, "review.ts must wire signing and the byte handoff").toBe(true);
+  });
+
   it("documents chain receipts as server-read execution evidence without expanding authority", () => {
     const publicAndRuntimeSurface = [
       "AGENTS.md",
@@ -1334,7 +1353,7 @@ describe("source policy", () => {
     expect(docs).toMatch(/DEEP fee raw evidence/i);
     expect(docs).toMatch(/MCP layer never signs, executes, or returns transaction bytes/i);
     expect(docs).toMatch(/review page[\s\S]{0,180}server-computed review state/i);
-    expect(docs).toMatch(/wallet identity session[\s\S]{0,180}account-bound review computation/i);
+    expect(docs).toMatch(/account-bound review computation[\s\S]{0,200}wallet identity sessions are created only on the Connect page/i);
     expect(docs).toMatch(/account-bound review action[\s\S]{0,260}compute review state/i);
     expect(docs).toMatch(/not a sign action[\s\S]{0,160}transaction-building action[\s\S]{0,160}signing readiness signal/i);
     expect(docs).toMatch(/Each state should expose at most one primary action/i);

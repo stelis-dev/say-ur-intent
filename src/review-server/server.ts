@@ -154,6 +154,15 @@ async function routeRequest(
 
   const url = new URL(request.url ?? "/", "http://localhost");
 
+  // Structural guard: the session token only ever rides in the URL fragment and
+  // is sent as the x-say-ur-intent-token header, never as a query parameter. A
+  // token in the query is rejected here for every route, so no public or token
+  // route — current or future — can accidentally accept one.
+  if (url.searchParams.has("token")) {
+    sendJson(response, 400, { error: "token_query_not_supported" });
+    return;
+  }
+
   // Loopback identity probe used by a newer instance to confirm this port is
   // held by our own review server before taking it over. It exposes only the
   // service name, role, version, and pid — no addresses, tokens, or session
@@ -201,11 +210,6 @@ async function routeRequest(
   const reviewAssetMatch = /^\/review-assets\/(.+)$/.exec(url.pathname);
 
   if (request.method === "GET" && reviewMatch?.[1]) {
-    // Token-gated page: the token rides in the URL fragment, never the query.
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     sendHtml(response, reviewHtml(reviewMatch[1]), {
       "content-security-policy": [
         "default-src 'none'",
@@ -224,11 +228,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && receiptMatch) {
-    // Public page: no token in the URL; reads on-chain facts via /api/receipt.
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     sendHtml(response, receiptHtml(), {
       "content-security-policy": [
         "default-src 'none'",
@@ -244,12 +243,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && connectMatch?.[1]) {
-    // Token-gated page: the token rides in the URL fragment, never the query, so
-    // it never reaches the server or its logs. Reject a query token outright.
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     sendHtml(response, connectHtml(connectMatch[1]), {
       "content-security-policy": [
         "default-src 'none'",
@@ -268,11 +261,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && analyticsMatch) {
-    // Public page: no token ever appears in the URL.
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     sendHtml(response, analyticsHtml(), {
       "content-security-policy": [
         "default-src 'none'",
@@ -335,11 +323,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && apiAnalyticsAssetsMatch) {
-    // Public endpoint: no token in the URL, and no privilege from a header token.
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     const address = parseSuiAddress(url.searchParams.get("address") ?? "");
     if (!address) {
       sendJson(response, 400, { error: "address_invalid" });
@@ -359,11 +342,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && apiReceiptMatch) {
-    // Public endpoint: on-chain receipt facts by digest, no token, no session.
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     if (!options.publicChainReceiptReader) {
       sendJson(response, 503, { error: "receipt_data_unavailable" });
       return;
@@ -385,10 +363,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && settingsMatch?.[1]) {
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     sendHtml(response, settingsHtml(settingsMatch[1]), {
       "content-security-policy": [
         "default-src 'none'",
@@ -405,10 +379,6 @@ async function routeRequest(
   }
 
   if (request.method === "GET" && deepbookUsdcChartMatch) {
-    if (url.searchParams.has("token")) {
-      sendJson(response, 400, { error: "token_query_not_supported" });
-      return;
-    }
     sendHtml(response, deepbookUsdcChartHtml(), {
       "content-security-policy": [
         "default-src 'none'",

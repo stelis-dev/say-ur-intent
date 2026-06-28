@@ -46,6 +46,7 @@ export function analyticsHtml(): string {
     <link rel="stylesheet" href="/review-assets/analytics.css">
   </head>
   <body>
+    ${publicNavHtml("analytics")}
     <main id="analytics-app">
       <h1>Analytics</h1>
       <p>Loading public on-chain asset analytics...</p>
@@ -65,6 +66,7 @@ export function receiptHtml(): string {
     <link rel="stylesheet" href="/review-assets/receipt.css">
   </head>
   <body>
+    ${publicNavHtml("receipt")}
     <main id="receipt-app">
       <h1>Receipt Analytics</h1>
       <p>Loading public on-chain receipt facts...</p>
@@ -103,6 +105,7 @@ export function deepbookUsdcChartHtml(): string {
     <link rel="stylesheet" href="/review-assets/deepbookUsdcChart.css">
   </head>
   <body>
+    ${publicNavHtml("chart")}
     <main id="deepbook-usdc-chart-app">
       <h1>DeepBook USDC candles</h1>
       <p>Loading local chart page...</p>
@@ -110,6 +113,24 @@ export function deepbookUsdcChartHtml(): string {
     <script type="module" src="/review-assets/deepbookUsdcChart.js"></script>
   </body>
 </html>`;
+}
+
+// Shared navigation for the public pages only. It links to public pages and
+// never to a token page (Connect, Review & Execution, Settings). It is rendered
+// outside <main>, which the page script owns and clears, so the menu survives a
+// re-render. No inline style (the chart page's CSP is style-src 'self').
+function publicNavHtml(current: "analytics" | "receipt" | "chart"): string {
+  const links: Array<{ key: "analytics" | "receipt" | "chart"; href: string; label: string }> = [
+    { key: "analytics", href: "/analytics", label: "Analytics" },
+    { key: "receipt", href: "/receipt", label: "Receipt Analytics" },
+    { key: "chart", href: "/charts/deepbook-usdc", label: "DeepBook USDC Chart" }
+  ];
+  const items = links.map((link) =>
+    link.key === current
+      ? `<span aria-current="page">${link.label}</span>`
+      : `<a href="${link.href}">${link.label}</a>`
+  );
+  return `<nav class="public-nav" aria-label="Public pages">${items.join(" | ")}</nav>`;
 }
 
 function escapeHtml(value: string): string {

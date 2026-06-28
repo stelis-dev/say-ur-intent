@@ -81,7 +81,7 @@ transaction material. They are not route selection or settlement-token
 selection. They are not wallet readiness, signing readiness, or execution
 safety.
 
-In the current release, the review page may create a wallet identity session, reload the active account context, and request account-bound review computation.
+In the current release, the review page reconnects the bound active account, reloads the active account context, and requests account-bound review computation. It does not create a wallet identity session; wallet identity sessions are created only on the Connect page.
 
 It renders server-returned review checks for the resolved direct pool, raw quote evidence, quote freshness, derived raw min-out policy, DEEP fee raw evidence, and internal digest commitment.
 It may also render a server-returned check that local unsigned DeepBook swap
@@ -242,6 +242,19 @@ Prefer:
 Source fields may keep protocol-facing names such as `fetchedAt`. Frontend labels should map them to user-facing copy such as `checked at`.
 
 Frontend labels stay in English. Localization must preserve protocol names, token symbols, object IDs, package IDs, and reason enums without translation.
+
+## Navigation
+
+The public pages share one navigation menu: Analytics (`/analytics`), Receipt
+Analytics (`/receipt`), and the DeepBook USDC chart (`/charts/deepbook-usdc`).
+The menu links only to public pages and never to a token page. It is
+server-rendered outside the page's `main` element, so the page script, which owns
+`main`, never removes it.
+
+Token pages — Connect, Review & Execution, and Settings — have no navigation to
+other pages. Each is opened only through its agent-issued token URL, so every
+outcome is shown on the page itself with a path back to the AI client. A token
+page never links to another page, and a public page never links to a token page.
 
 ## Security
 

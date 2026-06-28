@@ -8,10 +8,8 @@ import {
 } from "../core/activity/localDataService.js";
 import { LocalSettingsError, type LocalSettingsService } from "../core/preferences/preferencesStore.js";
 import type { SessionStore } from "../core/session/sessionStore.js";
-import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { HttpError, MAX_JSON_BODY_BYTES, readJsonBody, sendJson } from "./http.js";
-import { ALLOWED_HOSTNAMES } from "./reviewServerPolicy.js";
 
 const MAX_SETTINGS_BODY_BYTES = MAX_JSON_BODY_BYTES;
 const MAX_IMPORT_BODY_BYTES = 16 * 1024 * 1024;
@@ -48,15 +46,9 @@ export async function routeSettingsApi(
   url: URL,
   matches: SettingsApiMatches
 ): Promise<void> {
-  const hostOrigin = validateHostOrigin(request, { allowedHostnames: ALLOWED_HOSTNAMES });
-  if (!hostOrigin.ok) {
-    sendJson(response, hostOrigin.status, { error: hostOrigin.reason });
-    return;
-  }
-  if (url.searchParams.has("token")) {
-    sendJson(response, 400, { error: "token_query_not_supported" });
-    return;
-  }
+  // Host/Origin and a query token are rejected once by the global guards in
+  // routeRequest before this handler runs (see the "validate once" guards
+  // there), so this handler does not re-check them.
   const settings = requireSettingsDeps(options);
   const sessionId =
     matches.status ??
