@@ -1219,15 +1219,18 @@ describe("review HTTP server", () => {
     try {
       const base = `http://${server.host}:${server.port}`;
 
-      // Public page: opens with no token, references its own bundle, and allows
-      // the Sui fullnode origin so the wallet re-connect can read mainnet state.
+      // Public page: opens with no token and references its own bundle. It binds
+      // no wallet and reads only same-origin APIs, so its CSP keeps connect-src to
+      // 'self' and does not allow the Sui fullnode origin.
       const page = await fetch(`${base}/analytics`);
       expect(page.status).toBe(200);
       const html = await page.text();
       expect(html).toContain("/review-assets/analytics.js");
       expect(html).toContain("/review-assets/analytics.css");
       expect(html).toContain('id="analytics-app"');
-      expect(page.headers.get("content-security-policy")).toContain("https://fullnode.mainnet.sui.io");
+      const analyticsCsp = page.headers.get("content-security-policy") ?? "";
+      expect(analyticsCsp).toContain("connect-src 'self'");
+      expect(analyticsCsp).not.toContain("https://fullnode.mainnet.sui.io");
 
       // A token in the URL is rejected on the public page and endpoint.
       const pageToken = await fetch(`${base}/analytics?token=secret`);
@@ -1253,6 +1256,15 @@ describe("review HTTP server", () => {
       });
       expect(withHeaderToken.status).toBe(200);
 
+      // The active-account default endpoint is public. This server has no activity
+      // store, so it reports no bound account, and a URL token is rejected like the
+      // other public endpoints.
+      const activeNone = await fetch(`${base}/api/analytics/active-account`);
+      expect(activeNone.status).toBe(200);
+      expect(await activeNone.json()).toEqual({ address: null });
+      const activeToken = await fetch(`${base}/api/analytics/active-account?token=secret`);
+      expect(activeToken.status).toBe(400);
+
       // The old analysis page and its API endpoints are gone with no alias.
       const oldRoute = await fetch(`${base}/analysis/anything`);
       expect(oldRoute.status).toBe(404);
@@ -1260,6 +1272,23 @@ describe("review HTTP server", () => {
       expect(oldAssets.status).toBe(404);
       const oldActivity = await fetch(`${base}/api/analysis/anything/review-activity`);
       expect(oldActivity.status).toBe(404);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("defaults the analytics active-account endpoint to the bound account", async () => {
+    const store = createSessionStore();
+    const activityStore = new InMemoryActivityStore();
+    const boundAddress = `0x${"0".repeat(63)}3`;
+    await activityStore.setActiveAccount(boundAddress, "wallet_identity", new Date("2026-06-28T00:00:00.000Z"));
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger, activityStore }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const active = await fetch(`${base}/api/analytics/active-account`);
+      expect(active.status).toBe(200);
+      expect(await active.json()).toEqual({ address: boundAddress });
     } finally {
       await server.close();
     }
@@ -2394,7 +2423,12 @@ describe("review page content security policy", () => {
 describe("page security rules across all pages", () => {
   const publicPaths = ["/analytics", "/receipt", "/charts/deepbook-usdc"];
 
-  it("public pages serve without a token, reject a query token, and link only to other public pages", async () => {
+  // Receipt Analytics and the chart still render the public nav server-side.
+  // Analytics renders its nav through the shared shell (Plan B Unit B1), so its
+  // server HTML is a mount plus the shared stylesheet, not a server-rendered nav.
+  const serverNavPaths = ["/receipt", "/charts/deepbook-usdc"];
+
+  it("public pages serve without a token, reject a query token, and never link to a token page", async () => {
     const store = createSessionStore();
     const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
 
@@ -2405,13 +2439,6 @@ describe("page security rules across all pages", () => {
         expect(ok.status, `${path} without a token`).toBe(200);
         const html = await ok.text();
 
-        // Shared public navigation that links to the OTHER public pages and
-        // marks the current one.
-        expect(html, `${path} public-nav`).toContain('class="public-nav"');
-        expect(html, `${path} marks current`).toContain('aria-current="page"');
-        for (const other of publicPaths.filter((candidate) => candidate !== path)) {
-          expect(html, `${path} links ${other}`).toContain(`href="${other}"`);
-        }
         // A public page never links to a token page route (/connect/:id,
         // /review/:id, /settings/:id). The trailing slash keeps this from
         // matching the /review-assets/ stylesheet and script paths.
@@ -2423,6 +2450,24 @@ describe("page security rules across all pages", () => {
         expect(withToken.status, `${path} with a query token`).toBe(400);
         expect(await withToken.json()).toEqual({ error: "token_query_not_supported" });
       }
+
+      // Pages not yet migrated to the shared shell keep the server-rendered nav
+      // that links to the other public pages and marks the current one.
+      for (const path of serverNavPaths) {
+        const html = await (await fetch(`${base}${path}`)).text();
+        expect(html, `${path} public-nav`).toContain('class="public-nav"');
+        expect(html, `${path} marks current`).toContain('aria-current="page"');
+        for (const other of publicPaths.filter((candidate) => candidate !== path)) {
+          expect(html, `${path} links ${other}`).toContain(`href="${other}"`);
+        }
+      }
+
+      // Analytics renders its nav through the shared shell: the server HTML is the
+      // mount plus the shared stylesheet, with no server-rendered nav.
+      const analyticsHtml = await (await fetch(`${base}/analytics`)).text();
+      expect(analyticsHtml).toContain('id="analytics-app"');
+      expect(analyticsHtml).toContain('href="/review-assets/ui.css"');
+      expect(analyticsHtml, "analytics nav is shell-rendered").not.toContain('class="public-nav"');
     } finally {
       await server.close();
     }
@@ -2451,6 +2496,50 @@ describe("page security rules across all pages", () => {
           expect(html, `${path} must not link ${publicLink}`).not.toContain(publicLink);
         }
       }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves the homepage at / on the shared shell", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      const res = await fetch(`${base}/`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type") ?? "").toContain("text/html");
+      const html = await res.text();
+      expect(html).toContain('id="home-app"');
+      expect(html).toContain('href="/review-assets/ui.css"');
+      expect(html).toContain('href="/review-assets/favicon.svg"');
+      // The homepage is public and never links a token page route.
+      for (const tokenPrefix of ['href="/connect/', 'href="/review/', 'href="/settings/']) {
+        expect(html, `homepage must not link ${tokenPrefix}`).not.toContain(tokenPrefix);
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns the HTML not-found page for unknown page requests and JSON for unknown APIs", async () => {
+    const store = createSessionStore();
+    const server = await createReviewHttpServer({ host: "127.0.0.1", store, logger }).start(0);
+
+    try {
+      const base = `http://${server.host}:${server.port}`;
+      // A page navigation (Accept: text/html) gets the HTML not-found page.
+      const page = await fetch(`${base}/no-such-page`, { headers: { accept: "text/html" } });
+      expect(page.status).toBe(404);
+      expect(page.headers.get("content-type") ?? "").toContain("text/html");
+      expect(await page.text()).toContain('id="not-found-app"');
+
+      // An unknown API path keeps the JSON error body.
+      const api = await fetch(`${base}/api/no-such-endpoint`, { headers: { accept: "application/json" } });
+      expect(api.status).toBe(404);
+      expect(api.headers.get("content-type") ?? "").toContain("application/json");
+      expect(await api.json()).toEqual({ error: "not_found" });
     } finally {
       await server.close();
     }

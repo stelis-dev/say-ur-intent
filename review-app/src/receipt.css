@@ -87,6 +87,12 @@ button {
   cursor: pointer;
 }
 
+.copy-markdown {
+  display: block;
+  width: fit-content;
+  margin: 4px 0 16px auto;
+}
+
 button:hover:not(:disabled) {
   border-color: #6f8f7d;
 }

@@ -243,13 +243,65 @@ Source fields may keep protocol-facing names such as `fetchedAt`. Frontend label
 
 Frontend labels stay in English. Localization must preserve protocol names, token symbols, object IDs, package IDs, and reason enums without translation.
 
+## Shared UI And Design Principles
+
+The frontend pages share one design-token set and one set of atomic UI
+components: vanilla TypeScript DOM helpers in `review-app/src/ui` plus the shared
+stylesheet `review-app/public/ui.css`, served at `/review-assets/ui.css`. There is
+no React, Vue, Svelte, or client router. Pages compose the shared atoms and keep
+only their own layout, container, third-party-sizing, and composition CSS. The
+shared atoms are addressed by `ui-` prefixed classes that only the shared
+stylesheet declares; a page stylesheet declares no `ui-` class rule and no bare
+button, input, select, or textarea rule.
+
+The shared UI follows these durable principles:
+
+1. Always-actionable controls: every actionable control shows hover, active, and
+   keyboard-focus feedback. Controls are inert only during the deliberate,
+   clearly-signaled async lock. Status and errors are conveyed as text, not color
+   alone.
+2. One consistent system: all pages share one shell, one component set, and the
+   same element positions. Public pages carry the shared navigation; token pages
+   carry none.
+3. Multi-step pages show their full set of steps and mark the current step.
+4. A region keeps its position across state and data availability; when content is
+   empty, unsupported, or unavailable, the region shows a placeholder card in its
+   place rather than collapsing or restructuring the layout.
+5. Time-based progress and quantitative completeness use different components: a
+   progress bar only when a real value advances it, an indeterminate overlay for
+   an unknown-duration wait, and a count plus checklist for an already-known
+   "N of M".
+6. An action's result or error is tied to that action, stays visible, and carries
+   enough detail to diagnose afterward.
+7. Restraint: each page shows only the information it needs, with generous spacing.
+8. Information depth by importance: each page ranks its information and renders the
+   primary answer first and most prominent, audit detail behind disclosures, and
+   boundary notes quiet, using a two-weight type scale (regular and medium) where
+   size, color, and spacing carry the hierarchy.
+
+Theme: one light and dark token set with a toggle. A shared theme helper stores
+only the theme value (`light` or `dark`) under one fixed storage key; it never
+reads or writes a token, session id, wallet account, or any other state. The
+theme is the `data-theme` attribute on the document root and is applied through
+CSS variables with no inline styles, so it works under the strictest page CSP.
+
+Icons are SVG files or inline SVG, never an icon font or a CDN. The favicon
+(`favicon.svg`) and the theme-specific brand marks (`brand-light.svg`,
+`brand-dark.svg`) are served from `/review-assets/`; the header shows the brand
+mark for the active theme.
+
 ## Navigation
 
 The public pages share one navigation menu: Analytics (`/analytics`), Receipt
 Analytics (`/receipt`), and the DeepBook USDC chart (`/charts/deepbook-usdc`).
 The menu links only to public pages and never to a token page. It is
 server-rendered outside the page's `main` element, so the page script, which owns
-`main`, never removes it.
+`main`, never removes it. Pages migrated onto the shared shell instead render this
+navigation through the shell and clear only their own main region, so the shell's
+header and navigation persist across the page's re-renders. The public homepage at
+`/` and the HTML not-found page are public pages on the shared shell; an unmatched
+page request returns the not-found page, while API and asset requests keep their
+JSON error body.
 
 Token pages — Connect, Review & Execution, and Settings — have no navigation to
 other pages. Each is opened only through its agent-issued token URL, so every

@@ -1,0 +1,55 @@
+{
+  "brand": "Say Ur Intent",
+  "shell": {
+    "toggleTheme": "Toggle theme",
+    "openMenu": "Menu",
+    "publicPages": "Public pages",
+    "nav": {
+      "analytics": "Analytics",
+      "receipt": "Receipt",
+      "chart": "DeepBook chart"
+    }
+  },
+  "home": {
+    "hook": "Know what you sign.",
+    "lede": "Verified on-chain evidence for Sui DeFi, reviewed locally before you sign.",
+    "agentNote": "Connect, Review, and Settings open from your AI client.",
+    "cards": {
+      "analytics": {
+        "title": "Analytics",
+        "desc": "Public on-chain asset balances for any Sui mainnet address."
+      },
+      "receipt": {
+        "title": "Receipt analytics",
+        "desc": "On-chain receipt facts for any Sui mainnet transaction digest."
+      },
+      "chart": {
+        "title": "DeepBook USDC chart",
+        "desc": "Official DeepBookV3 Indexer USDC candle history, quoted in USDC."
+      }
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "lede": "On-chain assets for any address.",
+    "ledeTip": "The active wallet's address loads automatically; type any Sui mainnet address to view it instead. This page takes no token, binds nothing, and reads only public on-chain data.",
+    "searchLabel": "View assets",
+    "searchPlaceholder": "Sui mainnet address (0x…)",
+    "snapshot": "Asset snapshot",
+    "balances": "Balances",
+    "checkedAt": "Checked at",
+    "noBalances": "No coin balances in this snapshot.",
+    "boundaryTip": "This is a public on-chain asset snapshot at its fetched time. It is not P&L, not tax or cost-basis data, not payment readiness, and not signing readiness.",
+    "errorLoad": "Could not load public assets for this address.",
+    "errorShape": "The server returned an unexpected snapshot shape."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "lede": "This page doesn't exist.",
+    "home": "Back to home"
+  },
+  "common": {
+    "copyMarkdown": "Copy as Markdown",
+    "copied": "Copied"
+  }
+}

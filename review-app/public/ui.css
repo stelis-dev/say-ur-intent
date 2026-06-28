@@ -1,0 +1,611 @@
+/* Shared design tokens and atomic components for every Say Ur Intent page.
+   This file is the only place that declares `.ui-*` rules and the only place that
+   styles the bare interactive elements button/input/select/textarea. Pages keep
+   only their own layout, containers, third-party sizing, and compositions.
+   No inline styles are used anywhere, so the strictest page CSP (style-src 'self'
+   on the chart page) is satisfied. Colors come from the tokens below; the active
+   theme is the `data-theme` attribute on <html>. */
+
+:root[data-theme="light"] {
+  --ui-bg: #f6f8fa;
+  --ui-surface: #ffffff;
+  --ui-surface-2: #eef1f5;
+  --ui-border: #e3e8ef;
+  --ui-border-strong: #cdd5e0;
+  --ui-text: #18202b;
+  --ui-text-muted: #5b6675;
+  --ui-accent: #1565c0;
+  --ui-accent-hover: #0d47a1;
+  --ui-on-accent: #ffffff;
+  --ui-focus: rgba(21, 101, 192, 0.25);
+  --ui-ok-bg: #e2f3e9;
+  --ui-ok-text: #1b6b43;
+  --ui-warn-bg: #fbeeda;
+  --ui-warn-text: #8a5a08;
+  --ui-danger: #b3261e;
+  --ui-danger-bg: #fbe9e7;
+  --ui-up: #1b7f43;
+  --ui-down: #b3261e;
+}
+
+:root[data-theme="dark"] {
+  --ui-bg: #0e141b;
+  --ui-surface: #161d26;
+  --ui-surface-2: #1e2733;
+  --ui-border: #28323f;
+  --ui-border-strong: #3a4859;
+  --ui-text: #e7edf4;
+  --ui-text-muted: #9aa7b6;
+  --ui-accent: #4da2ff;
+  --ui-accent-hover: #6fb8ff;
+  --ui-on-accent: #06243f;
+  --ui-focus: rgba(77, 162, 255, 0.32);
+  --ui-ok-bg: #10362a;
+  --ui-ok-text: #7fe0b0;
+  --ui-warn-bg: #3a2e16;
+  --ui-warn-text: #f0c97a;
+  --ui-danger: #ff8a80;
+  --ui-danger-bg: #3a1f1d;
+  --ui-up: #46c79e;
+  --ui-down: #ff8a80;
+}
+
+:root {
+  --ui-r: 10px;
+  --ui-font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ui-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--ui-font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ui-mono {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+/* Shell: the outer page structure every page renders into. */
+.ui-shell {
+  position: relative;
+  min-height: 100vh;
+}
+
+.ui-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--ui-surface);
+  border-bottom: 0.5px solid var(--ui-border);
+}
+
+.ui-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ui-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ui-brand img {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+/* The brand mark is two theme-specific files; CSS shows the one for the active
+   theme so the swap needs no script. */
+:root[data-theme="light"] .ui-brand-dark {
+  display: none;
+}
+:root[data-theme="dark"] .ui-brand-light {
+  display: none;
+}
+
+.ui-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.ui-nav a {
+  font-size: 13.5px;
+  color: var(--ui-text-muted);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ui-nav a:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.ui-nav a[aria-current="page"] {
+  color: var(--ui-text);
+  background: var(--ui-surface-2);
+}
+
+.ui-header-spacer {
+  margin-left: auto;
+}
+
+/* Mobile menu button + drawer; the menu button exists only at mobile width and is
+   hidden (so non-functional) on desktop. The compound selector keeps this winning
+   over the base `.ui-icon-btn` display regardless of rule order in this file. */
+.ui-icon-btn.ui-menu-btn {
+  display: none;
+}
+
+.ui-drawer {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 16px 12px;
+  background: var(--ui-surface);
+  border-bottom: 0.5px solid var(--ui-border);
+}
+
+.ui-drawer a {
+  font-size: 14px;
+  color: var(--ui-text);
+  text-decoration: none;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.ui-drawer a:hover {
+  background: var(--ui-surface-2);
+}
+
+@media (max-width: 640px) {
+  .ui-nav {
+    display: none;
+  }
+  .ui-icon-btn.ui-menu-btn {
+    display: inline-flex;
+  }
+  .ui-shell.ui-drawer-open .ui-drawer {
+    display: flex;
+  }
+}
+
+.ui-main {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 22px 20px 48px;
+}
+
+/* Buttons. Every state has hover, active, and focus feedback; the only inert
+   state is the deliberate async lock. */
+.ui-btn {
+  min-height: 38px;
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: var(--ui-r);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: background 0.12s, border-color 0.12s, transform 0.06s;
+}
+
+.ui-btn:hover {
+  background: var(--ui-surface-2);
+  border-color: var(--ui-accent);
+}
+
+.ui-btn:active {
+  transform: scale(0.975);
+}
+
+.ui-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
+.ui-btn--primary {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-on-accent);
+}
+
+.ui-btn--primary:hover {
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent-hover);
+}
+
+.ui-btn--danger {
+  border-color: var(--ui-danger);
+  color: var(--ui-danger);
+}
+
+.ui-btn--danger:hover {
+  background: var(--ui-danger-bg);
+}
+
+.ui-btn:disabled {
+  cursor: not-allowed;
+  color: var(--ui-text-muted);
+  background: var(--ui-surface-2);
+  border-color: var(--ui-border);
+}
+
+.ui-icon-btn {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  padding: 0;
+  border-radius: 9px;
+  border: 0.5px solid var(--ui-border-strong);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s, transform 0.06s;
+}
+
+.ui-icon-btn:hover {
+  background: var(--ui-surface-2);
+  border-color: var(--ui-accent);
+}
+
+.ui-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.ui-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
+.ui-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Links. */
+.ui-link {
+  color: var(--ui-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ui-link:hover {
+  color: var(--ui-accent-hover);
+  text-decoration: underline;
+}
+
+/* Form controls: one family on the shared tokens. */
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.ui-input,
+input.ui-input {
+  height: 38px;
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: var(--ui-r);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 0 12px;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.ui-input {
+  width: 100%;
+}
+
+.ui-input::placeholder {
+  color: var(--ui-text-muted);
+}
+
+.ui-input:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
+/* Search field: the input with a magnifier button inside it on the right. */
+.ui-search {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.ui-search .ui-input {
+  padding-right: 44px;
+}
+
+.ui-search-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, background 0.12s;
+}
+
+.ui-search-btn:hover {
+  color: var(--ui-accent);
+  background: var(--ui-surface-2);
+}
+
+.ui-search-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
+.ui-search-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Cards and key/value rows. */
+.ui-card {
+  background: var(--ui-surface);
+  border: 0.5px solid var(--ui-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 0 0 14px;
+}
+
+.ui-card-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 10px;
+}
+
+.ui-section-title {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+  margin: 16px 0 6px;
+}
+
+.ui-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 0.5px solid var(--ui-border);
+  font-size: 14px;
+}
+
+.ui-row:first-child {
+  border-top: 0;
+}
+
+.ui-row-label {
+  color: var(--ui-text-muted);
+}
+
+.ui-row-value {
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Badges and pills. */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  border: 0.5px solid var(--ui-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: var(--ui-surface-2);
+  color: var(--ui-text-muted);
+}
+
+.ui-pill--ok {
+  background: var(--ui-ok-bg);
+  color: var(--ui-ok-text);
+}
+
+.ui-pill--warn {
+  background: var(--ui-warn-bg);
+  color: var(--ui-warn-text);
+}
+
+.ui-pill--danger {
+  background: var(--ui-danger-bg);
+  color: var(--ui-danger);
+}
+
+/* Feedback block: tied to an action, persistent, diagnosable. */
+.ui-feedback {
+  border: 0.5px solid var(--ui-border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 11px 13px;
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+
+.ui-feedback--ok {
+  border-left-color: var(--ui-ok-text);
+}
+
+.ui-feedback--error {
+  border-left-color: var(--ui-danger);
+}
+
+.ui-feedback-detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ui-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Placeholder card: shown in a slot whose content is empty, unsupported, or
+   unavailable, stating why. Keeps the slot's position; the layout never collapses. */
+.ui-placeholder {
+  border: 0.5px dashed var(--ui-border-strong);
+  border-radius: 12px;
+  padding: 18px;
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+
+/* Full-page loading overlay: set aria-busy="true" on the shell to lock the page
+   and show the overlay; clear it when the async action finishes. */
+.ui-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ui-bg) 70%, transparent);
+  z-index: 50;
+}
+
+.ui-shell[aria-busy="true"] .ui-overlay {
+  display: flex;
+}
+
+.ui-shell[aria-busy="true"] .ui-header,
+.ui-shell[aria-busy="true"] .ui-main,
+.ui-shell[aria-busy="true"] .ui-drawer {
+  filter: opacity(0.55);
+  pointer-events: none;
+}
+
+.ui-overlay-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+  background: var(--ui-surface);
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: 14px;
+  padding: 20px 26px;
+}
+
+.ui-spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid var(--ui-border-strong);
+  border-top-color: var(--ui-accent);
+  animation: ui-spin 0.8s linear infinite;
+}
+
+.ui-overlay-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ui-h1 {
+  font-size: 19px;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+
+.ui-subtitle {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+/* Quiet boundary/scope note (T4): present but low-emphasis. */
+.ui-note {
+  font-size: 12.5px;
+  color: var(--ui-text-muted);
+  line-height: 1.6;
+  margin: 12px 0 0;
+}
+
+/* Inline info marker: minimal label stays visible, the detail is a tooltip. */
+.ui-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  border: 0.5px solid var(--ui-border-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 500;
+  font-style: normal;
+  line-height: 1;
+  color: var(--ui-text-muted);
+  cursor: help;
+  vertical-align: middle;
+}
+
+.ui-info:hover,
+.ui-info:focus-visible {
+  outline: none;
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}

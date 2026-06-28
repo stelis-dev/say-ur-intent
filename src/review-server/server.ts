@@ -37,7 +37,16 @@ import { validateHostOrigin } from "./middleware/hostOrigin.js";
 import { readReviewToken } from "./middleware/reviewToken.js";
 import { defaultReviewAssetsDir, serveReviewAsset } from "./assets.js";
 import { createDeepbookUsdcChartApi } from "./deepbookUsdcChartApi.js";
-import { analyticsHtml, connectHtml, deepbookUsdcChartHtml, receiptHtml, reviewHtml, settingsHtml } from "./html.js";
+import {
+  analyticsHtml,
+  connectHtml,
+  deepbookUsdcChartHtml,
+  homeHtml,
+  notFoundHtml,
+  receiptHtml,
+  reviewHtml,
+  settingsHtml
+} from "./html.js";
 import { HttpError, readJsonBody, sendHtml, sendJson } from "./http.js";
 import { ALLOWED_HOSTNAMES, SUI_BROWSER_EXECUTION_ORIGIN } from "./reviewServerPolicy.js";
 import { routeSettingsApi } from "./settingsApi.js";
@@ -189,6 +198,7 @@ async function routeRequest(
   const apiReviewHandoffMatch = /^\/api\/review\/([^/]+)\/handoff$/.exec(url.pathname);
   const apiReviewHandoffCancelMatch = /^\/api\/review\/([^/]+)\/handoff\/cancel$/.exec(url.pathname);
   const apiAnalyticsAssetsMatch = /^\/api\/analytics\/assets$/.exec(url.pathname);
+  const apiAnalyticsActiveAccountMatch = /^\/api\/analytics\/active-account$/.exec(url.pathname);
   const apiReceiptMatch = /^\/api\/receipt$/.exec(url.pathname);
   const apiWalletOpenedMatch = /^\/api\/wallet\/([^/]+)\/opened$/.exec(url.pathname);
   const apiWalletConnectingMatch = /^\/api\/wallet\/([^/]+)\/connecting$/.exec(url.pathname);
@@ -260,14 +270,29 @@ async function routeRequest(
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/") {
+    sendHtml(response, homeHtml(), {
+      "content-security-policy": [
+        "default-src 'none'",
+        "base-uri 'none'",
+        "connect-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self' data:",
+        "form-action 'none'"
+      ].join("; ")
+    });
+    return;
+  }
+
   if (request.method === "GET" && analyticsMatch) {
     sendHtml(response, analyticsHtml(), {
       "content-security-policy": [
         "default-src 'none'",
         "base-uri 'none'",
-        // 'self' for the public analytics asset API; the Sui fullnode origin so
-        // the dapp-kit chain client can read mainnet state on wallet re-connect.
-        `connect-src 'self' ${SUI_BROWSER_EXECUTION_ORIGIN}`,
+        // Same-origin only: the page reads the public analytics APIs and binds no
+        // wallet, so it never talks to the Sui fullnode directly.
+        "connect-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
@@ -338,6 +363,16 @@ async function routeRequest(
     } catch {
       sendJson(response, 502, { error: "wallet_read_failed" });
     }
+    return;
+  }
+
+  if (request.method === "GET" && apiAnalyticsActiveAccountMatch) {
+    // Public loopback read of the local active account address so the Analytics
+    // page can default to the connected wallet (FRONTEND_POLICY: the user can see
+    // the active account). It returns only the address, never a token, session, or
+    // signing authority, and is null when no account is bound.
+    const account = options.activityStore ? await options.activityStore.getActiveAccount() : undefined;
+    sendJson(response, 200, { address: account?.address ?? null });
     return;
   }
 
@@ -648,6 +683,27 @@ async function routeRequest(
     return;
   }
 
+  // Page navigations (Accept: text/html) get the HTML not-found page on the
+  // shared shell; API and asset requests keep the JSON error body.
+  if (request.method === "GET" && (request.headers.accept ?? "").includes("text/html")) {
+    sendHtml(
+      response,
+      notFoundHtml(),
+      {
+        "content-security-policy": [
+          "default-src 'none'",
+          "base-uri 'none'",
+          "connect-src 'self'",
+          "script-src 'self'",
+          "style-src 'self'",
+          "img-src 'self' data:",
+          "form-action 'none'"
+        ].join("; ")
+      },
+      404
+    );
+    return;
+  }
   sendJson(response, 404, { error: "not_found" });
 }
 

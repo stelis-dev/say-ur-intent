@@ -17,7 +17,9 @@ export default defineConfig({
         analytics: resolve("review-app/src/analytics.ts"),
         receipt: resolve("review-app/src/receipt.ts"),
         settings: resolve("review-app/src/settings.ts"),
-        deepbookUsdcChart: resolve("review-app/src/deepbookUsdcChart.ts")
+        deepbookUsdcChart: resolve("review-app/src/deepbookUsdcChart.ts"),
+        homepage: resolve("review-app/src/homepage.ts"),
+        notFound: resolve("review-app/src/notFound.ts")
       },
       output: {
         entryFileNames: "[name].js",
@@ -28,7 +30,9 @@ export default defineConfig({
           assetInfo.name === "analytics.css" ||
           assetInfo.name === "receipt.css" ||
           assetInfo.name === "settings.css" ||
-          assetInfo.name === "deepbookUsdcChart.css"
+          assetInfo.name === "deepbookUsdcChart.css" ||
+          assetInfo.name === "homepage.css" ||
+          assetInfo.name === "notFound.css"
             ? "[name][extname]"
             : "[name]-[hash][extname]"
       }

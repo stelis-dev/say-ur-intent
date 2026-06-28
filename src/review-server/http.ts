@@ -11,8 +11,13 @@ export class HttpError extends Error {
   }
 }
 
-export function sendHtml(response: ServerResponse, body: string, headers: Record<string, string> = {}): void {
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8", ...headers });
+export function sendHtml(
+  response: ServerResponse,
+  body: string,
+  headers: Record<string, string> = {},
+  status = 200
+): void {
+  response.writeHead(status, { "content-type": "text/html; charset=utf-8", ...headers });
   response.end(body);
 }
 

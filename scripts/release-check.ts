@@ -25,6 +25,14 @@ const requiredFiles = [
   "dist/review-app/analytics.css",
   "dist/review-app/receipt.js",
   "dist/review-app/receipt.css",
+  "dist/review-app/homepage.js",
+  "dist/review-app/homepage.css",
+  "dist/review-app/notFound.js",
+  "dist/review-app/notFound.css",
+  "dist/review-app/ui.css",
+  "dist/review-app/favicon.svg",
+  "dist/review-app/brand-light.svg",
+  "dist/review-app/brand-dark.svg",
   "docs/UTILITY_INDEX.md",
   ...MCP_RESOURCES.map((resource) => resource.path)
 ] as const;

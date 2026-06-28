@@ -1,6 +1,9 @@
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
 import type { PublicChainReceipt } from "../../src/core/action/suiChainReceiptReader.js";
 import { parseReceipt } from "./receiptFacts.js";
+import { receiptToMarkdown } from "./receiptMarkdown.js";
+import { copyToClipboard } from "./ui/ui.js";
+import { t } from "./i18n/i18n.js";
 import "./receipt.css";
 
 // Public Receipt Analytics: on-chain receipt facts for one transaction digest,
@@ -92,12 +95,26 @@ function receiptPanel(): HTMLElement {
   const wrapper = document.createElement("section");
   wrapper.className = "receipt-panel";
   wrapper.append(renderReceipt());
+  if (receiptData && requestedFor === queryDigest) {
+    wrapper.append(copyMarkdownButton(receiptData));
+  }
   const note = document.createElement("p");
   note.className = "boundary-note";
   note.textContent =
     "These are public on-chain receipt facts only. They are not review evidence, not a safety verdict, not P&L, and not payment readiness.";
   wrapper.append(note);
   return wrapper;
+}
+
+function copyMarkdownButton(receipt: PublicChainReceipt): HTMLElement {
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "copy-markdown";
+  copy.textContent = t.common.copyMarkdown;
+  copy.addEventListener("click", () =>
+    copyToClipboard(copy, () => receiptToMarkdown(queryDigest, receipt), t.common.copied)
+  );
+  return copy;
 }
 
 function renderReceipt(): HTMLElement {
