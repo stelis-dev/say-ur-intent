@@ -73,11 +73,8 @@ export function connectHtml(sessionId: string): string {
     title: "Say Ur Intent Connect",
     css: "connect.css",
     js: "connect.js",
-    ui: false,
-    body: `    <main id="connect-app" data-wallet-session-id="${escapeHtml(sessionId)}">
-      <h1>Connect your Sui wallet</h1>
-      <p>Connect a Sui mainnet wallet to bind its address as the active account for account-bound review.</p>
-    </main>`
+    ui: true,
+    body: `    <div id="connect-app" data-wallet-session-id="${escapeHtml(sessionId)}"></div>`
   });
 }
 
@@ -106,11 +103,8 @@ export function settingsHtml(sessionId: string): string {
     title: "Say Ur Intent Settings",
     css: "settings.css",
     js: "settings.js",
-    ui: false,
-    body: `    <main id="settings-app" data-settings-session-id="${escapeHtml(sessionId)}">
-      <h1>Say Ur Intent Settings</h1>
-      <p id="settings-status" role="status" aria-live="polite">Loading local settings...</p>
-    </main>`
+    ui: true,
+    body: `    <div id="settings-app" data-settings-session-id="${escapeHtml(sessionId)}"></div>`
   });
 }
 

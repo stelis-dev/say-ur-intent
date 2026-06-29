@@ -1,4 +1,6 @@
 import "./settings.css";
+import { renderShell } from "./ui/shell.js";
+import { button, buttonRow, card, element, feedback, input, note, row } from "./ui/ui.js";
 import { MAX_SUI_GRAPHQL_URL_LENGTH, MAX_SUI_GRPC_URL_LENGTH } from "../../src/core/suiEndpoint.js";
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
 import { readPageToken, tokenHeaders } from "./token.js";
@@ -54,6 +56,9 @@ const rootElement = root;
 
 const settingsSessionId = rootElement.dataset.settingsSessionId ?? "";
 const token = readPageToken();
+// Token page: the shared shell in token mode (no navigation, brand not a link).
+const shell = renderShell(rootElement, "token");
+const main = shell.main;
 let statusPayload: StatusPayload | undefined;
 let importPayload: unknown | undefined;
 let importPreview: ImportPreview | undefined;
@@ -67,39 +72,42 @@ if (settingsSessionId && token) {
 }
 
 function render(): void {
-  rootElement.innerHTML = "";
-  const shell = element("section", "settings-shell");
-  shell.append(element("h1", undefined, "Say Ur Intent Settings"));
-  shell.append(
-    element(
-      "p",
-      "settings-copy",
+  const content: HTMLElement[] = [];
+  content.push(element("h1", "settings-title", "Say Ur Intent Settings"));
+  content.push(
+    note(
       "Use this local page to manage wallet read context, local data, and Sui read endpoints. Settings changes do not sign transactions or grant custody."
     )
   );
 
-  const status = element("p", errorMessage ? "status error" : "status", errorMessage || message || "Ready.");
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  shell.append(status);
+  if (errorMessage) {
+    content.push(feedback("error", errorMessage));
+  } else if (message) {
+    content.push(feedback("ok", message));
+  }
 
   if (!settingsSessionId || !token) {
-    shell.append(element("p", "error", "Missing settings session id or token. Open the settings URL from your AI client again."));
-    rootElement.append(shell);
+    content.push(
+      feedback("error", "Missing settings session id or token. Open the settings URL from your AI client again.")
+    );
+    main.replaceChildren(...content);
     return;
   }
 
-  shell.append(renderStatusPanel());
-  shell.append(renderWalletPanel());
-  shell.append(renderEndpointPanel());
-  shell.append(renderLocalDataPanel());
-  rootElement.append(shell);
+  content.push(
+    renderStatusPanel(),
+    renderWalletPanel(),
+    renderEndpointPanel(),
+    renderLocalDataPanel(),
+    renderResetPanel()
+  );
+  main.replaceChildren(...content);
 }
 
 function renderStatusPanel(): HTMLElement {
   const panel = card("Status");
   if (!statusPayload) {
-    panel.append(element("p", undefined, "Loading..."));
+    panel.append(note("Loading…"));
     return panel;
   }
   panel.append(row("Server", `${statusPayload.server.name} ${statusPayload.server.version}`));
@@ -119,9 +127,7 @@ function renderStatusPanel(): HTMLElement {
 function renderWalletPanel(): HTMLElement {
   const panel = card("Wallet");
   panel.append(
-    element(
-      "p",
-      undefined,
+    note(
       "Clear active account removes only the local read context; it does not disconnect a wallet or revoke onchain permission. To connect a wallet, open the connect link from your AI client; binding happens only on the Connect page."
     )
   );
@@ -131,26 +137,38 @@ function renderWalletPanel(): HTMLElement {
 
 function renderEndpointPanel(): HTMLElement {
   const panel = card("Sui gRPC endpoint");
-  const input = document.createElement("input");
-  input.type = "url";
-  input.value = statusPayload?.localSettings.suiGrpcUrl.storedValue ?? "";
-  input.placeholder = "https://fullnode.mainnet.sui.io:443";
-  input.autocomplete = "off";
-  input.maxLength = MAX_SUI_GRPC_URL_LENGTH;
-  panel.append(input);
-  panel.append(button("Save endpoint", () => void saveEndpoint(input.value)));
-  panel.append(button("Restore default Sui gRPC URL", () => void restoreDefaultEndpoint(), "secondary"));
+  const grpcInput = input({
+    type: "url",
+    value: statusPayload?.localSettings.suiGrpcUrl.storedValue ?? "",
+    placeholder: "https://fullnode.mainnet.sui.io:443"
+  });
+  grpcInput.maxLength = MAX_SUI_GRPC_URL_LENGTH;
+  grpcInput.setAttribute("aria-label", "Sui gRPC endpoint URL");
+  panel.append(grpcInput);
+  panel.append(
+    buttonRow(
+      button("Save endpoint", () => void saveEndpoint(grpcInput.value)),
+      button("Restore default Sui gRPC URL", () => void restoreDefaultEndpoint(), "secondary")
+    )
+  );
+
   const graphqlPanel = card("Sui GraphQL endpoint");
-  const graphqlInput = document.createElement("input");
-  graphqlInput.type = "url";
-  graphqlInput.value = statusPayload?.localSettings.suiGraphqlUrl.storedValue ?? "";
-  graphqlInput.placeholder = "https://graphql.mainnet.sui.io/graphql";
-  graphqlInput.autocomplete = "off";
+  const graphqlInput = input({
+    type: "url",
+    value: statusPayload?.localSettings.suiGraphqlUrl.storedValue ?? "",
+    placeholder: "https://graphql.mainnet.sui.io/graphql"
+  });
   graphqlInput.maxLength = MAX_SUI_GRAPHQL_URL_LENGTH;
+  graphqlInput.setAttribute("aria-label", "Sui GraphQL endpoint URL");
   graphqlPanel.append(graphqlInput);
-  graphqlPanel.append(button("Save GraphQL endpoint", () => void saveGraphqlEndpoint(graphqlInput.value)));
-  graphqlPanel.append(button("Restore default Sui GraphQL URL", () => void restoreDefaultGraphqlEndpoint(), "secondary"));
-  const wrapper = element("div");
+  graphqlPanel.append(
+    buttonRow(
+      button("Save GraphQL endpoint", () => void saveGraphqlEndpoint(graphqlInput.value)),
+      button("Restore default Sui GraphQL URL", () => void restoreDefaultGraphqlEndpoint(), "secondary")
+    )
+  );
+
+  const wrapper = element("div", "settings-endpoints");
   wrapper.append(panel, graphqlPanel);
   return wrapper;
 }
@@ -158,18 +176,27 @@ function renderEndpointPanel(): HTMLElement {
 function renderLocalDataPanel(): HTMLElement {
   const panel = card("Local data");
   panel.append(
-      element(
-        "p",
-        undefined,
-        "Reset, import, and export operate on logical local data. Import preview checks the backup shape only; endpoint verification runs when import is confirmed. Reset and import invalidate open review, wallet, and settings pages."
-      )
-    );
-  panel.append(button("Export local data", () => void exportLocalData()));
+    note(
+      "Export downloads a backup of your local data. Import previews a chosen backup file (shape only); endpoint verification runs when you confirm, and importing replaces current local data and invalidates open review, wallet, and settings pages."
+    )
+  );
 
+  // The native file input is visually hidden; the styled button opens it, so the
+  // import control reads as a button alongside Export. The chosen file is surfaced
+  // through the preview feedback below, not the native control.
   const file = document.createElement("input");
   file.type = "file";
   file.accept = "application/json,.json";
+  file.className = "settings-file";
+  file.setAttribute("aria-label", "Choose a Say Ur Intent backup file to import");
   file.onchange = () => void previewImport(file);
+
+  panel.append(
+    buttonRow(
+      button("Export local data", () => void exportLocalData()),
+      button("Choose backup file…", () => file.click(), "secondary")
+    )
+  );
   panel.append(file);
 
   if (importPreview) {
@@ -177,15 +204,26 @@ function renderLocalDataPanel(): HTMLElement {
       ? ` Missing settings filled with defaults: ${importPreview.defaultsInjected.join(", ")}.`
       : "";
     panel.append(
-      element(
-        "p",
-        "success",
+      feedback(
+        "ok",
         `Import preview ready. Incoming accounts: ${importPreview.incomingCounts.accounts}. Active account change: ${importPreview.activeAccountChange}.${defaultInjectionText} Endpoint verification runs before replacement. This import replaces current local data.`
       )
     );
-    panel.append(button("Import and replace local data", () => void importLocalData(), "danger"));
+    panel.append(buttonRow(button("Import and replace local data", () => void importLocalData(), "danger")));
   }
 
+  return panel;
+}
+
+// Reset is the irreversible wipe, so it lives in its own card, apart from the
+// reversible export/import actions, to signal its different severity.
+function renderResetPanel(): HTMLElement {
+  const panel = card("Danger zone");
+  panel.append(
+    note(
+      "Reset permanently clears all local Say Ur Intent data and invalidates every open review, wallet, and settings page. This cannot be undone."
+    )
+  );
   panel.append(button("Reset local data", () => void resetLocalData(), "danger"));
   return panel;
 }
@@ -386,33 +424,4 @@ async function requestJson<T = unknown>(path: string, init: RequestInit): Promis
 function formatBytes(bytes: number): string {
   const mib = bytes / (1024 * 1024);
   return Number.isInteger(mib) ? `${mib} MiB` : `${bytes} bytes`;
-}
-
-function card(title: string): HTMLElement {
-  const panel = element("section", "settings-card");
-  panel.append(element("h2", undefined, title));
-  return panel;
-}
-
-function row(label: string, value: string): HTMLElement {
-  const item = element("div", "settings-row");
-  item.append(element("span", "settings-label", label));
-  item.append(element("span", "settings-value", value));
-  return item;
-}
-
-function button(label: string, onclick: () => void, variant = "primary"): HTMLButtonElement {
-  const control = document.createElement("button");
-  control.type = "button";
-  control.className = `button ${variant}`;
-  control.textContent = label;
-  control.onclick = onclick;
-  return control;
-}
-
-function element(tagName: string, className?: string, text?: string): HTMLElement {
-  const node = document.createElement(tagName);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
 }

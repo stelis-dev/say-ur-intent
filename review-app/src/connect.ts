@@ -3,6 +3,8 @@ import { createLocalDAppKit, hasStoredWalletSelection } from "./dappKitClient.js
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
 import { readPageToken, tokenHeaders } from "./token.js";
 import "./connect.css";
+import { renderShell } from "./ui/shell.js";
+import { agentOriginBadge, button, card, copyButton, element, feedback, note, walletChip } from "./ui/ui.js";
 import {
   resultForConnectedAccount,
   resultForNoCompatibleWallet,
@@ -27,6 +29,10 @@ const walletSessionId = rootElement.dataset.walletSessionId ?? "";
 const token = readPageToken();
 
 const dAppKit = createLocalDAppKit();
+
+// Token page: the shared shell in token mode (no navigation, brand not a link).
+const shell = renderShell(rootElement, "token");
+const main = shell.main;
 
 // The server wallet-identity session is the single source of truth for this page.
 // Every server call (/opened, /connecting, /result) returns the authoritative
@@ -92,89 +98,87 @@ function render(): void {
     void recordConnected(connection.account, connection.wallet);
   }
 
-  rootElement.innerHTML = "";
-  const section = document.createElement("section");
-  section.className = "wallet-shell";
+  const panel = card();
+  panel.append(agentOriginBadge("Opened from your AI client"));
 
-  const heading = document.createElement("h1");
-  heading.textContent = "Connect your Sui wallet";
-  section.append(heading);
+  panel.append(element("h1", "connect-title", "Connect your Sui wallet"));
+  panel.append(
+    element(
+      "p",
+      "connect-lede",
+      "Connect a Sui mainnet wallet to bind its address as the active account for account-bound review. This page only binds an address; it prepares no transaction and does nothing else."
+    )
+  );
 
-  const copy = document.createElement("p");
-  copy.textContent =
-    "Connect a Sui mainnet wallet to bind its address as the active account for account-bound review. This page only binds an address; it prepares no transaction and does nothing else.";
-  section.append(copy);
-
-  const status = document.createElement("p");
-  status.className = "status";
-  status.setAttribute("aria-live", "polite");
-  status.setAttribute("aria-atomic", "true");
-  status.textContent = statusText(connection.status);
-  section.append(status);
-
-  appendBody(section, connection, wallets);
-  rootElement.append(section);
+  appendBody(panel, connection, wallets);
+  main.replaceChildren(panel);
 }
 
 function appendBody(
-  section: HTMLElement,
+  panel: HTMLElement,
   connection: ReturnType<typeof dAppKit.stores.$connection.get>,
   wallets: readonly UiWallet[]
 ): void {
   if (!token) {
-    section.append(errorLine("Missing connect token. Open the connect URL from your AI client again."));
+    panel.append(feedback("error", "Missing connect token. Open the connect URL from your AI client again."));
     return;
   }
   if (pageError) {
-    section.append(
-      errorLine("This connect session is no longer available. Open a fresh connect URL from your AI client.")
+    panel.append(
+      feedback(
+        "error",
+        "This connect session is no longer available. Open a fresh connect URL from your AI client.",
+        lastError
+      )
     );
     return;
   }
   if (!session) {
+    panel.append(note("Opening the connect session…"));
     return; // checking the token
   }
 
   const serverStatus = session.status;
   if (serverStatus === "connected") {
-    section.append(successLine(`Connected address: ${session.account ?? "(address unavailable)"}`));
-    section.append(plainLine("Return to your AI client to continue. This page only binds the address."));
+    panel.append(feedback("ok", "Wallet address bound."));
+    if (session.account) {
+      const boundAddress = session.account;
+      panel.append(walletChip({ address: boundAddress }));
+      panel.append(copyButton("Copy address", () => boundAddress, "Copied"));
+    }
+    panel.append(note("Return to your AI client to continue. This page only binds the address."));
     return;
   }
   if (serverStatus === "rejected" || serverStatus === "failed") {
-    section.append(errorLine("Return to your AI client and request a new connect URL."));
+    panel.append(feedback("error", "Return to your AI client and request a new connect URL."));
     return;
   }
   if (serverStatus === "expired") {
-    section.append(errorLine("This connect session has expired. Open a fresh connect URL from your AI client."));
+    panel.append(feedback("error", "This connect session has expired. Open a fresh connect URL from your AI client."));
     return;
   }
 
   // Non-terminal server session (pending / opened / connecting).
   if (connection.status === "connected" || isBusy) {
-    section.append(plainLine("Recording the connection with the local server…"));
-  } else if (autoConnectSettling || connection.status === "connecting" || connection.status === "reconnecting") {
-    section.append(plainLine("Reconnecting your wallet…"));
+    panel.append(note("Recording the connection with the local server…"));
+  } else if (connection.status === "connecting") {
+    panel.append(note("Finish or cancel the request in your wallet popup."));
+  } else if (autoConnectSettling || connection.status === "reconnecting") {
+    panel.append(note("Reconnecting your wallet…"));
   } else if (wallets.length === 0) {
-    section.append(errorLine("No compatible Sui wallet was detected in this browser."));
-    const button = document.createElement("button");
-    button.type = "button";
-    button.disabled = isBusy;
-    button.textContent = "Report no compatible wallet";
-    button.onclick = () => void submitResult(resultForNoCompatibleWallet());
-    section.append(button);
+    panel.append(feedback("error", "No compatible Sui wallet was detected in this browser."));
+    const report = button("Report no compatible wallet", () => void submitResult(resultForNoCompatibleWallet()), "secondary");
+    report.disabled = isBusy;
+    panel.append(report);
   } else {
-    const list = document.createElement("div");
-    list.className = "wallet-list";
+    panel.append(note("Choose a wallet to continue."));
+    const list = element("div", "connect-wallet-list");
     for (const wallet of wallets) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.disabled = isBusy;
-      button.textContent = wallet.name;
-      button.onclick = () => void connect(wallet);
-      list.append(button);
+      const pick = button(wallet.name, () => void connect(wallet), "secondary");
+      pick.disabled = isBusy;
+      list.append(pick);
     }
-    section.append(list);
+    panel.append(list);
   }
 }
 
@@ -259,36 +263,4 @@ async function postSession(path: string, body: Record<string, unknown>): Promise
     status: data.status,
     account: typeof data.account === "string" ? data.account : undefined
   };
-}
-
-function statusText(connectionStatus: string): string {
-  if (!token) return "Open the connect URL from your AI client.";
-  if (pageError) return lastError ?? "This connect session is no longer available.";
-  if (!session) return "Opening the connect session…";
-  const serverStatus = session.status;
-  if (serverStatus === "connected") return "Wallet address bound. Result recorded by the local server.";
-  if (serverStatus === "rejected" || serverStatus === "failed") return "Wallet result recorded by the local server.";
-  if (serverStatus === "expired") return "This connect session has expired.";
-  if (isBusy || connectionStatus === "connected") return "Recording the connection with the local server.";
-  if (connectionStatus === "connecting") return "Finish or cancel the request in your wallet popup.";
-  return "Choose a wallet to continue.";
-}
-
-function plainLine(text: string): HTMLElement {
-  return line("status", text);
-}
-
-function successLine(text: string): HTMLElement {
-  return line("success", text);
-}
-
-function errorLine(text: string): HTMLElement {
-  return line("error", text);
-}
-
-function line(className: string, text: string): HTMLElement {
-  const element = document.createElement("p");
-  element.className = className;
-  element.textContent = text;
-  return element;
 }

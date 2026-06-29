@@ -5,6 +5,8 @@
 // from each page's <head>, so it is not bundled per entry and is never
 // code-split into an unlinked chunk.
 
+import { shortAddress } from "../format.js";
+
 export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -41,6 +43,15 @@ export function iconButton(svgMarkup: string, ariaLabel: string, onClick: () => 
   node.setAttribute("aria-label", ariaLabel);
   node.innerHTML = svgMarkup;
   node.addEventListener("click", onClick);
+  return node;
+}
+
+// A horizontal group of buttons that share one width: each direct .ui-btn child
+// is sized equally and the group wraps to full-width stacked rows when too narrow,
+// so a short and a long label still read as a matched pair.
+export function buttonRow(...buttons: HTMLElement[]): HTMLElement {
+  const node = element("div", "ui-btn-row");
+  node.append(...buttons);
   return node;
 }
 
@@ -177,6 +188,27 @@ export function chip(
     node.addEventListener("click", options.onClick);
   }
   return node;
+}
+
+// A connected/bound wallet shown compactly: optional wallet name + the shortened
+// address (full address on hover). Shared by the Connect page and the review header.
+export function walletChip(options: { address: string; walletName?: string }): HTMLElement {
+  const node = element("span", "ui-wallet-chip");
+  if (options.walletName) {
+    node.append(element("span", "ui-wallet-chip-name", options.walletName));
+  }
+  node.append(mono(shortAddress(options.address)));
+  // The visible value is shortened; the full address stays available to assistive
+  // tech and on hover (callers that need it visible/copyable render it separately).
+  node.title = options.address;
+  node.setAttribute("aria-label", options.walletName ? `${options.walletName} ${options.address}` : options.address);
+  return node;
+}
+
+// A badge marking a page opened from the user's AI client (the token pages). The
+// label is passed in (i18n) so the atom carries no copy.
+export function agentOriginBadge(label: string): HTMLElement {
+  return element("span", "ui-agent-badge", label);
 }
 
 export type StatusKind = "success" | "failure" | "pending" | "neutral";

@@ -254,6 +254,22 @@ body {
   border-color: var(--ui-border);
 }
 
+/* A group of buttons that share one width. Each button takes an equal share of the
+   row (flex-basis 0) so a short and a long label render at the same width; the
+   min-width makes the group wrap to full-width stacked rows when it gets too narrow
+   (mobile), instead of squeezing labels. */
+.ui-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ui-btn-row > .ui-btn {
+  flex: 1 1 0;
+  min-width: 12rem;
+}
+
 .ui-icon-btn {
   width: 34px;
   height: 34px;
@@ -485,6 +501,35 @@ input.ui-input {
   border: 0.5px solid var(--ui-border);
   border-radius: 999px;
   padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.ui-wallet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0.5px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.ui-wallet-chip-name {
+  font-weight: 500;
+}
+
+.ui-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 0.5px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface);
+  color: var(--ui-text-muted);
+  font-size: 11.5px;
   white-space: nowrap;
 }
 

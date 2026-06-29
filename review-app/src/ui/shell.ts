@@ -3,7 +3,7 @@
 // overlay. Every page renders into the `main` this returns and clears only that
 // region; the shell chrome (header, nav) persists across the page's re-renders.
 import { element, iconButton } from "./ui.js";
-import { currentTheme, initTheme, toggleTheme } from "./theme.js";
+import { currentTheme, initTheme, toggleTheme, type Theme } from "./theme.js";
 import { t } from "../i18n/i18n.js";
 
 // Public pages pass their nav key (the shared nav shows, with that link current);
@@ -53,6 +53,13 @@ const MOON_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
 const MENU_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+
+// The toggle shows the icon for the theme that is CURRENTLY active - a moon while
+// dark, a sun while light - not the theme it would switch to. Pure + exported so
+// the convention has a behavioral test without a DOM.
+export function themeToggleIcon(theme: Theme): string {
+  return theme === "dark" ? MOON_ICON : SUN_ICON;
+}
 
 function brandImg(className: string): HTMLImageElement {
   const img = document.createElement("img");
@@ -110,9 +117,9 @@ export function renderShell(mount: HTMLElement, nav: ShellNav): Shell {
 
   header.append(element("span", "ui-header-spacer"));
 
-  const themeButton = iconButton(currentTheme() === "dark" ? SUN_ICON : MOON_ICON, t.shell.toggleTheme, () => {
+  const themeButton = iconButton(themeToggleIcon(currentTheme()), t.shell.toggleTheme, () => {
     const next = toggleTheme();
-    themeButton.innerHTML = next === "dark" ? SUN_ICON : MOON_ICON;
+    themeButton.innerHTML = themeToggleIcon(next);
   });
   // The theme toggle comes before the mobile menu button; the menu button is the
   // last item and shows only at mobile width.
