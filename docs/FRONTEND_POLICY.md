@@ -326,7 +326,7 @@ Wallet and review screens must be keyboard reachable and screen-reader labeled. 
 
 Native push notifications are out of scope. A frontend may use low-authority browser affordances such as document title changes for off-tab terminal results, but only after server status changes.
 
-Each session URL represents one independent tab surface. Cross-tab state sharing is out of scope unless a shared local store is explicitly designed. That shared local store is now explicitly designed — the shared SQLite database (see docs/LOCAL_DB_ARCHITECTURE.md) — so live review and session state is shared across local clients through it, while the frontend still does not share state directly between browser tabs.
+Each session URL represents one independent tab surface. Live review and session state is shared across local clients through a shared SQLite database (see docs/LOCAL_DB_ARCHITECTURE.md); the frontend itself does not share state directly between browser tabs.
 
 ## Out Of Scope
 
