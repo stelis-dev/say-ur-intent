@@ -24,11 +24,28 @@ export const SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE = includeObjectFromFields
   SUI_CHAIN_RECEIPT_REQUIRED_INCLUDE
 );
 
+// How long the post-sign verifier waits for the just-signed transaction to become queryable on
+// this server's fullnode before reporting not_found. The transaction is already confirmed on the
+// wallet's fullnode (executeTransaction returned), so this only absorbs checkpoint-propagation lag
+// to the server's node — a single review-page poll then resolves straight to the final receipt
+// instead of stalling on "Signed - verifying on Sui mainnet".
+export const SUI_CHAIN_RECEIPT_WAIT_TIMEOUT_MS = 12_000;
+
+// waitForTransaction aborts with a DOMException named "TimeoutError" when its wait window elapses.
+// Treat that exactly like not_found — the transaction is simply not readable here yet — so the
+// session stays pending for a retry rather than being marked a verification failure.
+function isWaitTimeoutError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "TimeoutError";
+}
+
 export type SuiChainReceiptVerifierClient = {
   core: {
     getChainIdentifier(): Promise<SuiClientTypes.GetChainIdentifierResponse>;
     getTransaction(
       options: SuiClientTypes.GetTransactionOptions<ChainReceiptInclude>
+    ): Promise<SuiClientTypes.TransactionResult<ChainReceiptInclude>>;
+    waitForTransaction(
+      options: SuiClientTypes.WaitForTransactionOptions<ChainReceiptInclude>
     ): Promise<SuiClientTypes.TransactionResult<ChainReceiptInclude>>;
   };
 };
@@ -94,16 +111,20 @@ export async function verifySuiChainReceipt(
 
   let result: SuiClientTypes.TransactionResult<ChainReceiptInclude>;
   try {
-    result = await options.client.core.getTransaction({
+    // The signed transaction was just submitted: it is on chain but may not yet be queryable on
+    // this server's fullnode (checkpoint-propagation lag). Wait for it instead of returning a
+    // premature not_found, so a single review-page poll resolves straight to the final receipt.
+    result = await options.client.core.waitForTransaction({
       digest: parsedInput.txDigest,
-      include: SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE
+      include: SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE,
+      timeout: SUI_CHAIN_RECEIPT_WAIT_TIMEOUT_MS
     });
   } catch (error) {
-    if (isReceiptNotFoundError(error)) {
+    if (isReceiptNotFoundError(error) || isWaitTimeoutError(error)) {
       return {
         status: "not_found",
         failureReason: "chain_receipt_unavailable",
-        message: "Sui mainnet did not return a transaction for the signed digest."
+        message: "Sui mainnet did not return a transaction for the signed digest within the wait window."
       };
     }
     return verificationFailed(receiptErrorMessage(error, "Sui mainnet transaction lookup failed."));

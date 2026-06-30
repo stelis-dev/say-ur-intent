@@ -23,12 +23,13 @@
   color: var(--ui-text-muted);
 }
 
-/* Full-bleed chart area: fills the card body under the header bar. Lightweight
-   Charts renders a light canvas, so the area keeps a light surface in both themes. */
+/* Full-bleed chart area: fills the card body under the header bar. The canvas is themed
+   via applyOptions (deepbookUsdcChart.ts), so the area and its legend strip use the same
+   shared surface/text tokens to match the canvas in both light and dark. */
 .chart-area {
   position: relative;
   margin: -14px -18px -16px;
-  background: #ffffff;
+  background: var(--ui-surface);
   border-radius: 0 0 12px 12px;
   overflow: hidden;
   display: grid;
@@ -47,16 +48,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, #ffffff 60%, transparent);
+  background: color-mix(in srgb, var(--ui-surface) 60%, transparent);
   border-radius: 0 0 12px 12px;
-  color: #27342e;
+  color: var(--ui-text);
   font-size: 13px;
   font-weight: 500;
 }
 
 .chart-legend {
   padding: 8px 12px 0;
-  color: #27342e;
+  color: var(--ui-text);
   font-size: 12.5px;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -72,7 +73,7 @@
   align-items: center;
   justify-content: center;
   min-height: 360px;
-  color: #5d6d65;
+  color: var(--ui-text-muted);
   font-size: 13px;
 }
 

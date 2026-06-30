@@ -4,6 +4,8 @@ import {
   LineSeries,
   createChart,
   type CandlestickData,
+  type ChartOptions,
+  type DeepPartial,
   type HistogramData,
   type IChartApi,
   type LineData,
@@ -132,6 +134,15 @@ async function startDeepbookUsdcChart(rootElement: HTMLElement): Promise<void> {
   };
 
   render(state);
+
+  // lightweight-charts draws to a canvas and cannot read CSS variables, so re-apply the themed
+  // chrome to whatever chart `render` last created whenever the shared `data-theme` toggle flips.
+  // One observer for the page lifetime.
+  new MutationObserver(() => state.chart?.applyOptions(chartChromeOptions())).observe(
+    document.documentElement,
+    { attributes: true, attributeFilter: ["data-theme"] }
+  );
+
   try {
     const pools = await requestJson<DeepbookUsdcChartPoolsResponse>("/api/charts/deepbook-usdc/pools");
     if (pools.status !== "ok") {
@@ -453,15 +464,30 @@ function majorPools(state: AppState): ChartPool[] {
   return state.pools.slice(0, MAJOR_POOL_CHIP_COUNT);
 }
 
+// Chart chrome (background, text, grid, axis borders) read from the page's shared theme
+// tokens so the canvas tracks light/dark like every other surface. lightweight-charts has no
+// theme concept — applyOptions with these colors is its only documented theming path — so the
+// same options seed createChart and are re-applied whenever the `data-theme` attribute flips.
+// The candlestick/line/volume colors stay fixed: they are semantic (up green / down red, a
+// distinct per-series palette) and read on both backgrounds.
+function chartChromeOptions(): DeepPartial<ChartOptions> {
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name: string): string => styles.getPropertyValue(name).trim();
+  return {
+    layout: { background: { color: token("--ui-surface") }, textColor: token("--ui-text") },
+    grid: { vertLines: { color: token("--ui-border") }, horzLines: { color: token("--ui-border") } },
+    rightPriceScale: { borderColor: token("--ui-border-strong") },
+    timeScale: { borderColor: token("--ui-border-strong") }
+  };
+}
+
 function renderChart(container: HTMLElement, legend: HTMLElement, datasets: CandleDataset[]): IChartApi {
   const chart = createChart(container, {
     autoSize: true,
-    layout: { background: { color: "#ffffff" }, textColor: "#17211d" },
-    grid: { vertLines: { color: "#edf1ee" }, horzLines: { color: "#edf1ee" } },
-    rightPriceScale: { borderColor: "#d9e2dc" },
-    timeScale: { borderColor: "#d9e2dc", timeVisible: true, secondsVisible: false },
+    timeScale: { timeVisible: true, secondsVisible: false },
     crosshair: { mode: 0 }
   });
+  chart.applyOptions(chartChromeOptions());
 
   const available = availableDatasets(datasets);
   if (available.length === 1) {

@@ -2,6 +2,7 @@ import type { SuiClientTypes } from "@mysten/sui/client";
 import { describe, expect, it } from "vitest";
 import {
   SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE,
+  SUI_CHAIN_RECEIPT_WAIT_TIMEOUT_MS,
   type SuiChainReceiptVerifierClient,
   verifySuiChainReceipt
 } from "../src/core/action/suiChainReceiptVerifier.js";
@@ -15,7 +16,7 @@ type ChainReceiptInclude = {
 };
 
 type FixtureClient = SuiChainReceiptVerifierClient & {
-  calls: SuiClientTypes.GetTransactionOptions<ChainReceiptInclude>[];
+  calls: SuiClientTypes.WaitForTransactionOptions<ChainReceiptInclude>[];
   chainIdentifierCalls: string[];
 };
 
@@ -48,6 +49,12 @@ function createClient(
         return kind === "Transaction"
           ? { $kind: "Transaction", Transaction: transaction }
           : { $kind: "FailedTransaction", FailedTransaction: transaction };
+      },
+      async waitForTransaction(options) {
+        calls.push(options);
+        return kind === "Transaction"
+          ? { $kind: "Transaction", Transaction: transaction }
+          : { $kind: "FailedTransaction", FailedTransaction: transaction };
       }
     }
   };
@@ -65,6 +72,10 @@ function createThrowingClient(error: unknown): FixtureClient {
         return { chainIdentifier: "mainnet-chain" };
       },
       async getTransaction(options) {
+        calls.push(options);
+        throw error;
+      },
+      async waitForTransaction(options) {
         calls.push(options);
         throw error;
       }
@@ -187,7 +198,8 @@ describe("Sui chain receipt verifier", () => {
     expect(client.calls).toEqual([
       {
         digest,
-        include: SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE
+        include: SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE,
+        timeout: SUI_CHAIN_RECEIPT_WAIT_TIMEOUT_MS
       }
     ]);
     expect(Object.keys(SUI_CHAIN_RECEIPT_GET_TRANSACTION_INCLUDE)).toEqual(SUI_CHAIN_RECEIPT_REQUIRED_INCLUDE);
@@ -342,7 +354,7 @@ describe("Sui chain receipt verifier", () => {
     expect(result).toEqual({
       status: "not_found",
       failureReason: "chain_receipt_unavailable",
-      message: "Sui mainnet did not return a transaction for the signed digest."
+      message: "Sui mainnet did not return a transaction for the signed digest within the wait window."
     });
   });
 
