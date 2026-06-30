@@ -7,7 +7,7 @@ user reads the transaction summary, inspects the transaction (PTB) as a graph,
 and signs in their own wallet. The AI client never receives signing authority or
 executable transaction bytes.
 
-![Say Ur Intent local review page](https://raw.githubusercontent.com/stelis-dev/say-ur-intent/main/assets/review-page.png)
+![Say Ur Intent local review page](https://raw.githubusercontent.com/stelis-dev/say-ur-intent/main/assets/sui1.png)
 
 *The local review page: deterministic review checks, review-time simulation
 evidence, and the transaction shown as a labeled PTB graph — what the user
