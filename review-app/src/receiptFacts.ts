@@ -301,10 +301,11 @@ function parsePtbGraph(value: unknown): { ok: true; graph: PublicChainReceiptPtb
     return { ok: true, graph: undefined };
   }
   const r = asRecord(value);
-  if (!r || typeof r.mermaid !== "string") {
+  const mermaid = r ? asRecord(r.mermaid) : undefined;
+  if (!mermaid || typeof mermaid.text !== "string" || typeof mermaid.namedText !== "string") {
     return { ok: false };
   }
-  return { ok: true, graph: { mermaid: r.mermaid } };
+  return { ok: true, graph: { mermaid: { text: mermaid.text, namedText: mermaid.namedText } } };
 }
 
 const INVALID = Symbol("invalid");

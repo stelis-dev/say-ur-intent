@@ -270,6 +270,17 @@ body {
   min-width: 12rem;
 }
 
+/* A card action row holding a single standalone button: right-aligned and content-sized,
+   not stretched to fill the row like a multi-button group. */
+.ui-btn-row--end {
+  justify-content: flex-end;
+}
+
+.ui-btn-row--end > .ui-btn {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .ui-icon-btn {
   width: 34px;
   height: 34px;
@@ -520,6 +531,25 @@ input.ui-input {
   font-weight: 500;
 }
 
+/* Signer-readiness dot (the review header): ready = matches the bound account,
+   settling = reconnecting, idle = no browser signer. Colour is a cue, not the only
+   signal — the signing section states readiness in text. */
+.ui-wallet-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ui-ok-text);
+}
+
+.ui-wallet-chip-dot--settling {
+  background: var(--ui-warn-text);
+}
+
+.ui-wallet-chip-dot--idle {
+  background: var(--ui-text-muted);
+}
+
 .ui-agent-badge {
   display: inline-flex;
   align-items: center;
@@ -728,12 +758,55 @@ input.ui-input {
   border-left-color: var(--ui-danger);
 }
 
+/* Inline feedback inside a card (a settings section's result line) follows the section's
+   controls, so it needs a top gap from them instead of sitting flush against the buttons;
+   when it is the section's last child the card's own padding gives its bottom space. The
+   page-level feedback (not inside a card) keeps the default spacing above. */
+.ui-card > .ui-feedback {
+  margin: 14px 0;
+}
+
+.ui-card > .ui-feedback:last-child {
+  margin-bottom: 0;
+}
+
 .ui-feedback-detail {
   display: block;
   margin-top: 4px;
   font-size: 12.5px;
   color: var(--ui-text-muted);
   overflow-wrap: anywhere;
+}
+
+/* Alert toast: a tone-coloured bar for a warning/error/info message, placed between
+   a card's head and its content or under the page header — never as a bare line. */
+.ui-toast {
+  border: 0.5px solid var(--ui-border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 9px 13px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ui-toast--warning {
+  background: var(--ui-warn-bg);
+  color: var(--ui-warn-text);
+  border-color: var(--ui-warn-text);
+}
+
+.ui-toast--error {
+  background: var(--ui-danger-bg);
+  color: var(--ui-danger);
+  border-color: var(--ui-danger);
+}
+
+.ui-toast--info {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
 }
 
 /* Placeholder card: shown in a slot whose content is empty, unsupported, or
@@ -1035,37 +1108,42 @@ input.ui-input {
   color: var(--ui-danger);
 }
 
-.ui-ptb-graph svg .node rect,
-.ui-ptb-graph svg .node polygon,
-.ui-ptb-graph svg .node circle {
-  fill: var(--ui-surface-2);
-  stroke: var(--ui-border-strong);
-  stroke-width: 1px;
+/* Shared chain-receipt view (the Receipt page and the review Result state). */
+.ui-chain-receipt-gas {
+  margin-bottom: 6px;
 }
 
-.ui-ptb-graph svg .edgePaths path,
-.ui-ptb-graph svg path.flowchart-link {
-  fill: none !important;
-  stroke: var(--ui-border-strong);
-  stroke-width: 1.5px;
+/* The PTB graph is the layout centerpiece; its nodes, edges, and labels are painted
+   from theme tokens (below), so the slot background follows the app theme too — light
+   in light mode, dark in dark mode — never a white box clashing with a dark page.
+   Full-bleed: pull up under the card header (cancel its 14px gap) and out to the
+   card's left/right/bottom edges (offset the card's 18px side / 16px bottom
+   padding), so the graph fills the card body edge-to-edge. */
+.ui-chain-receipt-ptb {
+  margin: -14px -18px -16px;
+  background: var(--ui-surface);
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
 }
 
-.ui-ptb-graph svg marker path {
-  fill: var(--ui-border-strong) !important;
-  stroke: none;
+/* Copy + eye action icons in the shared transaction-graph card's title bar. */
+.ui-ptb-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.ui-ptb-graph svg .nodeLabel,
-.ui-ptb-graph svg .edgeLabel,
-.ui-ptb-graph svg text {
-  color: var(--ui-text);
-  fill: var(--ui-text);
-  font-size: 12px;
+/* Pan/zoom controls overlay the graph, so they sit on a slightly raised themed
+   surface with a shadow to stand out from the themed graph behind them. */
+.ui-ptb-graph-controls .ui-icon-btn {
+  background: var(--ui-surface-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.ui-ptb-graph svg .edgeLabel rect {
-  fill: var(--ui-surface);
-}
+/* The graph's node/edge/label/text colours are NOT set here: Mermaid injects an
+   id-scoped <style> into the SVG that beats external rules, so the whole palette is
+   driven from the app's design tokens through Mermaid's themeVariables in
+   ptbDiagram.ts (theme "base"), re-rendered on theme toggle. */
 
 /* Pan/zoom mode: a fixed-height clipping viewport with a transformed content
    layer (wheel zooms toward the cursor, drag pans) and a controls overlay. */
@@ -1170,4 +1248,17 @@ input.ui-input {
 
 .ui-accordion-body {
   padding: 4px 14px 12px;
+}
+
+/* Card-in-card reads square so the nesting level is legible: a rounded outer card holding
+   square inner cards/accordions (the graph card, the audit record's record sections), not
+   rounded-inside-rounded. Top-level cards — and the receipt's own top-level accordions, which
+   are not inside a card — keep their radius. */
+.ui-card .ui-card,
+.ui-card .ui-card-head,
+.ui-card .ui-accordion,
+.ui-card .ui-accordion-summary,
+.ui-card .ui-accordion-summary:focus-visible,
+.ui-card .ui-accordion[open] .ui-accordion-summary {
+  border-radius: 0;
 }

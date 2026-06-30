@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mistToSui, rawToDisplay, signedRawToDisplay, SUI_DECIMALS } from "../review-app/src/format.js";
+import {
+  mistToSui,
+  rawToDisplay,
+  shortAddress,
+  shortHex,
+  shortType,
+  signedRawToDisplay,
+  SUI_DECIMALS
+} from "../review-app/src/format.js";
 
 // The shared client-side amount formatter (used by the review and receipt pages).
 // These walk the real BigInt math so a regression in padding, trimming, or sign
@@ -41,5 +49,41 @@ describe("mistToSui", () => {
     expect(SUI_DECIMALS).toBe(9);
     expect(mistToSui("275256")).toBe("0.000275256");
     expect(mistToSui("1000000000")).toBe("1");
+  });
+});
+
+// The shared shorteners (consumed by the review and receipt pages). Behavioral:
+// they walk the real boundary lengths and, for types, the segment-aware logic.
+
+describe("shortAddress", () => {
+  it("collapses a long 0x value to head…tail and leaves a short one intact", () => {
+    expect(shortAddress("0xa0766ff7b0325c18e4c7416ad4ea4d01e92f09147b8c5e7e4a582dc84ca3a874")).toBe("0xa076…a874");
+    expect(shortAddress("0x2")).toBe("0x2");
+  });
+
+  it("shortens only above 12 characters", () => {
+    expect(shortAddress("0x1234567890")).toBe("0x1234567890"); // 12 chars: untouched
+    expect(shortAddress("0x12345678901")).toBe("0x1234…8901"); // 13 chars: shortened
+  });
+});
+
+describe("shortHex", () => {
+  it("uses a wider 8…6 window and shortens only above 14 characters", () => {
+    expect(shortHex("0xa0766ff7b0325c18e4c7416ad4ea4d01e92f09147b8c5e7e4a582dc84ca3a874")).toBe("0xa0766f…a3a874");
+    expect(shortHex("0x1234567890ab")).toBe("0x1234567890ab"); // 14 chars: untouched
+    expect(shortHex("0x1234567890abc")).toBe("0x123456…890abc"); // 15 chars: shortened
+  });
+});
+
+describe("shortType", () => {
+  it("shortens only the long 0x package ids, keeping module/struct names and generics", () => {
+    const pkg = `0x${"1".repeat(64)}`;
+    const usdc = `0x${"2".repeat(64)}`;
+    const type = `${pkg}::coin::Coin<${usdc}::usdc::USDC>`;
+    expect(shortType(type)).toBe(`${shortHex(pkg)}::coin::Coin<${shortHex(usdc)}::usdc::USDC>`);
+  });
+
+  it("leaves a short package id untouched", () => {
+    expect(shortType("0x2::sui::SUI")).toBe("0x2::sui::SUI");
   });
 });

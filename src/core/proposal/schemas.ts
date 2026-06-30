@@ -40,7 +40,7 @@ function proposalTextSchema(
       (!options.allowRawSecretLikeText && containsRawSecretLikeText(value))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message:
           `${fieldName} must not contain executable, signing, private-key, mnemonic, route-selected, or encoded secret-like material`
       });

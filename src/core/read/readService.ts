@@ -154,7 +154,6 @@ import {
   type IntentEvidenceBlockedReason,
   type IntentEvidenceCandidateConversion,
   type IntentEvidenceInput,
-  type IntentEvidenceResponseEvidence,
   type IntentEvidenceSummary,
   type IntentEvidenceSettlementAssetBalance,
   type IntentEvidenceSettlementAssetCoverage,

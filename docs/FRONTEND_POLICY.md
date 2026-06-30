@@ -31,7 +31,10 @@ Show the minimum facts needed for the user's decision first:
 3. What happens if the user proceeds?
 4. What is the next action?
 
-Technical details belong behind compact details controls. Raw protocol data must not dominate the primary screen.
+Technical details sit in their own cards below the primary decision — always
+visible there, never crowding the primary card — with their granular per-record
+lists behind compact details controls inside those cards. Raw protocol data must
+not dominate the primary screen.
 
 ## Information Source
 
@@ -139,8 +142,11 @@ The review page is a state wizard with three displayed steps (Review, Sign,
 Result) over nine page states. Every state keeps the same constant layout: the
 step indicator, a one-line state headline, the constant Transaction card
 (plan-level values that fill in with reviewed values), the state-specific
-block, and a collapsed Raw evidence card (audit record with a
-copy-as-Markdown action). Only the current state's actions are rendered;
+block, and an always-visible Audit record card (its copy-as-Markdown action a
+title-bar icon, its record sections behind nested disclosures). The ready state
+additionally shows an always-visible Transaction details card (estimated balance
+changes, the gas breakdown, and the PTB graph) below the Transaction card. Only
+the current state's actions are rendered;
 out-of-state buttons are removed, not disabled.
 
 The sign action appears only on `ready_for_wallet_review` with an emitted
@@ -195,8 +201,9 @@ recompute digest/sender/effects consistency, or present the page as approval. It
 is not wallet readiness, not signing readiness, and not a new verification
 authority. Receipt truth is owned by the server receipt reader.
 
-The existing collapsed `Raw evidence` card remains a compact audit and copy
-surface on the review page. It must not grow into a second full analysis view.
+The `Audit record` card remains a compact audit and copy surface on the review
+page — always visible, with its record sections behind nested disclosures. It
+must not grow into a second full analysis view.
 
 ## Actions
 
@@ -275,7 +282,8 @@ The shared UI follows these durable principles:
    enough detail to diagnose afterward.
 7. Restraint: each page shows only the information it needs, with generous spacing.
 8. Information depth by importance: each page ranks its information and renders the
-   primary answer first and most prominent, audit detail behind disclosures, and
+   primary answer first and most prominent, audit and technical detail in their
+   own cards below the primary with granular records behind disclosures, and
    boundary notes quiet, using a two-weight type scale (regular and medium) where
    size, color, and spacing carry the hierarchy.
 

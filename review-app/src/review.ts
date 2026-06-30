@@ -2,11 +2,16 @@ import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from
 import "./review.css";
 import { Transaction } from "@mysten/sui/transactions";
 import { getWalletUniqueIdentifier, type UiWallet } from "@mysten/dapp-kit-core";
-import { createPtbGraphView } from "./ui/ptbDiagram.js";
-import { rawToDisplay } from "./format.js";
+import { ptbGraphCard } from "./ui/ptbDiagram.js";
+import { qualifiedName, rawToDisplay, shortHex, shortType, signedRawToDisplay, suiAmount, typeName } from "./format.js";
 import { createLocalDAppKit, hasStoredWalletSelection, suiMainnetClient } from "./dappKitClient.js";
 import { isWalletStandardUserRejected } from "./walletStatus.js";
 import { readPageToken, tokenHeaders } from "./token.js";
+import { accordion, button as uiButton, card, copyIconButton, detailItem, element, endRow, feedback, note, row, statusBanner, walletChip, warningToast } from "./ui/ui.js";
+import { renderShell } from "./ui/shell.js";
+import { chainReceiptView, gasRows } from "./ui/chainReceiptView.js";
+import { parseReceipt } from "./receiptFacts.js";
+import type { PublicChainReceipt } from "../../src/core/action/suiChainReceiptReader.js";
 
 type GuardianCheck = {
   id: string;
@@ -204,6 +209,9 @@ type ReviewSessionPayload = {
   };
   reviewState?: ReviewState;
   signingInProgress?: boolean;
+  // The review session's own TTL. Past this the session is gone server-side and no action
+  // (refresh / start / sign) can run, so the page shows the terminal state on load.
+  sessionExpiresAt?: string;
   executionResult?: {
     status: string;
     txDigest?: string;
@@ -230,8 +238,11 @@ const token = readPageToken();
 
 let sessionPayload: ReviewSessionPayload | undefined;
 let selectedPlanId: string | undefined;
-let message = "";
-let errorMessage = "";
+let stateError: string | undefined;
+// The result of the last review action (Start / Refresh / Run again), shown inline next
+// to the button that triggered it - never the top toast. `terminal` means the session is
+// gone (HTTP 410), so retrying cannot help and the button stays disabled.
+let reviewActionError: { message: string; terminal: boolean } | undefined;
 let loading = false;
 
 const QUOTE_AUTOREFRESH_LEAD_S = 3;
@@ -254,6 +265,16 @@ if (autoConnectSettling) {
     scheduleSignerRefresh();
   }, 2000);
 }
+
+// The shared shell in token mode (no navigation, brand not a link, theme toggle);
+// the page renders into shell.main, which the render path clears and rebuilds.
+const shell = renderShell(rootElement, "token");
+const main = shell.main;
+
+// The post-sign Result state shows the same full on-chain receipt as the Receipt
+// page, fetched by the execution digest and rendered with the shared component.
+let resultReceipt: PublicChainReceipt | undefined;
+let resultReceiptDigest: string | undefined;
 
 // Wallet/connection store ticks only change the header wallet chip and the
 // signing section. A full render() clears rootElement.innerHTML and rebuilds the
@@ -353,6 +374,14 @@ function refreshReadyContent(): void {
   if (txCard) {
     fadeReplace(txCard, renderTransactionCard(sessionPayload));
   }
+  // The always-visible Transaction details card keeps its quote-sensitive numbers (balance
+  // changes, gas breakdown) in lockstep with the primary card; the PTB graph beside them is
+  // left untouched so it does not rebuild on a tick.
+  const detailsValues = rootElement.querySelector(".transaction-details-values");
+  const freshDetailsValues = renderTransactionDetailsValues(sessionPayload.reviewState);
+  if (detailsValues && freshDetailsValues) {
+    fadeReplace(detailsValues, freshDetailsValues);
+  }
   const findings = rootElement.querySelector(".ready-key-findings");
   if (findings) {
     fadeReplace(findings, renderReadyKeyFindings(sessionPayload.reviewState));
@@ -383,7 +412,6 @@ if (reviewSessionId && token) {
   render();
 }
 
-type ReviewWizardStage = "review" | "sign" | "result";
 type PageStage =
   | "no_identity"
   | "pre_review"
@@ -402,6 +430,13 @@ function reviewExpiresAtMs(payload: ReviewSessionPayload): number | undefined {
   return expiresAt ? Date.parse(expiresAt) : undefined;
 }
 
+// The review session's own TTL (distinct from the per-quote freshness window): once it is
+// in the past, the session is gone server-side, so the page surfaces the terminal state on
+// load instead of offering a Refresh / Start button that is guaranteed to fail.
+function isSessionExpired(payload: ReviewSessionPayload): boolean {
+  return payload.sessionExpiresAt !== undefined && Date.now() > Date.parse(payload.sessionExpiresAt);
+}
+
 function pageStage(payload: ReviewSessionPayload): PageStage {
   if (sessionGone) {
     return "session_expired";
@@ -414,6 +449,9 @@ function pageStage(payload: ReviewSessionPayload): PageStage {
   }
   if (payload.signingInProgress || isSigning) {
     return "signing";
+  }
+  if (isSessionExpired(payload)) {
+    return "session_expired";
   }
   if (payload.reviewState?.status === "ready_for_wallet_review") {
     const expiresAtMs = reviewExpiresAtMs(payload);
@@ -431,16 +469,6 @@ function pageStage(payload: ReviewSessionPayload): PageStage {
   return "pre_review";
 }
 
-function wizardStage(stage: PageStage): ReviewWizardStage {
-  if (stage === "done" || stage === "chain_wait") {
-    return "result";
-  }
-  if (stage === "ready" || stage === "expired_quote" || stage === "signing") {
-    return "sign";
-  }
-  return "review";
-}
-
 const STAGE_HEADLINES: Record<PageStage, string> = {
   no_identity: "No active wallet account for this review - see the details below.",
   pre_review: "Start the review to check this transaction against live mainnet data.",
@@ -453,34 +481,6 @@ const STAGE_HEADLINES: Record<PageStage, string> = {
   session_expired: "This review session has expired. Ask your AI client for a new review."
 };
 
-function renderWizardHeader(stage: ReviewWizardStage): HTMLElement {
-  const order: Array<{ key: ReviewWizardStage; label: string }> = [
-    { key: "review", label: "Review" },
-    { key: "sign", label: "Sign" },
-    { key: "result", label: "Result" }
-  ];
-  const index = order.findIndex((step) => step.key === stage);
-  const headerEl = element("div", "wizard-steps");
-  order.forEach((step, stepIndex) => {
-    const state = stepIndex < index ? "done" : stepIndex === index ? "current" : "upcoming";
-    const cls = state === "upcoming" ? "wizard-step" : `wizard-step ${state}`;
-    // A distinct glyph per state so completion and the current position both
-    // read without relying on colour: done = check, current = filled marker
-    // (you are here), upcoming = its step number.
-    const marker = state === "done" ? "✓" : state === "current" ? "●" : `${stepIndex + 1}.`;
-    const item = element("span", cls, `${marker} ${step.label}`);
-    item.setAttribute("aria-label", `${step.label} step ${state}`);
-    headerEl.append(item);
-    if (stepIndex < order.length - 1) {
-      headerEl.append(element("span", "wizard-sep", "→"));
-    }
-  });
-  return headerEl;
-}
-
-function shortAddress(address: string): string {
-  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
-}
 
 /**
  * Header-resident wallet identity - read straight from the server review
@@ -500,18 +500,14 @@ function renderHeaderWallet(): HTMLElement {
   const connection = dAppKit.stores.$connection.get();
   const signerReady = connection.status === "connected" && connection.account.address === account.account;
   const settling = autoConnectSettling || connection.status === "connecting";
-  const chip = element("span", "wallet-chip");
-  const dot = element("span", "wallet-chip-dot");
-  if (!signerReady) {
-    dot.classList.add(settling ? "wallet-chip-dot-settling" : "wallet-chip-dot-idle");
-  }
-  chip.append(dot);
-  const label = account.walletName
-    ? `${account.walletName} · ${shortAddress(account.account)}`
-    : shortAddress(account.account);
-  chip.append(element("span", undefined, label));
-  chip.title = account.account;
-  slot.append(chip);
+  const signerStatus = signerReady ? "ready" : settling ? "settling" : "idle";
+  slot.append(
+    walletChip({
+      address: account.account,
+      signerStatus,
+      ...(account.walletName ? { walletName: account.walletName } : {})
+    })
+  );
   if (settling && !signerReady) {
     slot.append(element("span", "status", "Reconnecting signer…"));
   }
@@ -565,40 +561,31 @@ function captureTransientState(): () => void {
 }
 
 function renderInner(): void {
-  rootElement.innerHTML = "";
-  const shell = element("section", "review-shell");
-  const header = element("div", "page-header");
-  header.append(element("h1", undefined, "Say Ur Intent"));
-  header.append(element("span", "page-subtitle", "Transaction review and signing"));
-  header.append(renderHeaderWallet());
-  shell.append(header);
-  if (errorMessage) {
-    const status = element("p", "status error", errorMessage);
-    status.setAttribute("role", "status");
-    status.setAttribute("aria-live", "polite");
-    shell.append(status);
+  const content: HTMLElement[] = [renderReviewHeader()];
+  if (stateError) {
+    // Top-of-page toast - reserved for STATE problems (the review could not load, or the
+    // session is invalid). A result from a button the user just pressed renders inline by
+    // that button instead, never here.
+    content.push(warningToast("error", stateError));
   }
 
   if (!reviewSessionId || !token) {
-    shell.append(element("p", "error", "Missing review session id or token. Open the review URL from your AI client again."));
-    rootElement.append(shell);
+    content.push(element("p", "error", "Missing review session id or token. Open the review URL from your AI client again."));
+    main.replaceChildren(...content);
     return;
   }
 
   if (!sessionPayload) {
-    shell.append(button("Reload review session", () => void loadReview(), "secondary"));
-    rootElement.append(shell);
+    content.push(endRow(button("Reload review session", () => void loadReview(), "secondary")));
+    main.replaceChildren(...content);
     return;
   }
 
   const stage = pageStage(sessionPayload);
-  shell.append(renderWizardHeader(wizardStage(stage)));
-  shell.append(element("h3", "stage-headline", STAGE_HEADLINES[stage]));
-  if (signNotice) {
-    shell.append(element("p", signNotice.kind === "error" ? "error sign-banner" : "status sign-banner", signNotice.text));
-  }
+  content.push(renderPhaseChevron(stage));
+  content.push(element("h3", "stage-headline", STAGE_HEADLINES[stage]));
   manageQuoteCountdown(stage);
-  shell.append(renderTransactionCard(sessionPayload));
+  content.push(renderTransactionCard(sessionPayload));
 
   switch (stage) {
     case "session_expired": {
@@ -606,10 +593,8 @@ function renderInner(): void {
     }
     case "done":
     case "chain_wait": {
-      if (sessionPayload.executionResult) {
-        shell.append(renderExecutionResultPanel(sessionPayload.executionResult));
-      }
-      shell.append(collapsedEvidence(sessionPayload, stage));
+      content.push(renderResultSection(sessionPayload));
+      content.push(collapsedEvidence(sessionPayload, stage));
       break;
     }
     case "signing": {
@@ -623,18 +608,26 @@ function renderInner(): void {
       );
       panel.append(element("p", undefined, "If you do not see the wallet popup, open your wallet extension - or cancel below."));
       const actions = element("div", "actions");
-      actions.append(button("Cancel signing", () => void cancelSigning(), "secondary"));
+      actions.append(endRow(button("Cancel signing", () => void cancelSigning(), "secondary")));
+      if (signNotice) {
+        // Signing feedback sits with the cancel button, not in the top toast.
+        actions.append(signNotice.kind === "error" ? feedback("error", signNotice.text) : note(signNotice.text));
+      }
       panel.append(actions);
-      shell.append(panel);
-      shell.append(collapsedEvidence(sessionPayload, stage));
+      content.push(panel);
+      content.push(collapsedEvidence(sessionPayload, stage));
       break;
     }
     case "ready": {
       if (sessionPayload.reviewState) {
-        shell.append(renderReadyKeyFindings(sessionPayload.reviewState));
-        shell.append(renderSigningSection(sessionPayload.reviewState));
+        const details = renderTransactionDetails(sessionPayload.reviewState);
+        if (details) {
+          content.push(details);
+        }
+        content.push(renderReadyKeyFindings(sessionPayload.reviewState));
+        content.push(renderSigningSection(sessionPayload.reviewState));
       }
-      shell.append(collapsedEvidence(sessionPayload, stage));
+      content.push(collapsedEvidence(sessionPayload, stage));
       break;
     }
     case "expired_quote": {
@@ -646,18 +639,14 @@ function renderInner(): void {
           "Nothing was signed and no funds moved. Prices are only held for 30 seconds - refresh to continue."
         )
       );
-      const actions = element("div", "actions");
-      const refresh = button("Refresh price quote", () => void runAccountBoundReview(), "primary");
-      refresh.disabled = loading;
-      actions.append(refresh);
-      panel.append(actions);
-      shell.append(panel);
-      shell.append(collapsedEvidence(sessionPayload, stage));
+      panel.append(reviewActionBlock("Refresh price quote"));
+      content.push(panel);
+      content.push(collapsedEvidence(sessionPayload, stage));
       break;
     }
     case "stopped": {
-      shell.append(renderStoppedPanel(sessionPayload));
-      shell.append(collapsedEvidence(sessionPayload, stage));
+      content.push(renderStoppedPanel(sessionPayload));
+      content.push(collapsedEvidence(sessionPayload, stage));
       break;
     }
     case "no_identity": {
@@ -681,7 +670,7 @@ function renderInner(): void {
           "Connect a wallet from your AI client (session.create_wallet_identity) and prepare the review again. Wallet connection is not done on this review page."
         )
       );
-      shell.append(panel);
+      content.push(panel);
       break;
     }
     case "pre_review": {
@@ -689,17 +678,171 @@ function renderInner(): void {
       if (plan?.reviewModel) {
         const proposalCard = card("External proposal review");
         proposalCard.append(renderProposalReviewModel(plan.reviewModel));
-        shell.append(proposalCard);
+        content.push(proposalCard);
       }
-      const actions = element("div", "actions");
-      const run = button("Start review", () => void runAccountBoundReview(), "primary");
-      actions.append(loading ? element("p", "status", "Preparing the live review…") : run);
-      shell.append(actions);
-      shell.append(collapsedEvidence(sessionPayload, stage));
+      content.push(reviewActionBlock("Start review"));
+      content.push(collapsedEvidence(sessionPayload, stage));
       break;
     }
   }
-  rootElement.append(shell);
+  main.replaceChildren(...content);
+}
+
+// The review's page header inside the shell's main: the page subtitle and the
+// active-account wallet chip. The shell header above carries the brand and theme
+// toggle; identity lives in main, consistent with the receipt and settings pages.
+function renderReviewHeader(): HTMLElement {
+  const headerEl = element("div", "review-header");
+  headerEl.append(element("p", "review-subtitle", "Transaction review and signing"));
+  headerEl.append(renderHeaderWallet());
+  return headerEl;
+}
+
+// The two-phase commit indicator (Ready -> Result) as a chevron. The brief
+// post-sign wait stays in Ready (a loading state); only `done` is Result. The
+// reversibility cue is the trust signal: before signing you can cancel freely;
+// once signed it cannot be undone.
+function renderPhaseChevron(stage: PageStage): HTMLElement {
+  const wrap = element("div", "review-phases-wrap");
+  const phases = element("div", "review-phases");
+  const atResult = stage === "done";
+  phases.append(
+    element("span", `phase-chevron ${atResult ? "phase-chevron--done" : "phase-chevron--current"}`, "Ready")
+  );
+  phases.append(
+    element(
+      "span",
+      `phase-chevron phase-chevron--last ${atResult ? "phase-chevron--current" : "phase-chevron--upcoming"}`,
+      "Result"
+    )
+  );
+  wrap.append(phases);
+  const committed = stage === "chain_wait" || stage === "done";
+  const expired = stage === "session_expired";
+  wrap.append(
+    element(
+      "p",
+      `review-reversibility ${committed ? "review-reversibility--committed" : "review-reversibility--reversible"}`,
+      committed
+        ? "Signed and submitted - this can't be undone."
+        : expired
+          ? "Nothing was committed and no funds moved - this review session expired."
+          : "Nothing is committed yet - review freely and cancel anytime."
+    )
+  );
+  return wrap;
+}
+
+// The post-sign Result section: the server's verification status, then the same
+// full on-chain receipt the Receipt page shows (fetched by the execution digest),
+// rendered with the shared chainReceiptView so a confirmed transaction reads the
+// same everywhere.
+function renderResultSection(payload: ReviewSessionPayload): HTMLElement {
+  const wrap = element("div", "result-section");
+  const result = payload.executionResult;
+  if (!result) {
+    return wrap;
+  }
+  const tone = result.status === "success" ? "success" : result.status === "failure" ? "failure" : "pending";
+  const headline =
+    result.status === "success"
+      ? "Chain receipt verified."
+      : result.status === "failure"
+        ? headlineForFailureResult(result.failureReason)
+        : "Signed - verifying on Sui mainnet.";
+  wrap.append(statusBanner(tone, headline));
+  if (result.failureDetail) {
+    wrap.append(element("p", "boundary-note", result.failureDetail));
+  }
+  // Execution-record fields the public receipt does not carry — always shown so
+  // they survive whether or not the full receipt loads.
+  if (result.txDigest) {
+    wrap.append(row("Transaction digest", result.txDigest));
+  }
+  if (result.recordedAt) {
+    wrap.append(row("Recorded at", result.recordedAt));
+  }
+  if (result.failureReason) {
+    wrap.append(row("Failure reason", result.failureReason));
+  }
+  // The on-chain receipt body: the full public receipt once it loads, the
+  // already-recorded degraded receipt as the always-available fallback otherwise.
+  // The fallback keeps the result complete when the public receipt fetch is slow
+  // or fails, instead of leaving a stuck "loading" with no facts.
+  if (result.txDigest && (result.status === "success" || result.status === "failure")) {
+    if (resultReceipt && resultReceiptDigest === result.txDigest) {
+      wrap.append(chainReceiptView(resultReceipt));
+    } else {
+      for (const node of renderDegradedReceipt(payload)) {
+        wrap.append(node);
+      }
+      void loadResultReceipt(result.txDigest);
+    }
+  }
+  wrap.append(
+    element(
+      "p",
+      "boundary-note",
+      "Execution result is recorded from the local server's Sui mainnet receipt read. It is not transaction bytes, signing data, or a guarantee of economic outcome."
+    )
+  );
+  return wrap;
+}
+
+// The degraded receipt the server already recorded on the session (chain effects,
+// account balance changes, package calls), plus the estimated PTB graph, shown
+// until the full public receipt loads. Mirrors what the old result panel always
+// rendered inline, so no receipt fact disappears on a fetch miss.
+function renderDegradedReceipt(payload: ReviewSessionPayload): HTMLElement[] {
+  const nodes: HTMLElement[] = [];
+  const receipt = payload.executionResult?.chainReceipt;
+  if (receipt?.source?.fetchedAt) {
+    nodes.push(row("Receipt fetched at", receipt.source.fetchedAt));
+  }
+  if (receipt?.effectsStatus) {
+    nodes.push(row("Chain effects", receipt.effectsStatus.success ? "Success" : "Failure"));
+  }
+  if (receipt?.packageCalls?.length) {
+    nodes.push(renderFactList("Package calls", receipt.packageCalls.map((call) => call.target ?? "Unknown package call")));
+  }
+  if (receipt?.accountBalanceChanges?.length) {
+    nodes.push(
+      renderFactList(
+        "Account balance changes",
+        receipt.accountBalanceChanges.map(
+          (change) => `${change.direction ?? "change"} ${change.amountRaw ?? "?"} raw (${shortType(change.coinType ?? "?")})`
+        )
+      )
+    );
+  }
+  const ptb = payload.reviewState?.ptbVisualization;
+  if (ptb) {
+    nodes.push(renderPtbVisualization(ptb));
+  }
+  return nodes;
+}
+
+// Fetch the full public receipt by the execution digest (the same public,
+// same-origin endpoint the Receipt page uses), then re-render so the Result state
+// shows it. Best-effort: on failure the verification status banner still shows.
+async function loadResultReceipt(digest: string): Promise<void> {
+  if (resultReceiptDigest === digest) {
+    return;
+  }
+  resultReceiptDigest = digest;
+  resultReceipt = undefined;
+  try {
+    const response = await fetch(`/api/receipt?digest=${encodeURIComponent(digest)}`);
+    if (response.ok) {
+      const parsed = parseReceipt(await response.json());
+      if (parsed) {
+        resultReceipt = parsed;
+      }
+    }
+  } catch {
+    // Leave the receipt undefined; the verification status banner still shows.
+  }
+  render();
 }
 
 function manageQuoteCountdown(stage: PageStage): void {
@@ -757,52 +900,64 @@ function renderStoppedPanel(payload: ReviewSessionPayload): HTMLElement {
   for (const check of failing) {
     panel.append(element("p", "error", `${check.label}: ${check.message}`));
   }
-  const actions = element("div", "actions");
-  const run = button("Run review again", () => void runAccountBoundReview(), "primary");
-  run.disabled = loading;
-  actions.append(run);
-  panel.append(actions);
+  panel.append(reviewActionBlock("Run review again"));
   return panel;
 }
 
 function renderTransactionCard(payload: ReviewSessionPayload): HTMLElement {
-  const panel = card("Transaction");
-  panel.classList.add("transaction-card");
   const plan = selectedPlan(payload);
   const review = payload.reviewState?.humanReadableReview;
   const swap = review && review.kind === "swap_human_readable_review" ? review : undefined;
+  // Card title = the action summary (the policy's T1 "what is happening"): "Swap SUI → USDC",
+  // or "Swap SUI + A → USDC + B" for multi-token, falling back to a generic title before the
+  // human-readable review has resolved the symbols.
+  const actionSummary = swap
+    ? `Swap ${swap.assetFlow.outgoing.map((a) => a.symbol).join(" + ")} → ${swap.assetFlow.expectedIncoming.map((a) => a.symbol).join(" + ")}`
+    : "Transaction";
+  const panel = card(actionSummary);
+  panel.classList.add("transaction-card");
   if (!plan) {
     panel.append(element("p", "error", "No action plan is available for this review session."));
     return panel;
   }
   const sendPreview = plan.assetFlowPreview.outgoing[0];
   const receivePreview = plan.assetFlowPreview.expectedIncoming[0];
-  const outgoing = swap?.assetFlow.outgoing[0];
-  const minimum = swap?.assetFlow.minimumIncoming[0];
-  panel.append(
-    row(
-      "You send",
-      outgoing
-        ? `${rawToDisplay(outgoing.rawAmount, outgoing.decimals)} ${outgoing.symbol}`
-        : sendPreview
-          ? `${sendPreview.amount} ${sendPreview.symbol}`
-          : "-"
-    )
-  );
-  panel.append(
-    row(
-      "You receive",
-      minimum
-        ? `at least ${rawToDisplay(minimum.rawAmount, minimum.decimals)} ${minimum.symbol} (guaranteed minimum)`
-        : receivePreview
-          ? `${receivePreview.symbol} (amount confirmed after review)`
-          : "-"
-    )
-  );
+  // The card is split into uniform labelled sections, each divided by a separator —
+  // the transaction card's section policy. Sent tokens, received tokens, the network
+  // fee, and routing all get the same label + divider treatment, so no group (gas
+  // included) is delineated differently from the others.
+  const sendItems: MoneyItem[] = swap
+    ? swap.assetFlow.outgoing.map((a) => ({ symbol: a.symbol, amount: `-${rawToDisplay(a.rawAmount, a.decimals)}`, coinType: a.coinType }))
+    : sendPreview
+      ? [{ symbol: sendPreview.symbol, amount: sendPreview.amount }]
+      : [];
+  const receiveItems: MoneyItem[] = swap
+    ? swap.assetFlow.expectedIncoming.map((a, index) => {
+        const min = swap.assetFlow.minimumIncoming[index];
+        return {
+          symbol: a.symbol,
+          amount: `+~${rawToDisplay(a.rawAmount, a.decimals)}`,
+          coinType: a.coinType,
+          ...(min ? { note: `at least ${rawToDisplay(min.rawAmount, min.decimals)} ${min.symbol} guaranteed` } : {})
+        };
+      })
+    : receivePreview
+      ? [{ symbol: receivePreview.symbol, amount: receivePreview.amount === "unknown" ? "amount confirmed after review" : receivePreview.amount }]
+      : [];
+  panel.append(reviewGroup("You send", moneyRows(sendItems, "down")));
+  panel.append(reviewGroup("You receive", moneyRows(receiveItems, "up")));
+  const gas = payload.reviewState?.simulation?.gasCostSummary;
+  if (gas) {
+    // The primary card shows one compact fee line; the computation/storage/rebate breakdown is
+    // demoted into the Transaction details disclosure (renderTransactionDetails).
+    panel.append(reviewGroup("Network fee", [row("Estimated total", suiAmount(netGasMist(gas).toString()))]));
+  }
+  const target = swap?.targets[0];
+  const routing: HTMLElement[] = [row("Via", target ? `${target.protocol} ${target.poolKey}` : plan.protocol)];
   const fee = swap?.assetFlow.fees[0];
   if (fee) {
     const feeValue = BigInt(fee.rawAmount);
-    panel.append(
+    routing.push(
       row(
         "Protocol fee",
         feeValue === 0n
@@ -812,7 +967,7 @@ function renderTransactionCard(payload: ReviewSessionPayload): HTMLElement {
     );
   }
   const recipient = swap?.recipients.find((entry) => entry.role === "output_recipient");
-  panel.append(
+  routing.push(
     row(
       "Receiving account",
       recipient
@@ -822,65 +977,172 @@ function renderTransactionCard(payload: ReviewSessionPayload): HTMLElement {
           : "your connected account"
     )
   );
-  const target = swap?.targets[0];
-  panel.append(row("Via", target ? `${target.protocol} ${target.poolKey}` : plan.protocol));
+  panel.append(reviewGroup("Routing", routing));
   return panel;
 }
 
-function coinDisplayMap(state: ReviewState): Map<string, { symbol: string; decimals: number }> {
-  const map = new Map<string, { symbol: string; decimals: number }>();
-  const review = state.humanReadableReview;
-  if (review && review.kind === "swap_human_readable_review") {
-    for (const amount of [
-      ...review.assetFlow.outgoing,
-      ...review.assetFlow.expectedIncoming,
-      ...review.assetFlow.minimumIncoming,
-      ...review.assetFlow.fees
-    ]) {
-      map.set(amount.coinType, { symbol: amount.symbol, decimals: amount.decimals });
-    }
+// The "Transaction details" card: the estimated balance changes, the gas breakdown, and the PTB
+// graph, shown as their own always-visible card below the primary Transaction card — top-level
+// cards do not collapse; only their nested accordions do. The balance + gas rows reuse the shared
+// receipt-quality atoms (detailItem, gasRows) and the PTB reuses the shared graph card. The card
+// lives outside the quote-refreshed region, so a quote tick never rebuilds the graph.
+function renderTransactionDetails(state: ReviewState): HTMLElement | undefined {
+  const ptb = state.ptbVisualization;
+  const values = renderTransactionDetailsValues(state);
+  if (!values && !ptb) {
+    return undefined;
   }
-  return map;
+  const panel = card("Transaction details");
+  if (values) {
+    panel.append(values);
+  }
+  if (ptb) {
+    panel.append(renderPtbVisualization(ptb));
+  }
+  return panel;
 }
 
-function formatBalanceChangeDisplay(
-  record: Record<string, unknown>,
-  coins: Map<string, { symbol: string; decimals: number }>
-): string {
-  const coinType = typeof record.coinType === "string" ? record.coinType : "";
-  const amount = typeof record.amount === "string" ? record.amount : "0";
-  const known = coins.get(coinType);
-  if (!known) {
-    return formatBalanceChange(record);
+// The quote-sensitive part of the Transaction details — the estimated balance changes and the
+// gas breakdown — in its own refreshable region (.transaction-details-values), so a quote tick
+// updates these user-facing numbers in lockstep with the primary card (refreshReadyContent
+// re-renders this region). The PTB graph stays out of this region and out of the refresh, so it
+// never rebuilds on a tick (the postmortem's flicker) — its encoded amounts are diagnostic only.
+function renderTransactionDetailsValues(state: ReviewState): HTMLElement | undefined {
+  const gas = state.simulation?.gasCostSummary;
+  const balances = balanceChangeRows(state);
+  if (!gas && balances.length === 0) {
+    return undefined;
   }
-  const negative = amount.startsWith("-");
-  const raw = BigInt(negative ? amount.slice(1) : amount);
-  return `${negative ? "-" : "+"}${rawToDisplay(raw.toString(), known.decimals)} ${known.symbol}`;
+  const wrap = element("div", "transaction-details-values");
+  if (balances.length > 0) {
+    const group = element("div", "review-group");
+    group.append(element("p", "review-group-label", "Estimated balance changes"));
+    for (const balanceRow of balances) {
+      group.append(balanceRow);
+    }
+    wrap.append(group);
+  }
+  if (gas) {
+    const group = element("div", "review-group");
+    group.append(element("p", "review-group-label", "Network fee breakdown"));
+    for (const gasRow of gasRows({
+      totalMist: netGasMist(gas).toString(),
+      computationMist: gas.computationCostRaw,
+      storageMist: gas.storageCostRaw,
+      storageRebateMist: gas.storageRebateRaw
+    })) {
+      group.append(gasRow);
+    }
+    wrap.append(group);
+  }
+  return wrap;
+}
+
+// Estimated net wallet balance changes for the reviewed account. The simulation's raw changes
+// carry only { address, coinType, signed raw amount }, so symbol + decimals are resolved through
+// a map built from the human-readable swap legs, keyed by the address-independent qualifiedName
+// (so the lookup matches regardless of 0x-form). SUI is seeded as a fallback because gas is paid
+// in SUI even when SUI is not a swap leg. Rendered receipt-style via the shared detailItem.
+function balanceChangeRows(state: ReviewState): HTMLElement[] {
+  const raw = state.simulation?.balanceChanges ?? [];
+  if (raw.length === 0) {
+    return [];
+  }
+  const review = state.humanReadableReview;
+  const swap = review && review.kind === "swap_human_readable_review" ? review : undefined;
+  const display = new Map<string, { symbol: string; decimals: number }>([["sui::SUI", { symbol: "SUI", decimals: 9 }]]);
+  if (swap) {
+    for (const leg of [
+      ...swap.assetFlow.outgoing,
+      ...swap.assetFlow.expectedIncoming,
+      ...swap.assetFlow.minimumIncoming,
+      ...swap.assetFlow.fees
+    ]) {
+      display.set(qualifiedName(leg.coinType), { symbol: leg.symbol, decimals: leg.decimals });
+    }
+  }
+  const normalizedAccount = state.account.replace(/^0x/, "").replace(/^0+/, "").toLowerCase();
+  const rows: HTMLElement[] = [];
+  for (const change of raw) {
+    const address = typeof change.address === "string" ? change.address : undefined;
+    const coinType = typeof change.coinType === "string" ? change.coinType : undefined;
+    const amount = typeof change.amount === "string" ? change.amount : undefined;
+    if (!coinType || amount === undefined) {
+      continue;
+    }
+    // Keep only the reviewed account's own wallet legs, not the pool's mirror side.
+    if (address && address.replace(/^0x/, "").replace(/^0+/, "").toLowerCase() !== normalizedAccount) {
+      continue;
+    }
+    const resolved = display.get(qualifiedName(coinType));
+    const negative = amount.startsWith("-");
+    const magnitude = resolved ? signedRawToDisplay(amount, resolved.decimals) : `${amount} (raw)`;
+    rows.push(
+      detailItem({
+        title: resolved ? resolved.symbol : typeName(coinType),
+        trailing: negative ? magnitude : `+${magnitude}`,
+        trailingTone: negative ? "down" : "up",
+        metas: [{ value: shortType(coinType), full: coinType }]
+      })
+    );
+  }
+  return rows;
+}
+
+type MoneyItem = { symbol: string; amount: string; coinType?: string; note?: string };
+
+// One labelled group inside the transaction card: a quiet group label over its rows,
+// divided from the next group by a hairline. A lighter treatment than a nested card, so the
+// primary surface reads as a single card of grouped lines rather than cards within cards.
+function reviewGroup(label: string, nodes: HTMLElement[]): HTMLElement {
+  const group = element("div", "review-group");
+  group.append(element("p", "review-group-label", label));
+  for (const node of nodes) {
+    group.append(node);
+  }
+  return group;
+}
+
+// Tinted token lines for a money section (sent = down/red, received = up/green), one
+// per token so a section extends to several consumed or produced tokens. The symbol
+// is a measured label and the amount carries the weight — not an oversized title.
+function moneyRows(items: ReadonlyArray<MoneyItem>, tone: "up" | "down"): HTMLElement[] {
+  if (items.length === 0) {
+    return [element("p", "review-empty", "-")];
+  }
+  return items.map((item) => {
+    const wrap = element("div", "money-row");
+    const head = element("div", "money-row-head");
+    head.append(element("span", "money-row-symbol", item.symbol));
+    head.append(element("span", `money-row-amount money-row-amount--${tone}`, item.amount));
+    wrap.append(head);
+    if (item.coinType) {
+      wrap.append(element("p", "money-row-meta", shortType(item.coinType)));
+    }
+    if (item.note) {
+      wrap.append(element("p", "money-row-meta", item.note));
+    }
+    return wrap;
+  });
+}
+
+// Net gas in MIST from a review-time simulation summary: computation + storage −
+// rebate, the same figure the on-chain receipt reports as the gas total.
+function netGasMist(gas: NonNullable<TransactionSimulationSummary["gasCostSummary"]>): bigint {
+  const net = BigInt(gas.computationCostRaw) + BigInt(gas.storageCostRaw) - BigInt(gas.storageRebateRaw);
+  return net < 0n ? 0n : net;
 }
 
 function renderReadyKeyFindings(state: ReviewState): HTMLElement {
   const wrapper = card("Review result");
   wrapper.classList.add("ready-key-findings");
   const passCount = state.checks.filter((check) => check.status === "pass").length;
-  wrapper.append(
-    element("p", "key-findings-line", `All review checks passed (${passCount}/${state.checks.length}).`)
-  );
-  const changes = state.simulation?.balanceChanges ?? [];
-  if (changes.length > 0) {
-    const coins = coinDisplayMap(state);
-    wrapper.append(
-      element(
-        "p",
-        "key-findings-line",
-        `Simulation verified balance changes: ${changes
-          .map((change) => formatBalanceChangeDisplay(change, coins))
-          .join("  |  ")}`
-      )
-    );
-  }
-  if (state.ptbVisualization) {
-    wrapper.append(renderPtbVisualization(state.ptbVisualization));
-  }
+  // The pass count IS the link to the list: the disclosure summary states the result,
+  // and opening it reveals every check — the count is never a claim you cannot inspect.
+  const checks = accordion(`All review checks passed (${passCount}/${state.checks.length})`);
+  checks.details.querySelector("summary")?.prepend(element("span", "checks-pass-mark", "✓ "));
+  checks.body.append(renderChecks("", state.checks));
+  wrapper.append(checks.details);
   wrapper.append(
     element("p", "quote-countdown", "Quote valid for 30s - if it expires, just refresh; your funds stay safe.")
   );
@@ -1013,56 +1275,33 @@ function auditRecordMarkdown(payload: ReviewSessionPayload): string {
   return lines.join("\n");
 }
 
-async function copyAuditRecord(buttonEl: HTMLButtonElement): Promise<void> {
-  if (!sessionPayload) {
-    return;
-  }
-  const markdown = auditRecordMarkdown(sessionPayload);
-  try {
-    await navigator.clipboard.writeText(markdown);
-    const original = buttonEl.textContent;
-    buttonEl.textContent = "Copied!";
-    setTimeout(() => {
-      buttonEl.textContent = original;
-    }, 1500);
-  } catch {
-    window.prompt("Copy the audit record:", markdown);
-  }
-}
-
 function collapsedEvidence(payload: ReviewSessionPayload, stage: PageStage): HTMLElement {
-  const panel = element("section", "card raw-evidence-card");
-  const header = element("div", "card-header");
-  header.append(element("h2", undefined, "Raw evidence"));
-  const copyButton = button("Copy as Markdown", () => void copyAuditRecord(copyButton), "secondary");
-  copyButton.classList.add("copy-audit");
-  header.append(copyButton);
-  panel.append(header);
-  const evidence = document.createElement("details");
-  evidence.className = "final-evidence collapsible-records";
-  const summary = document.createElement("summary");
-  summary.textContent =
-    stage === "done" || stage === "chain_wait" ? "Show audit record (final snapshot)" : "Show audit record";
-  evidence.append(summary);
-  const inner = document.createElement("div");
-  inner.className = "raw-evidence-body";
+  // The "Audit record" card: an always-visible top-level card (no collapse) whose nested record
+  // sections stay as inner disclosures. Copy-as-Markdown sits as an icon in the card's title bar,
+  // since the card itself no longer has a summary toggle to host the action.
+  const label = stage === "done" || stage === "chain_wait" ? "Audit record (final snapshot)" : "Audit record";
+  const panel = card();
+  const head = element("h2", "ui-card-head");
+  head.append(element("span", undefined, label));
+  head.append(copyIconButton(() => (sessionPayload ? auditRecordMarkdown(sessionPayload) : ""), "Copy audit record as Markdown"));
+  panel.append(head);
   const state = payload.reviewState;
+  // Nested record sections stay as inner disclosures; their body keeps the
+  // .collapsible-records class only so the mono record lists stay styled.
   const sub = (title: string, content: HTMLElement): HTMLElement => {
-    const section = document.createElement("details");
-    section.className = "collapsible-records";
-    const sectionSummary = document.createElement("summary");
-    sectionSummary.textContent = title;
-    section.append(sectionSummary, content);
-    return section;
+    const section = accordion(title);
+    section.body.classList.add("collapsible-records");
+    section.body.append(content);
+    return section.details;
   };
-  inner.append(row("Review session", payload.reviewSessionId));
+  panel.append(row("Review session", payload.reviewSessionId));
   if (state) {
-    inner.append(row("Updated at", state.updatedAt));
+    panel.append(row("Updated at", state.updatedAt));
     if (state.adapterLifecycle) {
-      inner.append(sub("Adapter lifecycle", renderAdapterLifecycle(state.adapterLifecycle)));
+      panel.append(sub("Adapter lifecycle", renderAdapterLifecycle(state.adapterLifecycle)));
     }
     if (state.humanReadableReview) {
-      inner.append(
+      panel.append(
         sub(
           "Human-readable review (raw units)",
           renderHumanReadableReview(state.humanReadableReview, state.simulation !== undefined)
@@ -1070,17 +1309,12 @@ function collapsedEvidence(payload: ReviewSessionPayload, stage: PageStage): HTM
       );
     }
     if (state.simulation) {
-      inner.append(sub("Review-time simulation", renderSimulationSummary(state.simulation)));
+      panel.append(sub("Review-time simulation", renderSimulationSummary(state.simulation)));
     }
-    if (state.ptbVisualization) {
-      inner.append(sub("PTB visualization", renderPtbVisualization(state.ptbVisualization)));
-    }
-    inner.append(sub(`All checks (${state.checks.length})`, renderChecks("", state.checks)));
+    panel.append(sub(`All checks (${state.checks.length})`, renderChecks("", state.checks)));
   } else {
-    inner.append(element("p", undefined, "No review evidence recorded yet."));
+    panel.append(element("p", undefined, "No review evidence recorded yet."));
   }
-  evidence.append(inner);
-  panel.append(evidence);
   return panel;
 }
 
@@ -1093,58 +1327,6 @@ async function cancelSigning(): Promise<void> {
   }
   isSigning = false;
   await loadReview();
-}
-
-function renderExecutionResultPanel(result: NonNullable<ReviewSessionPayload["executionResult"]>): HTMLElement {
-  const panel = card("Execution result");
-  panel.classList.add(result.status === "success" ? "execution-success" : result.status === "failure" ? "execution-failure" : "execution-pending");
-  const headline =
-    result.status === "success"
-      ? "Chain receipt verified."
-      : result.status === "failure"
-        ? headlineForFailureResult(result.failureReason)
-        : "Signed - verifying on Sui mainnet.";
-  panel.append(element("p", "execution-headline", headline));
-  if (result.txDigest) {
-    panel.append(row("Transaction digest", result.txDigest));
-  }
-  if (result.failureReason) {
-    panel.append(row("Failure reason", result.failureReason));
-  }
-  if (result.failureDetail) {
-    panel.append(row("Detail", result.failureDetail));
-  }
-  if (result.recordedAt) {
-    panel.append(row("Recorded at", result.recordedAt));
-  }
-  if (result.chainReceipt?.source?.fetchedAt) {
-    panel.append(row("Receipt fetched at", result.chainReceipt.source.fetchedAt));
-  }
-  if (result.chainReceipt?.effectsStatus) {
-    panel.append(row("Chain effects", result.chainReceipt.effectsStatus.success ? "Success" : "Failure"));
-  }
-  if (result.chainReceipt?.packageCalls?.length) {
-    panel.append(renderFactList(
-      "Package calls",
-      result.chainReceipt.packageCalls.map((call) => call.target ?? "Unknown package call")
-    ));
-  }
-  if (result.chainReceipt?.accountBalanceChanges?.length) {
-    panel.append(renderFactList(
-      "Account balance changes",
-      result.chainReceipt.accountBalanceChanges.map((change) =>
-        `${change.direction ?? "change"} ${change.amountRaw ?? "?"} raw (${shortType(change.coinType ?? "?")})`
-      )
-    ));
-  }
-  panel.append(
-    element(
-      "p",
-      "boundary-note",
-      "Execution result is recorded from the local server's Sui mainnet receipt read. It is not transaction bytes, signing data, or a guarantee of economic outcome."
-    )
-  );
-  return panel;
 }
 
 function headlineForFailureResult(failureReason: string | undefined): string {
@@ -1247,87 +1429,11 @@ function renderHumanReadableReview(review: HumanReadableReview, simulationComple
   return wrapper;
 }
 
+// The review's PTB graph through the one shared graph card — same "Transaction
+// graph" title, name↔address eye toggle, and copy-source icon as the receipt. The
+// review producer already emits both Mermaid versions, so it passes them straight in.
 function renderPtbVisualization(artifact: PtbVisualizationArtifact): HTMLElement {
-  const wrapper = element("div", "ptb-visualization");
-  wrapper.append(element("h4", undefined, "PTB visualization"));
-  wrapper.append(row("Generated at", artifact.generatedAt));
-  if (artifact.source.renderer) {
-    const renderer = artifact.source.renderer;
-    wrapper.append(
-      row(
-        "Renderer",
-        `${renderer.name}${renderer.packageName ? ` (${renderer.packageName}${renderer.version ? `@${renderer.version}` : ""})` : ""}`
-      )
-    );
-  }
-  const rawText = artifact.mermaid.text;
-  const namedText = artifact.mermaid.namedText;
-  const hasNames = namedText !== rawText;
-  let showingNames = hasNames;
-
-  // Render through the shared PTB graph view (caching, no-flash refresh, error
-  // handling live there); keep the review page's existing graph-box styling
-  // (.ptb-visualization-graph in review.css) until B4 migrates this page.
-  const view = createPtbGraphView({ rendering: "Rendering PTB graph...", failed: "PTB graph rendering failed" });
-  const graph = view.element;
-  graph.classList.add("ptb-visualization-graph");
-  const renderGraph = (text: string): void => view.render(text);
-
-  if (hasNames) {
-    // Default shows registered package names; the toggle reveals raw addresses.
-    // The name is a package identity label only and the raw address stays one
-    // click away (and in the copyable Mermaid source below).
-    const toggle = button(
-      "Show addresses",
-      () => {
-        showingNames = !showingNames;
-        toggle.textContent = showingNames ? "Show addresses" : "Show names";
-        renderGraph(showingNames ? namedText : rawText);
-      },
-      "secondary"
-    );
-    toggle.classList.add("ptb-name-toggle");
-    wrapper.append(toggle);
-  }
-  wrapper.append(graph);
-  renderGraph(showingNames ? namedText : rawText);
-  const source = document.createElement("details");
-  source.className = "ptb-visualization-source";
-  const summary = document.createElement("summary");
-  summary.textContent = `Mermaid source (${artifact.mermaid.text.length} chars)`;
-  const copyMermaid = button("Copy Mermaid", () => {
-    void navigator.clipboard
-      .writeText(artifact.mermaid.text)
-      .then(() => {
-        copyMermaid.textContent = "Copied!";
-        setTimeout(() => {
-          copyMermaid.textContent = "Copy Mermaid";
-        }, 1500);
-      })
-      .catch(() => window.prompt("Copy the Mermaid source:", artifact.mermaid.text));
-  }, "secondary");
-  copyMermaid.classList.add("copy-mermaid");
-  const diagram = document.createElement("pre");
-  diagram.className = "ptb-visualization-text";
-  diagram.textContent = artifact.mermaid.text;
-  source.append(summary, copyMermaid, diagram);
-  wrapper.append(source);
-  if (artifact.diagnostics.length > 0) {
-    wrapper.append(
-      renderFactList(
-        "Renderer diagnostics",
-        artifact.diagnostics.map((entry) => `${entry.severity} ${entry.code}: ${entry.message}`)
-      )
-    );
-  }
-  wrapper.append(
-    element(
-      "p",
-      "boundary-note",
-      "Diagram of the locally stored transaction shape - visualization only."
-    )
-  );
-  return wrapper;
+  return ptbGraphCard({ mermaid: { text: artifact.mermaid.text, namedText: artifact.mermaid.namedText } });
 }
 
 function renderSimulationSummary(simulation: TransactionSimulationSummary): HTMLElement {
@@ -1368,22 +1474,6 @@ const MCP_BOUNDARY_SENTENCE =
 // MCP-audience sentence while leaving the stored data untouched.
 function humanSummary(text: string): string {
   return text.replace(MCP_BOUNDARY_SENTENCE, "").trim();
-}
-
-function shortHex(value: string): string {
-  return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
-}
-
-function shortType(value: string): string {
-  return value
-    .split("<")
-    .map((part) =>
-      part
-        .split("::")
-        .map((segment) => (segment.startsWith("0x") && segment.length > 14 ? shortHex(segment) : segment))
-        .join("::")
-    )
-    .join("<");
 }
 
 function formatBalanceChange(record: Record<string, unknown>): string {
@@ -1449,12 +1539,6 @@ function renderSwapHumanReadableReviewProjection(review: SwapHumanReadableReview
   return wrapper;
 }
 
-function summarizeRecords(records: Record<string, unknown>[] | undefined): string[] {
-  if (!records || records.length === 0) {
-    return [];
-  }
-  return records.map((record) => JSON.stringify(record));
-}
 
 async function openAndLoadReview(): Promise<void> {
   loading = true;
@@ -1463,7 +1547,7 @@ async function openAndLoadReview(): Promise<void> {
     await requestJson(`/api/review/${encodeURIComponent(reviewSessionId)}/opened`, { method: "POST", body: "{}" });
     await loadReview();
   } catch (error) {
-    errorMessage = messageForHttpError(error, "The local review server did not accept this review session.");
+    stateError = messageForHttpError(error, "The local review server did not accept this review session.");
     loading = false;
     render();
   }
@@ -1477,13 +1561,12 @@ async function loadReview(): Promise<void> {
       method: "GET"
     });
     selectedPlanId ??= sessionPayload.plans[0]?.id;
-    message = "Review session loaded.";
-    errorMessage = "";
+    stateError = undefined;
   } catch (error) {
     if (error instanceof HttpJsonRequestError && error.status === 410) {
       sessionGone = true;
     }
-    errorMessage = messageForHttpError(error, "Could not load the review session.");
+    stateError = messageForHttpError(error, "Could not load the review session.");
   } finally {
     loading = false;
     render();
@@ -1526,10 +1609,12 @@ async function runAccountBoundReview(): Promise<void> {
       })),
       reviewState: result.reviewState
     };
-    message = "Account-bound review evidence recorded.";
-    errorMessage = "";
+    reviewActionError = undefined;
   } catch (error) {
-    errorMessage = messageForHttpError(error, "Could not run account-bound review.");
+    reviewActionError = {
+      message: messageForHttpError(error, "Could not run the review."),
+      terminal: error instanceof HttpJsonRequestError && error.status === 410
+    };
   } finally {
     loading = false;
     smartRender();
@@ -1540,7 +1625,7 @@ function renderSigningSection(state: ReviewState): HTMLElement {
   const wrapper = card("Wallet signing");
   wrapper.classList.add("signing-section");
   if (signNotice) {
-    wrapper.append(element("p", signNotice.kind === "error" ? "error" : "status", signNotice.text));
+    wrapper.append(signNotice.kind === "error" ? feedback("error", signNotice.text) : note(signNotice.text));
   }
   const connection = dAppKit.stores.$connection.get();
   const wallets = dAppKit.stores.$wallets.get();
@@ -1548,8 +1633,7 @@ function renderSigningSection(state: ReviewState): HTMLElement {
     autoConnectSettling = false;
     if (connection.account.address !== state.account) {
       wrapper.append(
-        element(
-          "p",
+        feedback(
           "error",
           `Connected wallet account ${connection.account.address} does not match the reviewed account ${state.account}. Switch the wallet account before signing.`
         )
@@ -1564,16 +1648,15 @@ function renderSigningSection(state: ReviewState): HTMLElement {
       );
       const sign = button(isSigning ? "Waiting for wallet" : "Sign in wallet", () => void signInWallet(state), "primary");
       sign.disabled = isSigning;
-      wrapper.append(sign);
+      wrapper.append(endRow(sign));
     }
   } else if (autoConnectSettling || connection.status === "connecting") {
-    wrapper.append(element("p", "status", "Reconnecting your wallet…"));
+    wrapper.append(note("Reconnecting your wallet…"));
   } else if (wallets.length === 0) {
-    wrapper.append(element("p", "error", "No compatible Sui wallet was detected in this browser."));
+    wrapper.append(feedback("error", "No compatible Sui wallet was detected in this browser."));
   } else {
     wrapper.append(
-      element(
-        "p",
+      feedback(
         "error",
         "Your wallet signer is not connected, so this transaction cannot be signed yet."
       )
@@ -1603,7 +1686,7 @@ function renderSigningSection(state: ReviewState): HTMLElement {
         "primary"
       );
       reconnect.disabled = isConnecting;
-      wrapper.append(reconnect);
+      wrapper.append(endRow(reconnect));
     } else {
       wrapper.append(
         element(
@@ -1787,33 +1870,6 @@ function selectedPlan(payload: ReviewSessionPayload): ActionPlan | undefined {
   return payload.plans.find((plan) => plan.id === selectedPlanId) ?? payload.plans[0];
 }
 
-function labelForReviewStatus(status: ReviewState["status"]): string {
-  switch (status) {
-    case "ready_for_wallet_review":
-      return "Ready for wallet review";
-    case "refresh_required":
-      return "Refresh required";
-    case "blocked":
-      return "Blocked";
-  }
-}
-
-function renderAmountList(label: string, amounts: DisplayIntentAmount[]): HTMLElement {
-  const wrapper = element("div", "amount-list");
-  wrapper.append(element("h4", undefined, label));
-  if (amounts.length === 0) {
-    wrapper.append(element("p", undefined, "None."));
-    return wrapper;
-  }
-  const list = document.createElement("ul");
-  for (const amount of amounts) {
-    const item = document.createElement("li");
-    item.textContent = `${amount.amount}${amount.approx ? " approx." : ""} ${amount.symbol} (${amount.amountKind})`;
-    list.append(item);
-  }
-  wrapper.append(list);
-  return wrapper;
-}
 
 function renderProposalAmountList(label: string, amounts: ProposalAmount[]): HTMLElement {
   const wrapper = element("div", "amount-list");
@@ -1890,19 +1946,6 @@ function renderChecks(label: string, checks: GuardianCheck[]): HTMLElement {
   return wrapper;
 }
 
-function card(title: string): HTMLElement {
-  const panel = element("section", "card");
-  panel.append(element("h2", undefined, title));
-  return panel;
-}
-
-function row(label: string, value: string): HTMLElement {
-  const wrapper = element("div", "row");
-  wrapper.append(element("span", "row-label", label));
-  wrapper.append(element("span", "row-value", value));
-  return wrapper;
-}
-
 function partyText(party: ProposalParty): string {
   return [party.label, party.address].filter(Boolean).join(" / ");
 }
@@ -1916,23 +1959,34 @@ function targetText(target: string | Record<string, string>): string {
     .join("; ");
 }
 
+// The review page's loading-lock over the shared button atom: every button
+// disables while an async action (review, sign, reload) is in flight.
 function button(label: string, onClick: () => void, variant: "primary" | "secondary" = "primary"): HTMLButtonElement {
-  const buttonElement = document.createElement("button");
-  buttonElement.type = "button";
-  buttonElement.className = variant;
-  buttonElement.disabled = loading;
-  buttonElement.textContent = label;
-  buttonElement.onclick = onClick;
-  return buttonElement;
+  const node = uiButton(label, onClick, variant);
+  node.disabled = loading;
+  return node;
 }
 
-function element(tag: "h1" | "h2" | "h3" | "h4" | "p" | "section" | "div" | "span" | "strong" | "small", className?: string, text?: string): HTMLElement {
-  const node = document.createElement(tag);
-  if (className) {
-    node.className = className;
+// A review action (Start / Refresh / Run again) with its feedback right beside the button:
+// a "running" line while the request is in flight, an inline error on failure (never the
+// top toast), and - when the failure is terminal (the session is gone, HTTP 410) - the
+// button disabled with a clear "reopen" note so the user is not stuck retrying.
+function reviewActionBlock(label: string): HTMLElement {
+  const actions = element("div", "actions");
+  if (loading) {
+    actions.append(note("Running the review…"));
+    return actions;
   }
-  if (text !== undefined) {
-    node.textContent = text;
+  const run = button(label, () => void runAccountBoundReview(), "primary");
+  run.disabled = reviewActionError?.terminal ?? false;
+  actions.append(endRow(run));
+  if (reviewActionError) {
+    actions.append(feedback("error", reviewActionError.message));
+    if (reviewActionError.terminal) {
+      actions.append(
+        element("p", "boundary-note", "This review session expired - reopen the review from your AI client to continue.")
+      );
+    }
   }
-  return node;
+  return actions;
 }

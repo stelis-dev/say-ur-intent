@@ -31,8 +31,59 @@ export function mistToSui(mist: string): string {
   return rawToDisplay(mist, SUI_DECIMALS);
 }
 
+// A mist amount rendered as a "<sui> SUI" display string — the single source for the
+// "amount + SUI ticker" idiom shared by the review fee rows, the receipt gas rows, and
+// the receipt Markdown export, so the ticker convention lives in exactly one place.
+export function suiAmount(mist: string): string {
+  return `${mistToSui(mist)} SUI`;
+}
+
 // Shorten a 0x address/id for compact display; the full value belongs in a title
 // or copy control. Single source so every page shortens addresses the same way.
 export function shortAddress(address: string): string {
   return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
+}
+
+// Shorten a longer 0x value (full object id, digest, or a package id inside a Move
+// type) for compact display, with a wider window than shortAddress because these
+// appear in the raw-evidence audit where a little more context helps. The full
+// value belongs in a title or copy control.
+export function shortHex(value: string): string {
+  return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+// Shorten a fully-qualified Move type for display: shorten only the 0x address
+// segments (package ids) inside it, leaving the module/struct names and the
+// generic `<...>` structure intact (e.g. `0x…::coin::Coin<0x…::usdc::USDC>`).
+export function shortType(value: string): string {
+  return value
+    .split("<")
+    .map((part) =>
+      part
+        .split("::")
+        .map((segment) => (segment.startsWith("0x") && segment.length > 14 ? shortHex(segment) : segment))
+        .join("::")
+    )
+    .join("<");
+}
+
+// The bare leaf name of a Move type: the last `::` segment with any generic
+// parameters stripped (e.g. `0x2::coin::Coin<0x…::usdc::USDC>` -> `Coin`,
+// `0x2::sui::SUI` -> `SUI`). Single source for coin-symbol and struct-name display
+// so no page re-implements its own `::`-splitting leaf-name helper.
+export function typeName(type: string): string {
+  const base = type.split("<")[0] ?? type;
+  const parts = base.split("::");
+  return parts[parts.length - 1] || type;
+}
+
+// The short, qualified name of a Move type, call target, or event type: the module and member
+// (the last two `::` segments), dropping the package address and stripping any generic `<...>`
+// parameters (e.g. `0x…::universal_router::start_routing` -> `universal_router::start_routing`,
+// `0x2::coin::Coin<0x…::usdc::USDC>` -> `coin::Coin`). Single source so neither the receipt view
+// nor the account inventory re-implements its own `::`-splitting qualified-name helper.
+export function qualifiedName(value: string): string {
+  const base = value.split("<")[0] ?? value;
+  const parts = base.split("::");
+  return parts.length >= 2 ? parts.slice(-2).join("::") : base || value;
 }

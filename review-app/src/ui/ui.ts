@@ -55,6 +55,15 @@ export function buttonRow(...buttons: HTMLElement[]): HTMLElement {
   return node;
 }
 
+// A single standalone button placed in a right-aligned action row, so a solo control reads
+// as the section's action (and gains the row's top spacing) instead of a bare left-aligned
+// button flush against the text above it.
+export function endRow(btn: HTMLElement): HTMLElement {
+  const node = buttonRow(btn);
+  node.classList.add("ui-btn-row--end");
+  return node;
+}
+
 export function link(text: string, href: string): HTMLAnchorElement {
   const node = document.createElement("a");
   node.className = "ui-link";
@@ -192,8 +201,24 @@ export function chip(
 
 // A connected/bound wallet shown compactly: optional wallet name + the shortened
 // address (full address on hover). Shared by the Connect page and the review header.
-export function walletChip(options: { address: string; walletName?: string }): HTMLElement {
+export function walletChip(options: {
+  address: string;
+  walletName?: string;
+  signerStatus?: "ready" | "settling" | "idle";
+}): HTMLElement {
   const node = element("span", "ui-wallet-chip");
+  if (options.signerStatus) {
+    // A small leading dot reflects whether the browser signer is ready for the
+    // signing step (ready = matches the bound account, settling = reconnecting,
+    // idle = none). Decorative: where readiness actually matters it is also stated
+    // in text (the signing section), so the dot carries no aria role here.
+    const dot = element("span", "ui-wallet-chip-dot");
+    if (options.signerStatus !== "ready") {
+      dot.classList.add(`ui-wallet-chip-dot--${options.signerStatus}`);
+    }
+    dot.setAttribute("aria-hidden", "true");
+    node.append(dot);
+  }
   if (options.walletName) {
     node.append(element("span", "ui-wallet-chip-name", options.walletName));
   }
@@ -213,11 +238,19 @@ export function agentOriginBadge(label: string): HTMLElement {
 
 export type StatusKind = "success" | "failure" | "pending" | "neutral";
 
+// Single source for the shared check and close glyphs. The status banner, the modal
+// close button, and (CHECK_ICON, exported) the PTB graph card's copy-success state all
+// reuse these, so the same path is never hand-written in two places.
+export const CHECK_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+export const COPY_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const CLOSE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
 const STATUS_ICONS: Record<StatusKind, string> = {
-  success:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-  failure:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  success: CHECK_ICON,
+  failure: CLOSE_ICON,
   pending:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   neutral: ""
@@ -294,9 +327,6 @@ export function accordion(summaryText: string, open = false): { details: HTMLDet
   return { details, body };
 }
 
-const MODAL_CLOSE_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-
 // Centered modal dialog. The caller renders the returned overlay only while open,
 // so closing is the caller clearing its open flag and re-rendering; click-outside
 // and the close button both invoke onClose. Append page content to `body`.
@@ -306,7 +336,7 @@ export function modal(options: { title: string; onClose: () => void }): { overla
   overlay.setAttribute("aria-modal", "true");
   const dialog = element("div", "ui-modal-dialog");
   const head = element("div", "ui-modal-head");
-  head.append(element("h2", "ui-modal-title", options.title), iconButton(MODAL_CLOSE_ICON, "Close", options.onClose));
+  head.append(element("h2", "ui-modal-title", options.title), iconButton(CLOSE_ICON, "Close", options.onClose));
   const body = element("div", "ui-modal-body");
   dialog.append(head, body);
   overlay.append(dialog);
@@ -377,6 +407,19 @@ export function subtitle(text: string): HTMLElement {
 // Quiet boundary/scope note (tier T4).
 export function note(text: string): HTMLElement {
   return element("p", "ui-note", text);
+}
+
+export type WarningToastTone = "warning" | "error" | "info";
+
+// An alert toast: a tone-coloured bar carrying one warning/error/info message. It is
+// placed by the caller per the UI's toast policy — between a card's head and its
+// content when the alert belongs to that card, or directly under the page header
+// when it concerns the whole view — never as a bare line floating between cards.
+export function warningToast(tone: WarningToastTone, message: string): HTMLElement {
+  const node = element("div", `ui-toast ui-toast--${tone}`, message);
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  return node;
 }
 
 // Page footer: the consistent bottom slot for a page's boundary/disclaimer notes,
@@ -453,6 +496,23 @@ export function copyToClipboard(target: HTMLButtonElement, getText: () => string
 // text is produced lazily so the caller serializes current state at click time.
 export function copyButton(label: string, getText: () => string, copiedLabel: string): HTMLButtonElement {
   const node = button(label, () => copyToClipboard(node, getText, copiedLabel), "secondary");
+  return node;
+}
+
+// A copy action as a title-bar icon (copy → check confirmation), for card heads where a
+// full-width text button would be too heavy. Shares the COPY/CHECK icons with the graph card.
+export function copyIconButton(getText: () => string, ariaLabel: string): HTMLButtonElement {
+  const node = iconButton(COPY_ICON, ariaLabel, () => {
+    void navigator.clipboard
+      .writeText(getText())
+      .then(() => {
+        node.innerHTML = CHECK_ICON;
+        setTimeout(() => {
+          node.innerHTML = COPY_ICON;
+        }, 1500);
+      })
+      .catch(() => window.prompt(ariaLabel, getText()));
+  });
   return node;
 }
 

@@ -266,7 +266,7 @@ function displayTextWithoutExecutableMaterial(maxLength: number, fieldName: stri
       LONG_HEX_OR_BASE64LIKE_PAYLOAD_PATTERN.test(value)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: `${fieldName} must not contain executable transaction, signing, private-key, mnemonic, or long encoded material`
       });
     }
@@ -290,7 +290,7 @@ function addMissingRequiredValuesIssue(
     return;
   }
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path,
     message: `${label} must include ${missing.join(", ")}`
   });
@@ -312,7 +312,7 @@ function addMismatchIssue(
   label: string
 ): void {
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path,
     message: `${label} must match referenced evidence claim`
   });
@@ -523,55 +523,55 @@ export const adapterGasEvidenceSchema = z.object({
   const hasRawGas = value.gasBudgetRaw !== undefined || value.gasUsedRaw !== undefined;
   if (!hasRawGas && value.unresolvedReason === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "Expected gas evidence or unresolvedReason"
     });
   }
   if (hasRawGas && value.unresolvedReason !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["unresolvedReason"],
       message: "Resolved gas quantities must not include unresolvedReason"
     });
   }
   if (value.gasBudgetRaw !== undefined && value.gasBudgetClaimId === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["gasBudgetClaimId"],
       message: "gasBudgetRaw requires gasBudgetClaimId"
     });
   }
   if (value.gasBudgetRaw === undefined && value.gasBudgetClaimId !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["gasBudgetClaimId"],
       message: "gasBudgetClaimId requires gasBudgetRaw"
     });
   }
   if (value.gasUsedRaw !== undefined && value.gasUsedClaimId === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["gasUsedClaimId"],
       message: "gasUsedRaw requires gasUsedClaimId"
     });
   }
   if (value.gasUsedRaw === undefined && value.gasUsedClaimId !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["gasUsedClaimId"],
       message: "gasUsedClaimId requires gasUsedRaw"
     });
   }
   if (value.unresolvedReason !== undefined && value.unresolvedClaimId === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["unresolvedClaimId"],
       message: "unresolvedReason requires unresolvedClaimId"
     });
   }
   if (value.unresolvedReason === undefined && value.unresolvedClaimId !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["unresolvedClaimId"],
       message: "unresolvedClaimId requires unresolvedReason"
     });
@@ -608,7 +608,7 @@ export const adapterExpiryEvidenceSchema = z.discriminatedUnion("status", [
 ]).superRefine((value, ctx) => {
   if (value.status === "current" && Date.parse(value.expiresAt) <= Date.parse(value.checkedAt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["expiresAt"],
       message: "Current expiry evidence requires expiresAt after checkedAt"
     });
@@ -616,7 +616,7 @@ export const adapterExpiryEvidenceSchema = z.discriminatedUnion("status", [
 
   if (value.status === "expired" && Date.parse(value.expiresAt) > Date.parse(value.checkedAt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["expiresAt"],
       message: "Expired expiry evidence requires expiresAt at or before checkedAt"
     });
@@ -642,48 +642,48 @@ export const adapterSlippageOrMinOutEvidenceSchema = z.object({
       value.policyEvidenceClaimId === undefined)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "Verified min-out evidence requires quoteEvidenceId, quoteEvidenceClaimId, maxSlippageBps, minOutRaw, policySource, and policyEvidenceClaimId"
     });
   }
   if (value.quoteEvidenceId !== undefined && value.quoteEvidenceClaimId === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["quoteEvidenceClaimId"],
       message: "quoteEvidenceId requires quoteEvidenceClaimId"
     });
   }
   if (value.quoteEvidenceId === undefined && value.quoteEvidenceClaimId !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["quoteEvidenceClaimId"],
       message: "quoteEvidenceClaimId requires quoteEvidenceId"
     });
   }
   if (value.minOutRaw !== undefined && value.quoteEvidenceClaimId === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["quoteEvidenceClaimId"],
       message: "minOutRaw requires quoteEvidenceClaimId"
     });
   }
   if (value.maxSlippageBps !== undefined && value.policySource === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["policySource"],
       message: "maxSlippageBps requires policySource"
     });
   }
   if (value.policySource !== undefined && value.policyEvidenceClaimId === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["policyEvidenceClaimId"],
       message: "policySource requires policyEvidenceClaimId"
     });
   }
   if (value.policySource === undefined && value.policyEvidenceClaimId !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["policyEvidenceClaimId"],
       message: "policyEvidenceClaimId requires policySource"
     });
@@ -789,7 +789,7 @@ export const walletReviewAdapterContractSchema = z.object({
   value.sourceOfTruth.forEach((source, index) => {
     if (sourceIds.has(source.id)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sourceOfTruth", index, "id"],
         message: `sourceOfTruth id must be unique: ${source.id}`
       });
@@ -807,7 +807,7 @@ export const walletReviewAdapterContractSchema = z.object({
   value.evidenceClaims.forEach((claim, index) => {
     if (claimIds.has(claim.id)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceClaims", index, "id"],
         message: `evidenceClaims id must be unique: ${claim.id}`
       });
@@ -831,7 +831,7 @@ export const walletReviewAdapterContractSchema = z.object({
       return source;
     }
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path,
       message: `source evidence id must reference sourceOfTruth[].id: ${sourceEvidenceId}`
     });
@@ -855,7 +855,7 @@ export const walletReviewAdapterContractSchema = z.object({
     const sourcePath = sourceIndex === undefined ? path : ["sourceOfTruth", sourceIndex];
     if (!requirement.kinds.includes(source.kind)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: [...sourcePath, "kind"],
         message: `${label} source kind must be one of ${requirement.kinds.join(", ")}`
       });
@@ -877,7 +877,7 @@ export const walletReviewAdapterContractSchema = z.object({
   ): (typeof value.evidenceClaims)[number] | undefined => {
     if (claimId === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path,
         message: `${label} must reference evidenceClaims[].id`
       });
@@ -886,7 +886,7 @@ export const walletReviewAdapterContractSchema = z.object({
     const claim = claimById.get(claimId);
     if (claim === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path,
         message: `${label} must reference evidenceClaims[].id: ${claimId}`
       });
@@ -896,7 +896,7 @@ export const walletReviewAdapterContractSchema = z.object({
       const claimIndex = claimIndexById.get(claimId);
       const claimPath = claimIndex === undefined ? path : ["evidenceClaims", claimIndex, "factKind"];
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: claimPath,
         message: `${label} evidence claim factKind must be ${factKind}`
       });
@@ -938,21 +938,21 @@ export const walletReviewAdapterContractSchema = z.object({
       );
       if ((claim.status === "current" || claim.status === "expired") && claim.expiresAt === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "expiresAt"],
           message: "Current or expired expiry claim requires expiresAt"
         });
       }
       if ((claim.status === "not_provided" || claim.status === "not_applicable") && claim.reason === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "reason"],
           message: "Unavailable expiry claim requires reason"
         });
       }
       if ((claim.status === "not_provided" || claim.status === "not_applicable") && claim.expiresAt !== undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "expiresAt"],
           message: "Unavailable expiry claim must not include expiresAt"
         });
@@ -963,7 +963,7 @@ export const walletReviewAdapterContractSchema = z.object({
         Date.parse(claim.expiresAt) <= Date.parse(claim.checkedAt)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "expiresAt"],
           message: "Current expiry claim requires expiresAt after checkedAt"
         });
@@ -974,7 +974,7 @@ export const walletReviewAdapterContractSchema = z.object({
         Date.parse(claim.expiresAt) > Date.parse(claim.checkedAt)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "expiresAt"],
           message: "Expired expiry claim requires expiresAt at or before checkedAt"
         });
@@ -997,7 +997,7 @@ export const walletReviewAdapterContractSchema = z.object({
       );
       if (claim.policySource === "adapter_policy_from_quote_evidence" && claim.minOutRaw === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "minOutRaw"],
           message: "Adapter-derived slippage policy claim requires minOutRaw"
         });
@@ -1020,28 +1020,28 @@ export const walletReviewAdapterContractSchema = z.object({
       );
       if (claim.status === "success" && claim.missingFields.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "missingFields"],
           message: "Successful simulation claim must not have missing required fields"
         });
       }
       if (!WALLET_REVIEW_REQUIRED_SIMULATION_FIELDS.every((field) => claim.requiredFields.includes(field))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "requiredFields"],
           message: "Simulation claim must include every required simulation field"
         });
       }
       if (claim.status !== "success" && claim.failureReason === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "failureReason"],
           message: "Failed or unavailable simulation claim requires failureReason"
         });
       }
       if (claim.status === "success" && claim.failureReason !== undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceClaims", index, "failureReason"],
           message: "Successful simulation claim must not include failureReason"
         });
@@ -1200,7 +1200,7 @@ export const walletReviewAdapterContractSchema = z.object({
     );
     if (!matchingMinOutQuantity) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["slippageOrMinOut", "minOutRaw"],
         message: "slippageOrMinOut.minOutRaw must match a minimum_output rawQuantities entry"
       });

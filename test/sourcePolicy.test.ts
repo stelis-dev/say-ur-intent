@@ -1340,10 +1340,6 @@ describe("source policy", () => {
       join(process.cwd(), "src/core/review/reviewComputation.ts"),
       "utf8"
     );
-    const reviewAdaptersSource = readFileSync(
-      join(process.cwd(), "src/adapters/reviewAdapters.ts"),
-      "utf8"
-    );
 
     expect(docs).toMatch(/review-state checks[\s\S]{0,180}raw quote evidence/i);
     expect(docs).toMatch(/reviewState\.adapterLifecycle[\s\S]{0,180}completedStages[\s\S]{0,180}missingStages/i);
@@ -1439,10 +1435,6 @@ describe("source policy", () => {
     );
     const reviewComputationSource = readFileSync(
       join(process.cwd(), "src/core/review/reviewComputation.ts"),
-      "utf8"
-    );
-    const reviewAdaptersSource = readFileSync(
-      join(process.cwd(), "src/adapters/reviewAdapters.ts"),
       "utf8"
     );
     const docs = [
@@ -1645,10 +1637,6 @@ describe("source policy", () => {
     );
     const reviewComputationSource = readFileSync(
       join(process.cwd(), "src/core/review/reviewComputation.ts"),
-      "utf8"
-    );
-    const reviewAdaptersSource = readFileSync(
-      join(process.cwd(), "src/adapters/reviewAdapters.ts"),
       "utf8"
     );
     const deepbookEvidenceSource = readFileSync(

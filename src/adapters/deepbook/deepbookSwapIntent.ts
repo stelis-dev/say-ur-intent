@@ -96,7 +96,7 @@ export const deepbookSwapActionPlanIdentitySchema = z.object({
   actionKind: z.literal(DEEPBOOK_SWAP_ACTION_KIND),
   adapterId: z.literal(DEEPBOOK_SWAP_ADAPTER_ID),
   protocol: z.literal(DEEPBOOK_SWAP_PROTOCOL)
-}).passthrough();
+}).loose();
 
 export function isDeepbookSwapActionPlanIdentity(plan: ActionPlan): plan is DeepbookSwapActionPlanIdentity {
   return deepbookSwapActionPlanIdentitySchema.safeParse(plan).success;

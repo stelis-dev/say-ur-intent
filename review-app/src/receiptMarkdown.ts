@@ -3,7 +3,7 @@ import type {
   PublicChainReceiptBalanceChange,
   PublicChainReceiptInput
 } from "../../src/core/action/suiChainReceiptReader.js";
-import { mistToSui, signedRawToDisplay } from "./format.js";
+import { signedRawToDisplay, suiAmount } from "./format.js";
 
 // Fixed English labels for Markdown export. Export labels are deliberately
 // independent of the i18n display copy so the serialized record is stable and
@@ -42,12 +42,12 @@ export function receiptToMarkdown(digest: string, receipt: PublicChainReceipt): 
 
   lines.push("", "### Gas");
   const gas = receipt.gas;
-  lines.push(`- Total fee: ${mistToSui(gas.totalMist)} SUI (${gas.totalMist} mist)`);
-  lines.push(`- Computation: ${mistToSui(gas.computationMist)} SUI`);
-  lines.push(`- Storage: ${mistToSui(gas.storageMist)} SUI`);
-  lines.push(`- Storage rebate: ${mistToSui(gas.storageRebateMist)} SUI`);
+  lines.push(`- Total fee: ${suiAmount(gas.totalMist)} (${gas.totalMist} mist)`);
+  lines.push(`- Computation: ${suiAmount(gas.computationMist)}`);
+  lines.push(`- Storage: ${suiAmount(gas.storageMist)}`);
+  lines.push(`- Storage rebate: ${suiAmount(gas.storageRebateMist)}`);
   if (gas.budgetMist !== undefined) {
-    lines.push(`- Budget: ${mistToSui(gas.budgetMist)} SUI`);
+    lines.push(`- Budget: ${suiAmount(gas.budgetMist)}`);
   }
   if (gas.priceMist !== undefined) {
     lines.push(`- Price: ${gas.priceMist} MIST`);
@@ -57,7 +57,7 @@ export function receiptToMarkdown(digest: string, receipt: PublicChainReceipt): 
   }
 
   if (receipt.ptbGraph) {
-    lines.push("", "### Transaction graph", "```mermaid", receipt.ptbGraph.mermaid, "```");
+    lines.push("", "### Transaction graph", "```mermaid", receipt.ptbGraph.mermaid.namedText, "```");
   }
 
   lines.push("", "### Inputs");

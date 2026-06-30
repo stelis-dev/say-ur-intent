@@ -4,7 +4,7 @@ import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from
 import { readPageToken, tokenHeaders } from "./token.js";
 import "./connect.css";
 import { renderShell } from "./ui/shell.js";
-import { agentOriginBadge, button, card, copyButton, element, feedback, note, walletChip } from "./ui/ui.js";
+import { agentOriginBadge, button, card, copyButton, element, endRow, feedback, note, walletChip } from "./ui/ui.js";
 import {
   resultForConnectedAccount,
   resultForNoCompatibleWallet,
@@ -169,7 +169,7 @@ function appendBody(
     panel.append(feedback("error", "No compatible Sui wallet was detected in this browser."));
     const report = button("Report no compatible wallet", () => void submitResult(resultForNoCompatibleWallet()), "secondary");
     report.disabled = isBusy;
-    panel.append(report);
+    panel.append(endRow(report));
   } else {
     panel.append(note("Choose a wallet to continue."));
     const list = element("div", "connect-wallet-list");

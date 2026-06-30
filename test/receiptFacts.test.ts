@@ -181,11 +181,14 @@ describe("parseReceipt", () => {
     expect(
       parseReceipt({ ...validReceipt(), events: [{ index: 0, packageId: "0x2", module: "m", eventType: 1, sender: "0x1" }] })
     ).toBeNull();
-    // The PTB graph is optional: absent is valid, a present non-string mermaid is drift.
+    // The PTB graph is optional: absent is valid; a mermaid missing the raw/named
+    // text pair is drift.
     expect(parseReceipt({ ...validReceipt(), ptbGraph: undefined })).not.toBeNull();
     expect(parseReceipt({ ...validReceipt(), ptbGraph: { mermaid: 5 } })).toBeNull();
-    const withGraph = parseReceipt({ ...validReceipt(), ptbGraph: { mermaid: "flowchart LR" } });
-    expect(withGraph?.ptbGraph).toEqual({ mermaid: "flowchart LR" });
+    expect(parseReceipt({ ...validReceipt(), ptbGraph: { mermaid: "flowchart LR" } })).toBeNull();
+    const mermaid = { text: "flowchart LR\n  A-->B", namedText: "flowchart LR\n  pkg-->B" };
+    const withGraph = parseReceipt({ ...validReceipt(), ptbGraph: { mermaid } });
+    expect(withGraph?.ptbGraph).toEqual({ mermaid });
   });
 
   it("accepts optional balance-change decimals/symbol and fails closed on wrong-typed ones", () => {

@@ -543,7 +543,7 @@ const intentEvidenceCandidateConversionSchema = z.union([
       poolKey: z.string(),
       direction: z.enum(["base_to_quote", "quote_to_base"])
     }),
-    quote: z.object({ status: z.literal("ok") }).passthrough(),
+    quote: z.object({ status: z.literal("ok") }).loose(),
     boundary: z.tuple([
       z.literal("quote_snapshot_only"),
       z.literal("not_final_min_out"),

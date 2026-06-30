@@ -15,17 +15,13 @@ import {
 } from "./coinMetadata.js";
 import type {
   DeepbookOfficialIndexerCandle,
-  DeepbookOfficialIndexerFetchSource,
   DeepbookOfficialIndexerInterval,
-  DeepbookOfficialIndexerPool,
   DeepbookOfficialIndexerSourceClient
 } from "./deepbookOfficialIndexerSource.js";
 import type {
-  DEEPBOOK_ANSWER_USE,
   DEEPBOOK_OFFICIAL_INDEXER_CANDLE_USE,
   DEEPBOOK_OFFICIAL_INDEXER_RESPONSE_TEXT,
   DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE,
-  DEEPBOOK_OFFICIAL_INDEXER_USDC_REFERENCE,
   DEEPBOOK_PINNED_SDK_METADATA_SOURCE,
   DEEPBOOK_SDK_SIMULATION_SOURCE_BASE,
   DEEPBOOK_SOURCE_FIELD_VALUES

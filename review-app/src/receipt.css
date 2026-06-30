@@ -2,24 +2,9 @@
    module (ui.css); this file declares no `.ui-*` rule and no bare interactive
    element rule. */
 
-.receipt-gas {
-  margin-bottom: 6px;
-}
-
-/* The PTB graph is the layout centerpiece. Mermaid renders its own light theme
-   here (the receipt page CSP permits Mermaid's injected styles), so the slot keeps
-   a light background in BOTH the light and dark app themes — the diagram reads on
-   its intended light surface instead of clashing with a dark panel.
-
-   Full-bleed: pull up under the card header (cancel its 14px gap) and out to the
-   card's left/right/bottom edges (offset the card's 18px side / 16px bottom
-   padding), so the white graph fills the card body edge-to-edge with no margin. */
-.receipt-ptb {
-  margin: -14px -18px -16px;
-  background: #ffffff;
-  border-radius: 0 0 12px 12px;
-  overflow: hidden;
-}
+/* The chain-receipt view (status, balances, gas, PTB graph, detail accordions) is
+   the shared `chainReceiptView` component; its styling lives in ui.css. This file
+   keeps only the receipt page's own layout. */
 
 .receipt-actions {
   margin-top: 14px;

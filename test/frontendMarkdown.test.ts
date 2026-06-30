@@ -149,7 +149,7 @@ describe("receiptToMarkdown", () => {
           sender: `0x${"1".repeat(64)}`
         }
       ],
-      ptbGraph: { mermaid: "flowchart LR\n  A-->B" }
+      ptbGraph: { mermaid: { text: "flowchart LR\n  A-->B", namedText: "flowchart LR\n  A-->B" } }
     });
     // The decimals line shows the formatted amount and keeps the raw + coinType.
     expect(markdown).toContain(`- \`0x${"3".repeat(64)}\`: -218.883618256 SUI (-218883618256 raw, 0x2::sui::SUI)`);

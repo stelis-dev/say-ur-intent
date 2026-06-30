@@ -7,8 +7,7 @@ import {
   walletIdentityStatusSchema
 } from "../../../core/session/walletIdentity.js";
 import {
-  waitForWalletIdentitySession,
-  walletStatusCategory
+  waitForWalletIdentitySession
 } from "../../../core/session/wait.js";
 import type { McpServerDeps } from "../../server.js";
 import { errorToolResult, okToolResult } from "../../result.js";

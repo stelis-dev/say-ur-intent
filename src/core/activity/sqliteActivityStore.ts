@@ -7,7 +7,7 @@ import type { AdapterLifecycleValidator } from "../action/adapterLifecycleValida
 import { assertNoForbiddenMcpFields } from "../action/forbiddenFields.js";
 import { parseLifecycleValidatedReviewState } from "../action/reviewStateValidation.js";
 import { actionPlanSchema, executionResultSchema } from "../action/schemas.js";
-import type { ActionPlan, ExecutionResult, InternalSessionStatus, ReviewState } from "../action/types.js";
+import type { ActionPlan, ExecutionResult, ReviewState } from "../action/types.js";
 import { parseSuiAddress } from "../suiAddress.js";
 import { SqlitePreferencesRepository } from "../preferences/sqlitePreferencesRepository.js";
 import { SqliteTransactionMaterialStore } from "../session/sqliteTransactionMaterialStore.js";
@@ -47,19 +47,14 @@ import type {
   ExternalActivityCoverageResult,
   ExternalActivityScanInput,
   ExternalActivityScanRecord,
-  ExternalActivityRelationship,
   ExternalActivitySummaryFilter,
   ExternalActivitySummaryResult,
   ExternalActivityTransactionStreamFilter,
   ExternalActivityTransactionStreamResult,
   ExternalActivityTransactionRecord,
-  ExternalActivityTransactionStatus,
   ReviewActivityFilter,
-  ReviewActivityDataScope,
   ReviewActivityListFilter,
   ReviewActivityListResult,
-  ReviewActivityRow,
-  ReviewActivityAccountSource,
   ReviewFunnelSummary,
   ReviewFunnelSummaryResult,
   ReviewSessionEvidenceInput,

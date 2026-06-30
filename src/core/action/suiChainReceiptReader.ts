@@ -76,7 +76,7 @@ export type PublicChainReceiptEvent = {
   sender: string;
 };
 
-export type PublicChainReceiptPtbGraph = { mermaid: string };
+export type PublicChainReceiptPtbGraph = { mermaid: { text: string; namedText: string } };
 
 export type PublicChainReceipt = {
   txDigest: string;

@@ -90,6 +90,7 @@ describe("shared-vs-page styling boundary (Plan B B1)", () => {
       ".ui-pill",
       ".ui-chip",
       ".ui-wallet-chip",
+      ".ui-wallet-chip-dot",
       ".ui-agent-badge",
       ".ui-select",
       ".ui-status-banner",
@@ -97,6 +98,7 @@ describe("shared-vs-page styling boundary (Plan B B1)", () => {
       ".ui-ptb-graph",
       ".ui-accordion",
       ".ui-feedback",
+      ".ui-toast",
       ".ui-placeholder",
       ".ui-skeleton",
       ".ui-overlay"
@@ -114,6 +116,7 @@ describe("shared-vs-page styling boundary (Plan B B1)", () => {
     "review-app/src/homepage.css",
     "review-app/src/notFound.css",
     "review-app/src/receipt.css",
+    "review-app/src/review.css",
     "review-app/src/deepbookUsdcChart.css",
     "review-app/src/settings.css"
   ];

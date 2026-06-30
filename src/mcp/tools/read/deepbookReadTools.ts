@@ -160,14 +160,14 @@ const deepbookUsdcPriceHistoryPairSchema = z.object({
 
 const deepbookUsdcPriceHistorySourceSchema = z.object({
   kind: z.literal(DEEPBOOK_OFFICIAL_INDEXER_SOURCE_BASE.kind),
-  baseUrl: z.string().url(),
+  baseUrl: z.url(),
   sourceStatement: z.string().min(1),
   poolList: z.object({
-    url: z.string().url(),
+    url: z.url(),
     fetchedAt: fetchedAtSchema
   }).strict(),
   candles: z.object({
-    url: z.string().url(),
+    url: z.url(),
     fetchedAt: fetchedAtSchema,
     poolName: z.string().min(1),
     interval: deepbookOfficialIndexerIntervalSchema,

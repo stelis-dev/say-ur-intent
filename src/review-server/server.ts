@@ -4,7 +4,6 @@ import {
   FAILURE_REASONS,
   type ExecutionResult,
   type FailureReason,
-  type InternalSessionStatus,
   type ReviewSession
 } from "../core/action/types.js";
 import {
@@ -487,6 +486,7 @@ async function routeRequest(
       internalStatus: session.status,
       pollingStatus: getExecutionPollingStatus(session),
       lastActivityAt: session.lastActivityAt,
+      ...(session.expiresAt ? { sessionExpiresAt: session.expiresAt } : {}),
       ...(session.executionResult ? { executionResult: session.executionResult } : {}),
       signingInProgress: session.pendingHandoffDigest !== undefined,
       activeAccount: activeAccount

@@ -10,6 +10,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "exactOptionalPropertyTypes": true,
     "outDir": "dist",
     "rootDir": ".",

@@ -577,7 +577,7 @@ async function quoteEvidenceStage(
 }
 
 function quotePolicyStage(
-  input: DeepbookSwapReviewEvidenceInput,
+  _input: DeepbookSwapReviewEvidenceInput,
   requestedIntent: DeepbookSwapRequestedIntent,
   quote: DeepbookDisplayQuoteSummary,
   feeMode: "deep" | "input_coin",

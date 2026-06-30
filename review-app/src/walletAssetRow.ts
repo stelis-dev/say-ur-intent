@@ -10,7 +10,7 @@
 // balance (addressBalance, the accumulator fast-path). They are present only when
 // the coin decimals are known, so the split can be formatted as a decimal rather
 // than shown as a misleading raw integer.
-import { rawToDisplay } from "./format.js";
+import { rawToDisplay, typeName } from "./format.js";
 import { asRecord, asString } from "./parse.js";
 
 export type WalletAssetRow = {
@@ -27,10 +27,11 @@ export function formatWalletAssetRow(entry: unknown): WalletAssetRow | null {
   }
   const display = asRecord(row.display);
   const unit = asRecord(row.unit);
+  const coinType = asString(row.coinType);
   const symbol =
     asString(display?.symbol) ??
     asString(unit?.symbol) ??
-    shortenCoinType(asString(row.coinType)) ??
+    (coinType !== undefined ? typeName(coinType) : undefined) ??
     "(unknown coin)";
   const decimals = typeof unit?.decimals === "number" ? unit.decimals : undefined;
 
@@ -71,10 +72,3 @@ function safeFormat(raw: string, decimals: number): string | undefined {
   }
 }
 
-function shortenCoinType(coinType: string | undefined): string | undefined {
-  if (!coinType) {
-    return undefined;
-  }
-  const parts = coinType.split("::");
-  return parts[parts.length - 1] || coinType;
-}

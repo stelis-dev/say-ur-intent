@@ -17,7 +17,6 @@ import {
 import { InMemorySessionStore } from "../src/core/session/sessionStore.js";
 import { createMcpServer } from "../src/mcp/server.js";
 import { SERVER_INSTRUCTIONS } from "../src/mcp/serverInfo.js";
-import { TOOL_NAMES } from "../src/mcp/toolNames.js";
 import { DEFAULT_SUI_GRAPHQL_URL, DEFAULT_SUI_GRPC_URL } from "../src/runtime/config.js";
 import {
   FRESH_CLIENT_SCENARIOS,

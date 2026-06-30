@@ -85,7 +85,7 @@ export class GraphqlSuiTransactionActivitySource implements SuiTransactionActivi
     fromCheckpoint?: string | undefined;
     toCheckpoint?: string | undefined;
   }): Promise<SuiTransactionActivityPage> {
-    const { client, limits } = await this.runtime();
+    await this.runtime();
     const filter: Record<string, unknown> = input.relationship === "sent"
       ? { sentAddress: input.account }
       : { affectedAddress: input.account };

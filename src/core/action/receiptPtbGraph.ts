@@ -16,11 +16,15 @@ import { applyContractNamesToMermaid } from "./contractNameRegistry.js";
 // Returns undefined when the model cannot render the transaction (e.g. a
 // non-programmable system transaction); the page then shows a placeholder card in
 // the same slot rather than collapsing the layout.
-export function receiptPtbMermaid(transactionData: { inputs: unknown; commands: unknown }): string | undefined {
+export function receiptPtbMermaid(
+  transactionData: { inputs: unknown; commands: unknown }
+): { text: string; namedText: string } | undefined {
   try {
     const ir = rawTransactionToIR({ inputs: transactionData.inputs, commands: transactionData.commands });
-    const text = applyContractNamesToMermaid(transactionIRToMermaid(ir, { direction: "LR" }));
-    return text.trim().length > 0 ? text : undefined;
+    // Emit both the raw-address graph and the registry-named graph so the receipt and
+    // the review render the same toggleable graph through the shared component.
+    const text = transactionIRToMermaid(ir, { direction: "LR" });
+    return text.trim().length > 0 ? { text, namedText: applyContractNamesToMermaid(text) } : undefined;
   } catch {
     return undefined;
   }

@@ -60,11 +60,8 @@ export function reviewHtml(sessionId: string): string {
     title: "Say Ur Intent Review",
     css: "review.css",
     js: "review.js",
-    ui: false,
-    body: `    <main id="review-app" data-review-session-id="${escapeHtml(sessionId)}">
-      <h1>Say Ur Intent Review</h1>
-      <p>Loading local review session...</p>
-    </main>`
+    ui: true,
+    body: `    <div id="review-app" data-review-session-id="${escapeHtml(sessionId)}"></div>`
   });
 }
 

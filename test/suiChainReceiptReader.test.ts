@@ -227,13 +227,16 @@ describe("public chain receipt reader", () => {
     if (result.status !== "found") {
       throw new Error("reader did not return a receipt");
     }
-    const mermaid = result.receipt.ptbGraph?.mermaid ?? "";
-    // A registered framework package shows its Move alias, not the raw address.
-    expect(mermaid).toContain("sui::coin::zero");
-    expect(mermaid).not.toContain(`${suiFramework}::`);
-    // An unregistered package address is shortened, never shown full-length.
-    expect(mermaid).toContain("0xcccccc...cccc::pool::swap");
-    expect(mermaid).not.toContain(packageId);
+    const named = result.receipt.ptbGraph?.mermaid.namedText ?? "";
+    // The named version: a registered framework package shows its Move alias, not the
+    // raw address, and an unregistered package address is shortened.
+    expect(named).toContain("sui::coin::zero");
+    expect(named).not.toContain(`${suiFramework}::`);
+    expect(named).toContain("0xcccccc...cccc::pool::swap");
+    expect(named).not.toContain(packageId);
+    // The raw version keeps the full un-relabeled address for the address toggle.
+    const raw = result.receipt.ptbGraph?.mermaid.text ?? "";
+    expect(raw).toContain(packageId);
   });
 
   it("surfaces a pure input's raw bytes as 0x-hex", async () => {

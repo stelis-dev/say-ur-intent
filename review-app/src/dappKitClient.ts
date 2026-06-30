@@ -52,17 +52,3 @@ export function hasStoredWalletSelection(): boolean {
   }
 }
 
-// Parse the stored selection the same way dapp-kit's autoConnect does: the value
-// is "<walletId>:<address>:<intents>". A wallet page uses the walletId to offer a
-// reconnect of that one stored wallet, never a wallet picker.
-export function getStoredWalletSelection(): { walletId: string; address: string } | null {
-  try {
-    const raw = window.localStorage.getItem(WALLET_SELECTION_STORAGE_KEY);
-    if (!raw) return null;
-    const [walletId, address] = raw.split(":");
-    if (!walletId || !address) return null;
-    return { walletId, address };
-  } catch {
-    return null;
-  }
-}

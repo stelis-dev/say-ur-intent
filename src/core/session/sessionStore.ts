@@ -61,12 +61,8 @@ import {
   tokenMatchesHash
 } from "./localSession.js";
 import {
-  isTerminalWalletIdentityStatus,
-  walletIdentityResultInputSchema,
-  walletIdentitySessionSchema,
   type WalletIdentityResultInput,
-  type WalletIdentitySession,
-  type WalletIdentityStatus
+  type WalletIdentitySession
 } from "./walletIdentity.js";
 import type { SettingsSession } from "./settingsSession.js";
 import { SessionStoreError } from "./sessionErrors.js";
@@ -1434,8 +1430,4 @@ function parseExecutionResult(result: ExecutionResult): ExecutionResult {
     throw new SessionStoreError("input_invalid", "Invalid execution result shape");
   }
   return parsed.data as ExecutionResult;
-}
-
-function cloneSession<T>(session: T): T {
-  return cloneLocalSession(session);
 }

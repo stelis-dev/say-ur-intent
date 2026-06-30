@@ -4,6 +4,7 @@ import { accountSnapshotToMarkdown } from "./accountMarkdown.js";
 import { asRecord } from "./parse.js";
 import { renderShell } from "./ui/shell.js";
 import { accordion, card, copyButton, element, feedback, footer, info, mono, pageHeader, placeholder, row, searchField, skeletonHint, skeletonRow } from "./ui/ui.js";
+import { qualifiedName } from "./format.js";
 import { t } from "./i18n/i18n.js";
 import "./account.css";
 
@@ -156,7 +157,7 @@ function nftCard(payload: Record<string, unknown>): HTMLElement {
 
 function nftTile(nft: Record<string, unknown>): HTMLElement {
   const type = typeof nft.type === "string" ? nft.type : "";
-  const name = typeof nft.name === "string" && nft.name.length > 0 ? nft.name : shortType(type);
+  const name = typeof nft.name === "string" && nft.name.length > 0 ? nft.name : qualifiedName(type);
   const imageUrl = typeof nft.imageUrl === "string" && nft.imageUrl.length > 0 ? imageSrc(nft.imageUrl) : undefined;
   const tile = element("div", "account-nft");
   if (imageUrl) {
@@ -195,7 +196,7 @@ function objectsCard(payload: Record<string, unknown>): HTMLElement {
       }
       const type = typeof group.type === "string" ? group.type : "";
       const count = typeof group.count === "number" ? group.count : 0;
-      body.append(row(shortType(type), `×${count}`));
+      body.append(row(qualifiedName(type), `×${count}`));
     }
   }
   if (payload.objectsTruncated === true) {
@@ -225,14 +226,6 @@ function assetBreakdownRow(assetRow: WalletAssetRow): HTMLElement {
   }
   node.append(total);
   return node;
-}
-
-// Drop the package address from a Move type, keeping module::Name (without generic
-// parameters) so grouped object types and NFT fallbacks stay readable.
-function shortType(type: string): string {
-  const base = type.split("<")[0] ?? type;
-  const parts = base.split("::");
-  return parts.length >= 3 ? parts.slice(1).join("::") : base || type;
 }
 
 // NFT image hosts vary; ipfs:// URLs are rewritten to a public gateway so the

@@ -6,7 +6,7 @@ import {
   swapIntentInputSchema
 } from "../../../adapters/intentPlanFactories.js";
 import { actionPlanSchema, reviewCheckSchema } from "../../../core/action/schemas.js";
-import type { ActionPlan, McpActionResponse, ReviewCheck } from "../../../core/action/types.js";
+import type { McpActionResponse, ReviewCheck } from "../../../core/action/types.js";
 import { externalProposalToActionPlan } from "../../../core/proposal/externalProposalReview.js";
 import { externalProposalSchema } from "../../../core/proposal/schemas.js";
 import {

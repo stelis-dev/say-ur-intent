@@ -96,7 +96,7 @@ export const flowxSwapActionPlanIdentitySchema = z.object({
   actionKind: z.literal(FLOWX_SWAP_ACTION_KIND),
   adapterId: z.literal(FLOWX_SWAP_ADAPTER_ID),
   protocol: z.literal(FLOWX_SWAP_PROTOCOL)
-}).passthrough();
+}).loose();
 
 export function isFlowxSwapActionPlanIdentity(plan: ActionPlan): plan is FlowxSwapActionPlanIdentity {
   return flowxSwapActionPlanIdentitySchema.safeParse(plan).success;

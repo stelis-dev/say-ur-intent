@@ -9,23 +9,55 @@
 // zoom-in/out/center controls) makes a large graph legible. It is off by default
 // so the review page's current behaviour is unchanged until it migrates.
 import mermaid from "mermaid";
-import { element, iconButton } from "./ui.js";
+import { card, CHECK_ICON, COPY_ICON, element, iconButton, info } from "./ui.js";
+import { t } from "../i18n/i18n.js";
+
+// Mermaid is themed from the app's own design tokens (read live from the document),
+// so the graph's nodes, edges, edge-label backgrounds, and text follow light/dark
+// exactly like the rest of the page. Mermaid injects an id-scoped <style> into the
+// SVG that wins over external CSS, so the theme MUST be configured here (theme "base"
+// + themeVariables), not overridden in ui.css.
+function mermaidConfig() {
+  const s = getComputedStyle(document.documentElement);
+  const v = (name: string): string => s.getPropertyValue(name).trim();
+  return {
+    startOnLoad: false,
+    // securityLevel "strict" keeps Mermaid from emitting click handlers or inline
+    // scripts, so the rendered SVG is safe to inject as innerHTML under the page CSP.
+    securityLevel: "strict" as const,
+    theme: "base" as const,
+    themeVariables: {
+      background: v("--ui-surface"),
+      mainBkg: v("--ui-surface-2"),
+      primaryColor: v("--ui-surface-2"),
+      primaryBorderColor: v("--ui-border-strong"),
+      primaryTextColor: v("--ui-text"),
+      nodeBorder: v("--ui-border-strong"),
+      nodeTextColor: v("--ui-text"),
+      lineColor: v("--ui-border-strong"),
+      edgeLabelBackground: v("--ui-surface"),
+      secondaryColor: v("--ui-surface-2"),
+      tertiaryColor: v("--ui-surface"),
+      fontSize: "12px"
+    },
+    // `curve: "basis"` draws smooth curved edges instead of straight polylines.
+    flowchart: { useMaxWidth: true, curve: "basis" as const }
+  };
+}
 
 let initialized = false;
+let mermaidThemeKey: string | undefined;
 function ensureMermaid(): void {
-  if (initialized) {
+  const key = document.documentElement.getAttribute("data-theme") ?? "light";
+  if (initialized && key === mermaidThemeKey) {
     return;
   }
-  // securityLevel "strict" keeps Mermaid from emitting click handlers or inline
-  // scripts, so the rendered SVG is safe to inject as innerHTML under the page CSP.
-  // `curve: "basis"` draws smooth curved edges instead of straight polylines.
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: "default",
-    flowchart: { useMaxWidth: true, curve: "basis" }
-  });
+  mermaidThemeKey = key;
+  mermaid.initialize(mermaidConfig());
   initialized = true;
+  // Cached SVGs were painted for the previous theme; drop them so the next render
+  // repaints with the new tokens.
+  svgCache.clear();
 }
 
 // Module-level so an exact-same graph renders instantly from cache and a changed
@@ -78,7 +110,12 @@ export function createPtbGraphView(labels?: {
   }
   content.textContent = renderingLabel;
 
+  let lastText: string | undefined;
   const render = (text: string): void => {
+    lastText = text;
+    // Re-init Mermaid when the app theme changed since the last render so the SVG is
+    // repainted with the current tokens (this also clears the now-stale SVG cache).
+    ensureMermaid();
     element.classList.remove("ui-ptb-graph--error");
     const cached = svgCache.get(text);
     if (cached) {
@@ -110,6 +147,19 @@ export function createPtbGraphView(labels?: {
         element.classList.add("ui-ptb-graph--error");
       });
   };
+
+  // Re-render through the theme-aware Mermaid config whenever the app theme toggles,
+  // so the graph's colours follow light/dark. Self-disconnects once off the DOM.
+  const themeObserver = new MutationObserver(() => {
+    if (!content.isConnected) {
+      themeObserver.disconnect();
+      return;
+    }
+    if (lastText !== undefined) {
+      render(lastText);
+    }
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
   return { element, render };
 }
@@ -199,4 +249,76 @@ function buildControls(handle: PanZoomHandle, labels?: { zoomIn?: string; zoomOu
   // A click on a control must not also start a pan on the viewport beneath it.
   controls.addEventListener("pointerdown", (event) => event.stopPropagation());
   return controls;
+}
+
+// Graph-card title-bar eye icons: a password-style show/hide for the package-name ↔ raw-address
+// toggle. The copy/check icons are shared from ui.ts (COPY_ICON / CHECK_ICON).
+const EYE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.3 13.3 0 0 1-2.4 3.1M6.1 6.1A13.4 13.4 0 0 0 2 11s3.5 7 10 7a9 9 0 0 0 3.9-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
+
+// The single shared "Transaction graph" card used by both the review page and the
+// public receipt: a titled card with a copy-source icon and a name↔address eye toggle
+// in the title bar, and the pan/zoom graph below. Callers pass only the Mermaid display
+// model { text (raw addresses), namedText (registered names) }; every label, the title,
+// and the diagnostics-only boundary tooltip come from the single i18n source, so the two
+// pages render the same card and can never drift apart.
+export function ptbGraphCard(opts: { mermaid: { text: string; namedText: string } }): HTMLElement {
+  const panel = card();
+  panel.classList.add("ptb-graph-card");
+  // Title bar: the "Transaction graph" text with its diagnostics-only ⓘ tooltip right
+  // beside it; the copy and eye actions sit on the far side.
+  const head = element("h2", "ui-card-head");
+  const title = element("span", "ptb-graph-title", t.receipt.graph);
+  title.append(" ", info(t.receipt.graphTip));
+  head.append(title);
+  panel.append(head);
+  const { text, namedText } = opts.mermaid;
+  const hasNames = namedText !== text;
+  let showingNames = hasNames;
+
+  const view = createPtbGraphView({
+    rendering: t.receipt.graphRendering,
+    failed: t.receipt.graphFailed,
+    panZoom: true,
+    zoomIn: t.receipt.graphZoomIn,
+    zoomOut: t.receipt.graphZoomOut,
+    center: t.receipt.graphCenter
+  });
+  // view.element already carries .ui-ptb-graph, themed by ui.css on every page, so the
+  // graph looks identical on the review and receipt pages.
+  const slot = element("div", "ui-chain-receipt-ptb");
+  slot.append(view.element);
+
+  const actions = element("div", "ui-ptb-actions");
+  const copyButton = iconButton(COPY_ICON, t.receipt.graphCopy, () => {
+    const source = showingNames ? namedText : text;
+    void navigator.clipboard
+      .writeText(source)
+      .then(() => {
+        copyButton.innerHTML = CHECK_ICON;
+        copyButton.setAttribute("aria-label", t.receipt.graphCopied);
+        setTimeout(() => {
+          copyButton.innerHTML = COPY_ICON;
+          copyButton.setAttribute("aria-label", t.receipt.graphCopy);
+        }, 1500);
+      })
+      .catch(() => window.prompt(t.receipt.graphCopy, source));
+  });
+  actions.append(copyButton);
+  if (hasNames) {
+    const eyeButton = iconButton(EYE_ICON, t.receipt.graphShowAddresses, () => {
+      showingNames = !showingNames;
+      eyeButton.innerHTML = showingNames ? EYE_ICON : EYE_OFF_ICON;
+      eyeButton.setAttribute("aria-label", showingNames ? t.receipt.graphShowAddresses : t.receipt.graphShowNames);
+      view.render(showingNames ? namedText : text);
+    });
+    actions.append(eyeButton);
+  }
+  head.append(actions);
+
+  panel.append(slot);
+  view.render(showingNames ? namedText : text);
+  return panel;
 }

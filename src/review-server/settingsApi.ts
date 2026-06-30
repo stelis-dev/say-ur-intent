@@ -43,7 +43,7 @@ export async function routeSettingsApi(
   request: IncomingMessage,
   response: ServerResponse,
   options: SettingsApiRouteOptions,
-  url: URL,
+  _url: URL,
   matches: SettingsApiMatches
 ): Promise<void> {
   // Host/Origin and a query token are rejected once by the global guards in

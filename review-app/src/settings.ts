@@ -1,6 +1,6 @@
 import "./settings.css";
 import { renderShell } from "./ui/shell.js";
-import { button, buttonRow, card, element, feedback, input, note, row } from "./ui/ui.js";
+import { button as uiButton, buttonRow, card, element, endRow, feedback, input, note, row } from "./ui/ui.js";
 import { MAX_SUI_GRAPHQL_URL_LENGTH, MAX_SUI_GRPC_URL_LENGTH } from "../../src/core/suiEndpoint.js";
 import { HttpJsonRequestError, errorCodeFromResponse, messageForHttpError } from "./http.js";
 import { readPageToken, tokenHeaders } from "./token.js";
@@ -62,8 +62,40 @@ const main = shell.main;
 let statusPayload: StatusPayload | undefined;
 let importPayload: unknown | undefined;
 let importPreview: ImportPreview | undefined;
-let message = "";
-let errorMessage = "";
+
+type SettingsScope = "wallet" | "grpc" | "graphql" | "localData" | "danger";
+// A page-level (load/session) problem stays at the top; a button's own result shows inline
+// in that button's own section, and every button disables while a settings request is in
+// flight - the same feedback rules as the review page.
+let pageError: string | undefined;
+let busy: { scope: SettingsScope; text: string } | undefined;
+let actionFeedback: { scope: SettingsScope; kind: "ok" | "error"; text: string } | undefined;
+
+// The shared button atom, disabled while any settings request is in flight.
+function button(label: string, onClick: () => void, variant: "primary" | "secondary" | "danger" = "primary"): HTMLButtonElement {
+  const node = uiButton(label, onClick, variant);
+  node.disabled = busy !== undefined;
+  return node;
+}
+
+// A section's own feedback: a pending status while its action runs, then its ok/error
+// result. Nothing here renders in any other section or at the top of the page.
+function sectionFeedback(scope: SettingsScope): HTMLElement | undefined {
+  if (busy?.scope === scope) {
+    return note(busy.text);
+  }
+  if (actionFeedback?.scope === scope) {
+    return feedback(actionFeedback.kind, actionFeedback.text);
+  }
+  return undefined;
+}
+
+// Append a section's own feedback to its card without tripping the strict
+// HTMLElement | undefined append signature.
+function appendFeedback(panel: HTMLElement, scope: SettingsScope): void {
+  const fb = sectionFeedback(scope);
+  if (fb) panel.append(fb);
+}
 
 if (settingsSessionId && token) {
   void refresh();
@@ -80,10 +112,8 @@ function render(): void {
     )
   );
 
-  if (errorMessage) {
-    content.push(feedback("error", errorMessage));
-  } else if (message) {
-    content.push(feedback("ok", message));
+  if (pageError) {
+    content.push(feedback("error", pageError));
   }
 
   if (!settingsSessionId || !token) {
@@ -131,7 +161,8 @@ function renderWalletPanel(): HTMLElement {
       "Clear active account removes only the local read context; it does not disconnect a wallet or revoke onchain permission. To connect a wallet, open the connect link from your AI client; binding happens only on the Connect page."
     )
   );
-  panel.append(button("Clear active account", () => void clearActiveAccount(), "secondary"));
+  panel.append(endRow(button("Clear active account", () => void clearActiveAccount(), "secondary")));
+  appendFeedback(panel, "wallet");
   return panel;
 }
 
@@ -151,6 +182,7 @@ function renderEndpointPanel(): HTMLElement {
       button("Restore default Sui gRPC URL", () => void restoreDefaultEndpoint(), "secondary")
     )
   );
+  appendFeedback(panel, "grpc");
 
   const graphqlPanel = card("Sui GraphQL endpoint");
   const graphqlInput = input({
@@ -167,6 +199,7 @@ function renderEndpointPanel(): HTMLElement {
       button("Restore default Sui GraphQL URL", () => void restoreDefaultGraphqlEndpoint(), "secondary")
     )
   );
+  appendFeedback(graphqlPanel, "graphql");
 
   const wrapper = element("div", "settings-endpoints");
   wrapper.append(panel, graphqlPanel);
@@ -209,9 +242,10 @@ function renderLocalDataPanel(): HTMLElement {
         `Import preview ready. Incoming accounts: ${importPreview.incomingCounts.accounts}. Active account change: ${importPreview.activeAccountChange}.${defaultInjectionText} Endpoint verification runs before replacement. This import replaces current local data.`
       )
     );
-    panel.append(buttonRow(button("Import and replace local data", () => void importLocalData(), "danger")));
+    panel.append(endRow(button("Import and replace local data", () => void importLocalData(), "danger")));
   }
 
+  appendFeedback(panel, "localData");
   return panel;
 }
 
@@ -224,7 +258,8 @@ function renderResetPanel(): HTMLElement {
       "Reset permanently clears all local Say Ur Intent data and invalidates every open review, wallet, and settings page. This cannot be undone."
     )
   );
-  panel.append(button("Reset local data", () => void resetLocalData(), "danger"));
+  panel.append(endRow(button("Reset local data", () => void resetLocalData(), "danger")));
+  appendFeedback(panel, "danger");
   return panel;
 }
 
@@ -233,9 +268,9 @@ async function refresh(): Promise<void> {
     statusPayload = await requestJson<StatusPayload>(`/api/settings/${encodeURIComponent(settingsSessionId)}`, {
       method: "GET"
     });
-    errorMessage = "";
+    pageError = undefined;
   } catch (error) {
-    errorMessage = messageForHttpError(error, "The local server did not accept this settings session.");
+    pageError = messageForHttpError(error, "The local server did not accept this settings session.");
   }
   render();
 }
@@ -244,16 +279,17 @@ async function clearActiveAccount(): Promise<void> {
   if (!window.confirm("Clear the local active account read context? This does not disconnect a wallet or revoke onchain permission.")) {
     return;
   }
-  await postAction("clear-active-account", "Active account context cleared.");
+  await postAction("wallet", "clear-active-account", "Active account context cleared.");
 }
 
 async function saveEndpoint(url: string): Promise<void> {
   if (url.length > MAX_SUI_GRPC_URL_LENGTH) {
-    errorMessage = `Sui gRPC endpoint must be ${MAX_SUI_GRPC_URL_LENGTH} characters or fewer.`;
+    actionFeedback = { scope: "grpc", kind: "error", text: `Sui gRPC endpoint must be ${MAX_SUI_GRPC_URL_LENGTH} characters or fewer.` };
     render();
     return;
   }
   await postAction(
+    "grpc",
     "sui-grpc-url",
     "Sui gRPC endpoint saved. Restart the MCP server for the stored value to apply.",
     { url },
@@ -265,16 +301,17 @@ async function restoreDefaultEndpoint(): Promise<void> {
   if (!window.confirm("Restore the built-in default Sui gRPC URL? Restart the MCP server for the restored value to apply.")) {
     return;
   }
-  await postAction("sui-grpc-url/restore-default", "Default Sui gRPC URL restored. Restart the MCP server for it to apply.");
+  await postAction("grpc", "sui-grpc-url/restore-default", "Default Sui gRPC URL restored. Restart the MCP server for it to apply.");
 }
 
 async function saveGraphqlEndpoint(url: string): Promise<void> {
   if (url.length > MAX_SUI_GRAPHQL_URL_LENGTH) {
-    errorMessage = `Sui GraphQL endpoint must be ${MAX_SUI_GRAPHQL_URL_LENGTH} characters or fewer.`;
+    actionFeedback = { scope: "graphql", kind: "error", text: `Sui GraphQL endpoint must be ${MAX_SUI_GRAPHQL_URL_LENGTH} characters or fewer.` };
     render();
     return;
   }
   await postAction(
+    "graphql",
     "sui-graphql-url",
     "Sui GraphQL endpoint saved. Restart the MCP server for the stored value to apply.",
     { url },
@@ -286,13 +323,13 @@ async function restoreDefaultGraphqlEndpoint(): Promise<void> {
   if (!window.confirm("Restore the built-in default Sui GraphQL URL? Restart the MCP server for the restored value to apply.")) {
     return;
   }
-  await postAction("sui-graphql-url/restore-default", "Default Sui GraphQL URL restored. Restart the MCP server for it to apply.");
+  await postAction("graphql", "sui-graphql-url/restore-default", "Default Sui GraphQL URL restored. Restart the MCP server for it to apply.");
 }
 
 async function exportLocalData(): Promise<void> {
   try {
-    message = "Preparing local data export...";
-    errorMessage = "";
+    busy = { scope: "localData", text: "Preparing local data export..." };
+    actionFeedback = undefined;
     render();
     const data = await requestJson<unknown>(`/api/settings/${encodeURIComponent(settingsSessionId)}/local-data/export`, {
       method: "GET"
@@ -304,10 +341,11 @@ async function exportLocalData(): Promise<void> {
     link.download = `say-ur-intent-local-data-${new Date().toISOString().replaceAll(":", "-")}.json`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
-    message = "Local data export prepared.";
-    errorMessage = "";
+    busy = undefined;
+    actionFeedback = { scope: "localData", kind: "ok", text: "Local data export prepared." };
   } catch (error) {
-    errorMessage = messageForHttpError(error, "Could not export local data.");
+    busy = undefined;
+    actionFeedback = { scope: "localData", kind: "error", text: messageForHttpError(error, "Could not export local data.") };
   }
   render();
 }
@@ -318,14 +356,14 @@ async function previewImport(fileInput: HTMLInputElement): Promise<void> {
   if (file.size > MAX_IMPORT_FILE_BYTES) {
     importPayload = undefined;
     importPreview = undefined;
-    errorMessage = `Import file is too large. Maximum size is ${formatBytes(MAX_IMPORT_FILE_BYTES)}.`;
+    actionFeedback = { scope: "localData", kind: "error", text: `Import file is too large. Maximum size is ${formatBytes(MAX_IMPORT_FILE_BYTES)}.` };
     fileInput.value = "";
     render();
     return;
   }
   try {
-    message = "Loading import preview...";
-    errorMessage = "";
+    busy = { scope: "localData", text: "Loading import preview..." };
+    actionFeedback = undefined;
     render();
     importPayload = JSON.parse(await file.text()) as unknown;
     importPreview = await requestJson<ImportPreview>(
@@ -335,13 +373,14 @@ async function previewImport(fileInput: HTMLInputElement): Promise<void> {
         body: JSON.stringify(importPayload)
       }
     );
-    message = "Import preview loaded. Endpoint verification will run only if you confirm import.";
-    errorMessage = "";
+    busy = undefined;
+    actionFeedback = { scope: "localData", kind: "ok", text: "Import preview loaded. Endpoint verification will run only if you confirm import." };
   } catch (error) {
     importPayload = undefined;
     importPreview = undefined;
     fileInput.value = "";
-    errorMessage = messageForHttpError(error, "Import preview failed. Check that the file is a Say Ur Intent local data export.");
+    busy = undefined;
+    actionFeedback = { scope: "localData", kind: "error", text: messageForHttpError(error, "Import preview failed. Check that the file is a Say Ur Intent local data export.") };
   }
   render();
 }
@@ -352,19 +391,20 @@ async function importLocalData(): Promise<void> {
     return;
   }
   try {
-    message = "Importing local data...";
-    errorMessage = "";
+    busy = { scope: "localData", text: "Importing local data..." };
+    actionFeedback = undefined;
     render();
     await requestJson(`/api/settings/${encodeURIComponent(settingsSessionId)}/local-data/import`, {
       method: "POST",
       body: JSON.stringify(importPayload)
     });
-    message = "Local data imported. This settings page is now invalid; create a new settings session to continue.";
-    errorMessage = "";
+    busy = undefined;
+    actionFeedback = { scope: "localData", kind: "ok", text: "Local data imported. This settings page is now invalid; create a new settings session to continue." };
     importPayload = undefined;
     importPreview = undefined;
   } catch (error) {
-    errorMessage = messageForHttpError(error, "Could not import local data.");
+    busy = undefined;
+    actionFeedback = { scope: "localData", kind: "error", text: messageForHttpError(error, "Could not import local data.") };
   }
   render();
 }
@@ -374,40 +414,43 @@ async function resetLocalData(): Promise<void> {
     return;
   }
   try {
-    message = "Resetting local data...";
-    errorMessage = "";
+    busy = { scope: "danger", text: "Resetting local data..." };
+    actionFeedback = undefined;
     render();
     await requestJson(`/api/settings/${encodeURIComponent(settingsSessionId)}/local-data/reset`, {
       method: "POST",
       body: "{}"
     });
-    message = "Local data reset. This settings page is now invalid; create a new settings session to continue.";
-    errorMessage = "";
+    busy = undefined;
+    actionFeedback = { scope: "danger", kind: "ok", text: "Local data reset. This settings page is now invalid; create a new settings session to continue." };
   } catch (error) {
-    errorMessage = messageForHttpError(error, "Could not reset local data.");
+    busy = undefined;
+    actionFeedback = { scope: "danger", kind: "error", text: messageForHttpError(error, "Could not reset local data.") };
   }
   render();
 }
 
 async function postAction(
+  scope: SettingsScope,
   path: string,
   successMessage: string,
   body: Record<string, unknown> = {},
   pendingMessage = "Sending local settings request..."
 ): Promise<void> {
+  busy = { scope, text: pendingMessage };
+  actionFeedback = undefined;
+  render();
   try {
-    message = pendingMessage;
-    errorMessage = "";
-    render();
     await requestJson(`/api/settings/${encodeURIComponent(settingsSessionId)}/${path}`, {
       method: "POST",
       body: JSON.stringify(body)
     });
-    message = successMessage;
-    errorMessage = "";
+    busy = undefined;
+    actionFeedback = { scope, kind: "ok", text: successMessage };
     await refresh();
   } catch (error) {
-    errorMessage = messageForHttpError(error, "The local settings request failed.");
+    busy = undefined;
+    actionFeedback = { scope, kind: "error", text: messageForHttpError(error, "The local settings request failed.") };
     render();
   }
 }

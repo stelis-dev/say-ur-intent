@@ -366,7 +366,6 @@ describe("review HTTP server", () => {
       }
     };
     const { session, token } = await store.createReviewSession([deepbookPlan]);
-    let materialDigest: Awaited<ReturnType<typeof recordTestTransactionMaterial>>["digest"] | undefined;
     const server = await createReviewHttpServer({
       host: "127.0.0.1",
       store,
