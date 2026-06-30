@@ -138,9 +138,9 @@ route-quality signal, and not an execution-safety signal.
 
 ## Current Release State Rules
 
-The review page is a state wizard with three displayed steps (Review, Sign,
-Result) over nine page states. Every state keeps the same constant layout: the
-step indicator, a one-line state headline, the constant Transaction card
+The review page is a state wizard with two displayed phases (Ready, Result)
+over nine page states. Every state keeps the same constant layout: the phase
+indicator, a one-line state headline, the constant Transaction card
 (plan-level values that fill in with reviewed values), the state-specific
 block, and an always-visible Audit record card (its copy-as-Markdown action a
 title-bar icon, its record sections behind nested disclosures). The ready state
