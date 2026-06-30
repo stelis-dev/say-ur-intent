@@ -1,5 +1,7 @@
 # Say Ur Intent
 
+**JUST SAY "CONNECT WALLET."**
+
 Say Ur Intent is a local-first Sui review and evidence layer for AI clients.
 
 It turns a supported AI-requested Sui action into a local review page where the
