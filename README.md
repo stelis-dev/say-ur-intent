@@ -137,6 +137,25 @@ It also includes:
 - MCP output checks that reject forbidden executable, signing, token, seed, and
   key-material field names from responses.
 
+## Screens
+
+**Review → result.** The review page shows exactly what you are about to sign
+while nothing is committed; after you sign in your own wallet, the server
+re-reads Sui mainnet and renders the chain-verified receipt.
+
+![Chain-verified receipt](https://raw.githubusercontent.com/stelis-dev/say-ur-intent/main/assets/sui2.png)
+
+**The transaction as a labeled graph.** Every review and receipt renders the
+PTB as a graph, so the structure of what is signed is visible — not just the
+amounts.
+
+![PTB transaction graph](https://raw.githubusercontent.com/stelis-dev/say-ur-intent/main/assets/ptb-graph.png)
+
+**DeepBook USDC chart.** A local, theme-aware candlestick view of the official
+DeepBookV3 Indexer USDC candles.
+
+![DeepBook USDC chart](https://raw.githubusercontent.com/stelis-dev/say-ur-intent/main/assets/sui0.png)
+
 ## Current Limits
 
 ### Not Implemented
